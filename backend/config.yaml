@@ -1,0 +1,20 @@
+server:
+  port: 8083
+
+catalog:
+  url: "http://localhost:8082"
+  api_key: "${MOI_SYSTEM_API_KEY}"
+  workspace_id: "${POC_WORKSPACE_ID}"
+
+explore:
+  db_name: "hk_sfc"
+  tables:
+    - ms_t_stk_hsi
+    - ms_t_stk_sis
+    - ms_v_stock_capital
+    - ds_t_int_hsicl_dtl
+    - sehknews
+    - profit_loss
+    - ccass_holdings
+  planning_mode: "auto"
+  verbose: "steps"
