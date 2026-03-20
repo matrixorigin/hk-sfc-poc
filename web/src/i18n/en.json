@@ -1,0 +1,11 @@
+{
+  "title": "HK Market Data Explorer",
+  "placeholder": "Ask a question about Hong Kong market data...",
+  "send": "Send",
+  "thinking": "Analyzing...",
+  "showSQL": "Show SQL",
+  "hideSQL": "Hide SQL",
+  "noData": "No data returned",
+  "error": "An error occurred",
+  "newChat": "New Chat"
+}

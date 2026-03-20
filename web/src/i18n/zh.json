@@ -1,0 +1,11 @@
+{
+  "title": "香港市场数据探索",
+  "placeholder": "输入关于香港市场数据的问题...",
+  "send": "发送",
+  "thinking": "分析中...",
+  "showSQL": "显示 SQL",
+  "hideSQL": "隐藏 SQL",
+  "noData": "无数据返回",
+  "error": "发生错误",
+  "newChat": "新对话"
+}
