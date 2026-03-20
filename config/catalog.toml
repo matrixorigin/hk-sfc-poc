@@ -1,0 +1,87 @@
+# HK SFC POC - Catalog 配置
+# 连接同 compose 网络内的 MatrixOne 容器
+
+[server]
+host = "0.0.0.0"
+port = 8081
+read_timeout = 30
+write_timeout = 30
+
+[database]
+host = "host.docker.internal"
+port = 16001
+user = "dump"
+password = "111"
+database = "moi_poc"
+max_open_conns = 100
+max_idle_conns = 10
+conn_max_lifetime = 3600
+
+[provider]
+type = "local"
+
+[provider.local]
+host = "host.docker.internal"
+port = 16001
+
+[storage]
+type = "local"
+endpoint = "/data"
+
+[logging]
+level = "info"
+format = "json"
+output = "stdout"
+
+[mowl]
+embedded = true
+
+[runtime]
+enabled = false
+
+[runtime.local]
+enabled = false
+docker_socket = "/var/run/docker.sock"
+binary_search_paths = ["/usr/local/bin", "/opt/workers"]
+
+[runtime.cloud]
+enabled = false
+kubeconfig = ""
+namespace = "mowl-workers"
+image_pull_secret = ""
+
+[runtime.gc]
+enabled = true
+interval = 120
+grace_period = 300
+
+# Explore 引擎配置
+[explore]
+schema_cache_ttl_seconds = 300
+session_title_timeout_seconds = 10
+
+[explore.retriever]
+max_repair_attempts = 3
+rag_top_k = 5
+concurrency_limit = 3
+sub_question_timeout_seconds = 60
+
+[explore.context]
+schema_cache_ttl_seconds = 300
+
+[explore.direct]
+max_content_chars = 32000
+max_file_count = 3
+max_total_bytes = 512000
+
+[explore.budget]
+guaranteed_min_token_ratio = 0.4
+guaranteed_min_time_ratio = 0.5
+token_estimation_strategy = "chars_div_4"
+
+[explore.memory]
+max_history_messages = 10
+recent_window = 5
+history_token_budget = 2000
+enable_result_context = true
+enable_summary = true
