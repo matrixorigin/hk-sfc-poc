@@ -5,3 +5,4 @@ node_modules/
 /tmp/
 POC DATA_01/
 .env
+backend/hk-poc-backend
