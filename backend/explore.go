@@ -9,40 +9,46 @@ import (
 	"net/http"
 )
 
-// --- 请求结构体 ---
+// --- 请求结构体（匹配 Catalog Explore API） ---
+
+type ExploreRequest struct {
+	Query       QueryDomain      `json:"query"`
+	Session     SessionDomain    `json:"session"`
+	DataSources DataSourceDomain `json:"data_sources"`
+	Options     ExploreOptions   `json:"options,omitempty"`
+	Trace       TraceOptions     `json:"trace,omitempty"`
+}
 
 type QueryDomain struct {
-	Text string `json:"text"`
+	Question string `json:"question"`
 }
 
 type SessionDomain struct {
-	SessionID string `json:"session_id,omitempty"`
-}
-
-type TableSource struct {
-	TableName string `json:"table_name"`
+	SessionID   string `json:"session_id"`
+	WorkspaceID string `json:"workspace_id"`
 }
 
 type DataSourceDomain struct {
-	DBName  string        `json:"db_name"`
-	Sources []TableSource `json:"sources"`
+	Tables *TableSource `json:"tables,omitempty"`
 }
 
-type TraceOptions struct {
-	Verbose string `json:"verbose,omitempty"`
+type TableSource struct {
+	DBName    string   `json:"db_name"`
+	TableList []string `json:"table_list"`
 }
 
 type ExploreOptions struct {
-	PlanningMode string       `json:"planning_mode,omitempty"`
-	Trace        TraceOptions `json:"trace,omitempty"`
+	PlanningMode string     `json:"planning_mode,omitempty"`
+	Verbose      string     `json:"verbose,omitempty"`
+	LLM          *LLMConfig `json:"llm,omitempty"`
 }
 
-type ExploreRequest struct {
-	WorkspaceID string           `json:"workspace_id"`
-	Query       QueryDomain      `json:"query"`
-	Session     SessionDomain    `json:"session,omitempty"`
-	DataSource  DataSourceDomain `json:"data_source"`
-	Options     ExploreOptions   `json:"options,omitempty"`
+type LLMConfig struct {
+	Model string `json:"model"`
+}
+
+type TraceOptions struct {
+	Enabled bool `json:"enabled"`
 }
 
 // --- 客户端 ---
@@ -62,7 +68,7 @@ func NewExploreClient(catalogURL, apiKey string) *ExploreClient {
 }
 
 // QueryStream 发起 POST 请求到 Explore SSE 接口，返回 response body 流。
-func (c *ExploreClient) QueryStream(ctx context.Context, req ExploreRequest) (io.ReadCloser, error) {
+func (c *ExploreClient) QueryStream(ctx context.Context, req *ExploreRequest) (io.ReadCloser, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("marshal explore request: %w", err)
@@ -87,8 +93,9 @@ func (c *ExploreClient) QueryStream(ctx context.Context, req ExploreRequest) (io
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		errBody, _ := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
-		return nil, fmt.Errorf("upstream returned status %d", resp.StatusCode)
+		return nil, fmt.Errorf("upstream returned status %d: %s", resp.StatusCode, string(errBody))
 	}
 
 	return resp.Body, nil

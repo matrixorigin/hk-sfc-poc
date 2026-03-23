@@ -59,26 +59,35 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	sessionID := chatReq.SessionID
+	if sessionID == "" {
+		sessionID = "default"
+	}
+
 	processedQuestion := h.preProcess(chatReq.Question)
 
 	// 构造上游 ExploreRequest
-	tables := make([]TableSource, 0, len(h.cfg.Explore.Tables))
-	for _, t := range h.cfg.Explore.Tables {
-		tables = append(tables, TableSource{TableName: t})
-	}
-
-	exploreReq := ExploreRequest{
-		WorkspaceID: h.cfg.Catalog.WorkspaceID,
-		Query:       QueryDomain{Text: processedQuestion},
-		Session:     SessionDomain{SessionID: chatReq.SessionID},
-		DataSource: DataSourceDomain{
-			DBName:  h.cfg.Explore.DBName,
-			Sources: tables,
+	exploreReq := &ExploreRequest{
+		Query: QueryDomain{Question: processedQuestion},
+		Session: SessionDomain{
+			SessionID:   sessionID,
+			WorkspaceID: h.cfg.Catalog.WorkspaceID,
+		},
+		DataSources: DataSourceDomain{
+			Tables: &TableSource{
+				DBName:    h.cfg.Explore.DBName,
+				TableList: h.cfg.Explore.Tables,
+			},
 		},
 		Options: ExploreOptions{
 			PlanningMode: h.cfg.Explore.PlanningMode,
-			Trace:        TraceOptions{Verbose: h.cfg.Explore.Verbose},
+			Verbose:      h.cfg.Explore.Verbose,
 		},
+		Trace: TraceOptions{Enabled: true},
+	}
+
+	if h.cfg.Explore.LLMModel != "" {
+		exploreReq.Options.LLM = &LLMConfig{Model: h.cfg.Explore.LLMModel}
 	}
 
 	stream, err := h.client.QueryStream(r.Context(), exploreReq)
@@ -97,6 +106,7 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	flusher, canFlush := w.(http.Flusher)
 
 	scanner := bufio.NewScanner(stream)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := h.postProcess(scanner.Text())
 		_, _ = io.WriteString(w, line+"\n")

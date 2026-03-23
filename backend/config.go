@@ -28,6 +28,7 @@ type ExploreConfig struct {
 	Tables       []string `yaml:"tables"`
 	PlanningMode string   `yaml:"planning_mode"`
 	Verbose      string   `yaml:"verbose"`
+	LLMModel     string   `yaml:"llm_model"`
 }
 
 func LoadConfig(path string) (*Config, error) {

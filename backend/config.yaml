@@ -18,3 +18,4 @@ explore:
     - ccass_holdings
   planning_mode: "auto"
   verbose: "steps"
+  llm_model: "qwen3-max"
