@@ -2,7 +2,7 @@ server:
   port: 8083
 
 catalog:
-  url: "http://localhost:8082"
+  url: "http://localhost:8084"
   api_key: "${MOI_SYSTEM_API_KEY}"
   workspace_id: "${POC_WORKSPACE_ID}"
 
