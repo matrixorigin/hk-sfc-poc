@@ -123,7 +123,6 @@ function App() {
           />
           <main className="main">
             <ChatPanel
-              key={activeConv?.id || 'welcome'}
               conversation={activeConv}
               onMessagesChange={handleMessagesChange}
               onEnsureConversation={handleEnsureConversation}

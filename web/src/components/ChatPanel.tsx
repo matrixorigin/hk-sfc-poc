@@ -26,13 +26,33 @@ export function ChatPanel({
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const streamingMsgIdRef = useRef<string | null>(null)
   const sessionIdRef = useRef(conversation?.sessionId || uuidv4())
+  const prevConvIdRef = useRef<string | null | undefined>(conversation?.id)
 
-  // Sync messages from conversation prop when switching
+  // Sync messages when switching to a DIFFERENT existing conversation.
+  // Skip when transitioning from welcome (null) to a new conversation (keeps current messages).
   useEffect(() => {
-    setMessages(conversation?.messages || [])
-    sessionIdRef.current = conversation?.sessionId || uuidv4()
-    setIsLoading(false)
-    streamingMsgIdRef.current = null
+    const prevId = prevConvIdRef.current
+    const newId = conversation?.id
+    prevConvIdRef.current = newId
+
+    // Only reset if switching between two different existing conversations
+    if (prevId && newId && prevId !== newId) {
+      setMessages(conversation?.messages || [])
+      sessionIdRef.current = conversation?.sessionId || uuidv4()
+      setIsLoading(false)
+      streamingMsgIdRef.current = null
+    }
+    // When going from null (welcome) to a new conv, just update sessionId
+    if (!prevId && newId) {
+      sessionIdRef.current = conversation?.sessionId || uuidv4()
+    }
+    // When going to null (new chat clicked from sidebar), reset
+    if (prevId && !newId) {
+      setMessages([])
+      setInput('')
+      setIsLoading(false)
+      streamingMsgIdRef.current = null
+    }
   }, [conversation?.id])
 
   // Notify parent of message changes
