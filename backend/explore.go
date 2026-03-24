@@ -29,12 +29,17 @@ type SessionDomain struct {
 }
 
 type DataSourceDomain struct {
-	Tables *TableSource `json:"tables,omitempty"`
+	Tables         *TableSource       `json:"tables,omitempty"`
+	KnowledgeBases []KnowledgeBaseRef `json:"knowledge_bases,omitempty"`
 }
 
 type TableSource struct {
 	DBName    string   `json:"db_name"`
 	TableList []string `json:"table_list"`
+}
+
+type KnowledgeBaseRef struct {
+	KnowledgeBaseID int64 `json:"knowledge_base_id"`
 }
 
 type ExploreOptions struct {

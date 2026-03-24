@@ -24,11 +24,12 @@ type CatalogConfig struct {
 }
 
 type ExploreConfig struct {
-	DBName       string   `yaml:"db_name"`
-	Tables       []string `yaml:"tables"`
-	PlanningMode string   `yaml:"planning_mode"`
-	Verbose      string   `yaml:"verbose"`
-	LLMModel     string   `yaml:"llm_model"`
+	DBName           string  `yaml:"db_name"`
+	Tables           []string `yaml:"tables"`
+	PlanningMode     string  `yaml:"planning_mode"`
+	Verbose          string  `yaml:"verbose"`
+	LLMModel         string  `yaml:"llm_model"`
+	KnowledgeBaseID  int64   `yaml:"knowledge_base_id"`
 }
 
 func LoadConfig(path string) (*Config, error) {

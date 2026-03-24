@@ -78,6 +78,12 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				DBName:    h.cfg.Explore.DBName,
 				TableList: h.cfg.Explore.Tables,
 			},
+			KnowledgeBases: func() []KnowledgeBaseRef {
+				if h.cfg.Explore.KnowledgeBaseID > 0 {
+					return []KnowledgeBaseRef{{KnowledgeBaseID: h.cfg.Explore.KnowledgeBaseID}}
+				}
+				return nil
+			}(),
 		},
 		Options: ExploreOptions{
 			PlanningMode: h.cfg.Explore.PlanningMode,
