@@ -99,6 +99,7 @@ export function ChatPanel({
       sqlResults: [],
       sqlStatements: [],
       isStreaming: true,
+      phase: 'thinking',
     }
 
     setMessages((prev) => [...prev, userMsg, assistantMsg])
@@ -137,7 +138,7 @@ export function ChatPanel({
                 <div
                   key={i}
                   className="example-card"
-                  onClick={() => handleSend(ex.text)}
+                  onClick={() => { setInput(ex.text); inputRef.current?.focus() }}
                 >
                   <span className="example-icon">{ex.icon}</span>
                   {ex.text}

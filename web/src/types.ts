@@ -15,6 +15,8 @@ export interface SQLResult {
   total_count?: number
 }
 
+export type Phase = 'thinking' | 'planning' | 'querying' | 'answering' | 'done'
+
 export interface Message {
   id: string
   role: 'user' | 'assistant'
@@ -22,6 +24,7 @@ export interface Message {
   sqlResults: SQLResult[]
   sqlStatements: string[]
   isStreaming: boolean
+  phase?: Phase
   error?: string
 }
 

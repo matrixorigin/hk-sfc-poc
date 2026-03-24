@@ -594,6 +594,29 @@ body {
   border-color: rgba(255,255,255,0.3);
 }
 
+/* Phase progress indicator */
+.phase-indicator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #64748b;
+  font-size: 13px;
+  padding: 4px 0;
+}
+
+.phase-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #e2e8f0;
+  border-top-color: #0f3460;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 /* Blinking cursor animation */
 @keyframes blink {
   0%, 100% { opacity: 1; }

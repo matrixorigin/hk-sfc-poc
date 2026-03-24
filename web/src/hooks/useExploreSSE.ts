@@ -12,7 +12,6 @@ export function useExploreSSE({ onUpdate, onDone, onError }: UseExploreSSEOption
 
   const send = useCallback(
     async (question: string, sessionId: string) => {
-      // 取消之前的请求
       if (abortControllerRef.current) {
         abortControllerRef.current.abort()
       }
@@ -22,9 +21,7 @@ export function useExploreSSE({ onUpdate, onDone, onError }: UseExploreSSEOption
       try {
         const response = await fetch('/api/chat', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ question, session_id: sessionId }),
           signal: controller.signal,
         })
@@ -49,13 +46,11 @@ export function useExploreSSE({ onUpdate, onDone, onError }: UseExploreSSEOption
 
           buffer += decoder.decode(value, { stream: true })
           const lines = buffer.split('\n')
-          // 保留最后一行（可能不完整）
           buffer = lines.pop() ?? ''
 
           for (const line of lines) {
             const trimmed = line.trim()
             if (!trimmed.startsWith('data:')) continue
-
             const jsonStr = trimmed.slice(5).trim()
             if (!jsonStr) continue
 
@@ -65,7 +60,6 @@ export function useExploreSSE({ onUpdate, onDone, onError }: UseExploreSSEOption
             } catch {
               continue
             }
-
             handleEvent(event)
           }
         }
@@ -79,9 +73,28 @@ export function useExploreSSE({ onUpdate, onDone, onError }: UseExploreSSEOption
 
   function handleEvent(event: ExploreEvent) {
     switch (event.event) {
-      case 'synthesis.delta': {
-        const delta: string = event.data?.delta ?? ''
-        onUpdate((msg) => ({ ...msg, content: msg.content + delta }))
+      case 'run.started': {
+        onUpdate((msg) => ({ ...msg, phase: 'thinking' }))
+        break
+      }
+      case 'planning.plan.ready':
+      case 'planning.rewrite.ready': {
+        onUpdate((msg) => ({ ...msg, phase: 'planning' }))
+        break
+      }
+      case 'sql.schema.ready':
+      case 'sql.generated': {
+        // Store SQL but don't change phase to 'querying' until first sql.generated
+        const sql: string = event.data?.sql ?? ''
+        if (event.event === 'sql.generated' && sql) {
+          onUpdate((msg) => ({
+            ...msg,
+            phase: 'querying',
+            sqlStatements: [...msg.sqlStatements, sql],
+          }))
+        } else {
+          onUpdate((msg) => ({ ...msg, phase: msg.phase === 'thinking' ? 'planning' : msg.phase }))
+        }
         break
       }
       case 'sql.result': {
@@ -97,25 +110,39 @@ export function useExploreSSE({ onUpdate, onDone, onError }: UseExploreSSEOption
         }))
         break
       }
-      case 'sql.generated': {
-        const sql: string = event.data?.sql ?? ''
-        if (sql) {
-          onUpdate((msg) => ({
-            ...msg,
-            sqlStatements: [...msg.sqlStatements, sql],
-          }))
-        }
+      case 'synthesis.delta': {
+        const delta: string = event.data?.delta ?? ''
+        onUpdate((msg) => ({
+          ...msg,
+          phase: 'answering',
+          content: msg.content + delta,
+        }))
         break
       }
       case 'run.error': {
         const errMsg: string = event.data?.message ?? event.data?.error ?? 'Unknown error'
-        onUpdate((msg) => ({ ...msg, error: errMsg }))
-        onError(errMsg)
+        // Only surface non-recoverable errors or if it's the final error
+        if (event.data?.recoverable === false) {
+          onUpdate((msg) => ({ ...msg, error: errMsg }))
+          onError(errMsg)
+        }
         break
       }
-      case 'run.completed':
       case 'synthesis.done': {
-        onUpdate((msg) => ({ ...msg, isStreaming: false }))
+        onUpdate((msg) => ({ ...msg, isStreaming: false, phase: 'done' }))
+        onDone()
+        break
+      }
+      case 'run.completed': {
+        onUpdate((msg) => ({
+          ...msg,
+          isStreaming: false,
+          phase: 'done',
+          // If completed with failed status and no content, show error
+          ...(event.data?.status === 'failed' && !msg.content
+            ? { error: 'Query failed. Please try rephrasing your question.' }
+            : {}),
+        }))
         onDone()
         break
       }
