@@ -45,6 +45,7 @@ Knowledge Base ID: `10001` (name: hk-sfc-semantic)
 | capital_industry_relationship | ms_v_stock_capital, ds_t_int_hsicl_dtl | 市值与行业通过 STKCD=STOCK_CODE 关联 |
 | news_trading_relationship | sehknews, ms_t_stk_sis | 新闻与行情通过 securitycode=SISTKC + 日期关联 |
 | ccass_comparison_model | ccass_holdings | CCASS 跨日对比通过 self-join on stock_code + participant_id |
+| sql_dialect_constraints | 全部 7 张表 | MO SQL 限制：窗口函数不能在 WHERE 里、JOIN 不能用子查询、标量子查询不支持非等值聚合 |
 
 ### Synonyms（同义词）— 5 条
 
@@ -57,6 +58,11 @@ Knowledge Base ID: `10001` (name: hk-sfc-semantic)
 | price_synonyms | ms_t_stk_sis | closing price, 收盘价, SICLSE |
 
 ## 变更历史
+
+### v3 (2026-03-24)
+- 更新 fin_yr_format：明确不同公司裁年月份不同，不能假设 12 月
+- 新增 sql_dialect_constraints：描述 MO SQL 方言限制（窗口函数不能在 WHERE、JOIN 不支持子查询等）
+- 总计 19 条（glossary 4 + logic 10 + synonyms 5）
 
 ### v2 (2026-03-24)
 - 重新组织：从"指令式"改为"描述式"

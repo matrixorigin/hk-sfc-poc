@@ -120,6 +120,10 @@ add "logic" "ccass_comparison_model" "CCASS day-over-day comparison model" \
   '"To find CCASS inter-broker movements, self-join ccass_holdings for two consecutive dates on stock_code + participant_id. Compare shareholding values between the two dates. Filter out cases where the earlier date shareholding is 0 to avoid division by zero."' \
   '"ccass_holdings"'
 
+add "logic" "sql_dialect_constraints" "Database SQL dialect constraints" \
+  '"This database has the following SQL constraints: 1) Window functions (LAG, LEAD, ROW_NUMBER, AVG OVER, etc.) cannot be used directly in WHERE clauses. Always wrap them in a CTE or subquery first, then filter in an outer query. 2) Subqueries in JOIN conditions are not supported. Use CTEs (WITH ... AS) instead. 3) Scalar subqueries with non-equal predicates (< > >= <=) and aggregation are not supported. Use CTEs with window functions instead. Preferred pattern: WITH cte AS (SELECT ..., LAG(...) OVER (...) AS prev_val FROM ...) SELECT ... FROM cte WHERE prev_val IS NOT NULL AND ..."' \
+  '"ms_t_stk_hsi","ms_t_stk_sis","ms_v_stock_capital","ds_t_int_hsicl_dtl","sehknews","profit_loss","ccass_holdings"'
+
 # ============================================================
 # Step 5: Synonyms（同义词）
 # ============================================================
