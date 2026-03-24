@@ -26,3 +26,12 @@ export interface Message {
 }
 
 export type Language = 'en' | 'zh'
+
+export interface Conversation {
+  id: string
+  sessionId: string
+  title: string
+  messages: Message[]
+  createdAt: number
+  updatedAt: number
+}

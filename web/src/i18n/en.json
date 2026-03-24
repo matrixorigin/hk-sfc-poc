@@ -14,5 +14,6 @@
   "example1": "What was the total trading volume when HSI dropped over 2%?",
   "example2": "Which 3 industries saw the largest market cap decline?",
   "example3": "List stocks above 50-day moving average for 10 days",
-  "example4": "Show revenue growth of stock 88 from 2023 to 2025"
+  "example4": "Show revenue growth of stock 88 from 2023 to 2025",
+  "noConversations": "No conversations yet"
 }

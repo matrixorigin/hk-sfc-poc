@@ -1,20 +1,46 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { v4 as uuidv4 } from 'uuid'
-import type { Message } from '../types'
+import type { Message, Conversation } from '../types'
 import { useT } from '../i18n'
 import { useExploreSSE } from '../hooks/useExploreSSE'
 import { MessageBubble } from './MessageBubble'
 
-export function ChatPanel() {
+interface ChatPanelProps {
+  conversation: Conversation | null
+  onMessagesChange: (messages: Message[]) => void
+  onEnsureConversation: () => Conversation
+  onNewChat: () => void
+}
+
+export function ChatPanel({
+  conversation,
+  onMessagesChange,
+  onEnsureConversation,
+  onNewChat,
+}: ChatPanelProps) {
   const { t } = useT()
-  const [messages, setMessages] = useState<Message[]>([])
+  const [messages, setMessages] = useState<Message[]>(conversation?.messages || [])
   const [input, setInput] = useState('')
-  const [sessionId] = useState(() => uuidv4())
   const [isLoading, setIsLoading] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
-
   const streamingMsgIdRef = useRef<string | null>(null)
+  const sessionIdRef = useRef(conversation?.sessionId || uuidv4())
+
+  // Sync messages from conversation prop when switching
+  useEffect(() => {
+    setMessages(conversation?.messages || [])
+    sessionIdRef.current = conversation?.sessionId || uuidv4()
+    setIsLoading(false)
+    streamingMsgIdRef.current = null
+  }, [conversation?.id])
+
+  // Notify parent of message changes
+  useEffect(() => {
+    if (conversation) {
+      onMessagesChange(messages)
+    }
+  }, [messages])
 
   const onUpdate = useCallback((updater: (msg: Message) => Message) => {
     const id = streamingMsgIdRef.current
@@ -42,7 +68,7 @@ export function ChatPanel() {
     streamingMsgIdRef.current = null
   }, [])
 
-  const { send, cancel } = useExploreSSE({ onUpdate, onDone, onError })
+  const { send } = useExploreSSE({ onUpdate, onDone, onError })
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -51,6 +77,10 @@ export function ChatPanel() {
   const handleSend = (text?: string) => {
     const question = (text || input).trim()
     if (!question || isLoading) return
+
+    // Ensure a conversation exists
+    const conv = onEnsureConversation()
+    sessionIdRef.current = conv.sessionId
 
     const userMsg: Message = {
       id: uuidv4(),
@@ -76,7 +106,7 @@ export function ChatPanel() {
     setInput('')
     setIsLoading(true)
 
-    send(question, sessionId)
+    send(question, sessionIdRef.current)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -84,14 +114,6 @@ export function ChatPanel() {
       e.preventDefault()
       handleSend()
     }
-  }
-
-  const handleNewChat = () => {
-    cancel()
-    setMessages([])
-    setIsLoading(false)
-    streamingMsgIdRef.current = null
-    inputRef.current?.focus()
   }
 
   const examples = [
@@ -134,7 +156,7 @@ export function ChatPanel() {
       {/* Input area */}
       <div style={{ borderTop: '1px solid #e4e7ec', background: '#fff' }}>
         <div className="input-area">
-          <button onClick={handleNewChat} className="btn-new-chat">
+          <button onClick={onNewChat} className="btn-new-chat">
             ✦ {t('newChat')}
           </button>
           <div className="input-wrapper">
