@@ -61,7 +61,7 @@ export function Chart({ result }: ChartProps) {
   }
 
   return (
-    <div style={{ marginTop: 12 }}>
+    <div className="chart-wrapper" style={{ marginTop: 12, padding: 12 }}>
       <ReactECharts option={option} style={{ height: 280 }} />
     </div>
   )

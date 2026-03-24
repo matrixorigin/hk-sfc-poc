@@ -10,19 +10,7 @@ export function LangSwitch() {
   }
 
   return (
-    <button
-      onClick={toggle}
-      style={{
-        padding: '4px 12px',
-        border: '1px solid #d0d0d0',
-        borderRadius: 6,
-        background: '#fff',
-        cursor: 'pointer',
-        fontSize: 14,
-        fontWeight: 500,
-        color: '#333',
-      }}
-    >
+    <button onClick={toggle} className="lang-switch">
       {lang === 'en' ? '中文' : 'EN'}
     </button>
   )

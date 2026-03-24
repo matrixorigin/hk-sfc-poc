@@ -1,11 +1,18 @@
 {
   "title": "HK Market Data Explorer",
+  "subtitle": "AI-Powered Financial Data Analysis",
   "placeholder": "Ask a question about Hong Kong market data...",
   "send": "Send",
-  "thinking": "Analyzing...",
+  "thinking": "Analyzing",
   "showSQL": "Show SQL",
   "hideSQL": "Hide SQL",
   "noData": "No data returned",
   "error": "An error occurred",
-  "newChat": "New Chat"
+  "newChat": "New Chat",
+  "welcomeTitle": "Hong Kong Market Data Explorer",
+  "welcomeDesc": "Ask questions about stock prices, market indices, industry classifications, news, and financial statements in natural language.",
+  "example1": "What was the total trading volume when HSI dropped over 2%?",
+  "example2": "Which 3 industries saw the largest market cap decline?",
+  "example3": "List stocks above 50-day moving average for 10 days",
+  "example4": "Show revenue growth of stock 88 from 2023 to 2025"
 }

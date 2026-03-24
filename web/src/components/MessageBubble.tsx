@@ -14,96 +14,64 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   const isUser = message.role === 'user'
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        justifyContent: isUser ? 'flex-end' : 'flex-start',
-        marginBottom: 16,
-        padding: '0 16px',
-      }}
-    >
-      <div
-        style={{
-          maxWidth: '80%',
-          background: isUser ? '#1677ff' : '#f0f0f0',
-          color: isUser ? '#fff' : '#1a1a1a',
-          borderRadius: isUser ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
-          padding: '10px 16px',
-          wordBreak: 'break-word',
-        }}
-      >
-        {/* 文本内容 */}
-        {message.content && (
-          <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
-            {message.content}
-            {message.isStreaming && (
-              <span className="cursor" style={{ marginLeft: 2 }}>
-                |
-              </span>
-            )}
-          </div>
-        )}
+    <div className={`message-row ${isUser ? 'user' : ''}`}>
+      <div className={`message-avatar ${isUser ? 'user' : 'ai'}`}>
+        {isUser ? '👤' : '🤖'}
+      </div>
+      <div className="message-content">
+        <div className={`message-bubble ${isUser ? 'user' : 'ai'}`}>
+          {/* Text content */}
+          {message.content && (
+            <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.65 }}>
+              {message.content}
+              {message.isStreaming && (
+                <span className="cursor" style={{ marginLeft: 2 }}>▊</span>
+              )}
+            </div>
+          )}
 
-        {/* 流式思考中占位 */}
-        {message.isStreaming && !message.content && (
-          <div style={{ color: isUser ? '#fff' : '#888', fontStyle: 'italic' }}>
-            {t('thinking')}
-            <span className="cursor" style={{ marginLeft: 2 }}>
-              |
-            </span>
-          </div>
-        )}
+          {/* Thinking animation */}
+          {message.isStreaming && !message.content && (
+            <div className="thinking-dots" style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#94a3b8' }}>
+              <span>{t('thinking')}</span>
+              <span>·</span>
+              <span>·</span>
+              <span>·</span>
+            </div>
+          )}
 
-        {/* 错误信息 */}
-        {message.error && (
-          <div style={{ color: '#ff4d4f', marginTop: 8, fontSize: 13 }}>
-            {t('error')}: {message.error}
-          </div>
-        )}
+          {/* Error */}
+          {message.error && (
+            <div className="error-text">
+              {t('error')}: {message.error}
+            </div>
+          )}
 
-        {/* 数据表格 + 图表 */}
-        {!isUser && message.sqlResults.map((result, i) => (
-          <div key={i} style={{ marginTop: 12 }}>
-            <DataTable result={result} />
-            <Chart result={result} />
-          </div>
-        ))}
+          {/* Data table + chart */}
+          {!isUser && message.sqlResults.map((result, i) => (
+            <div key={i}>
+              <DataTable result={result} />
+              <Chart result={result} />
+            </div>
+          ))}
 
-        {/* SQL 折叠 */}
-        {!isUser && message.sqlStatements.length > 0 && (
-          <div style={{ marginTop: 10 }}>
-            <button
-              onClick={() => setShowSQL(!showSQL)}
-              style={{
-                background: 'none',
-                border: '1px solid #ccc',
-                borderRadius: 4,
-                padding: '2px 8px',
-                cursor: 'pointer',
-                fontSize: 12,
-                color: '#555',
-              }}
-            >
-              {showSQL ? t('hideSQL') : t('showSQL')}
-            </button>
-            {showSQL && (
-              <pre
-                style={{
-                  marginTop: 8,
-                  padding: '8px 12px',
-                  background: '#1e1e1e',
-                  color: '#d4d4d4',
-                  borderRadius: 6,
-                  fontSize: 12,
-                  overflowX: 'auto',
-                  whiteSpace: 'pre-wrap',
-                }}
+          {/* SQL toggle */}
+          {!isUser && message.sqlStatements.length > 0 && (
+            <div>
+              <button
+                onClick={() => setShowSQL(!showSQL)}
+                className="sql-toggle"
               >
-                {message.sqlStatements.join('\n\n')}
-              </pre>
-            )}
-          </div>
-        )}
+                {showSQL ? '▾' : '▸'} {showSQL ? t('hideSQL') : t('showSQL')}
+              </button>
+              {showSQL && (
+                <pre className="sql-code">
+                  {message.sqlStatements.join('\n\n')}
+                </pre>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

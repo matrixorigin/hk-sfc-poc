@@ -13,7 +13,13 @@ function App() {
     <LangContext.Provider value={{ lang, setLang, t }}>
       <div className="app">
         <header className="header">
-          <h1 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>{t('title')}</h1>
+          <div className="header-left">
+            <div className="header-logo">HK</div>
+            <div>
+              <h1>{t('title')}</h1>
+              <div className="header-subtitle">{t('subtitle')}</div>
+            </div>
+          </div>
           <LangSwitch />
         </header>
         <main className="main">
