@@ -65,7 +65,7 @@ add "glossary" "material_news_definition" "Material news definition" \
   '"sehknews"'
 
 add "glossary" "fin_yr_format" "Financial year format in profit_loss" \
-  '"fin_yr in profit_loss is in YYYYMM format. The MM part indicates the fiscal year-end month: 202503 means fiscal year ending March 2025, 202312 means fiscal year ending December 2023. Quarter=Final means annual results, Quarter=Interim means half-year."' \
+  '"fin_yr in profit_loss is in YYYYMM format where MM is the fiscal year-end month. Different companies have different fiscal year-end months (e.g. 03=March, 06=June, 09=September, 12=December). Do NOT assume all companies use December (12). When querying revenue for a specific stock, first check what fin_yr values exist for that stock, or use a range query like fin_yr >= 202301 AND fin_yr <= 202512 to capture all fiscal periods."' \
   '"profit_loss"'
 
 add "glossary" "trade_date_column" "Standard date columns" \

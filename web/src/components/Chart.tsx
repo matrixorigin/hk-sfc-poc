@@ -10,14 +10,30 @@ function isNumeric(value: any): boolean {
   return !isNaN(Number(value))
 }
 
+// Check if x-axis values look like a time series or ordered sequence
+function isTimeSeries(values: string[]): boolean {
+  if (values.length < 3) return false
+  // Check if values contain date-like patterns
+  const datePattern = /\d{4}[-/]\d{2}|^\d{6,8}$/
+  return values.filter((v) => datePattern.test(v)).length >= values.length * 0.5
+}
+
 function canRenderChart(result: SQLResult): boolean {
+  // Need at least 2 columns and 3 data points for a meaningful chart
   if (result.columns.length < 2) return false
-  if (!result.rows.length) return false
-  // 检查是否至少有一列数值
-  const hasNumericCol = result.columns.some((_, ci) =>
-    result.rows.some((row) => isNumeric(row[ci]))
+  if (result.rows.length < 3) return false
+
+  // Need at least one numeric column (besides x-axis)
+  const hasNumericCol = result.columns.slice(1).some((_, ci) =>
+    result.rows.some((row) => isNumeric(row[ci + 1]))
   )
-  return hasNumericCol
+  if (!hasNumericCol) return false
+
+  // X-axis should be a time series or ordered sequence, not random category names
+  const xValues = result.rows.map((row) => String(row[0] ?? ''))
+  if (!isTimeSeries(xValues)) return false
+
+  return true
 }
 
 export function Chart({ result }: ChartProps) {
@@ -25,7 +41,6 @@ export function Chart({ result }: ChartProps) {
 
   const { columns, rows } = result
 
-  // 第一列作为 x 轴，其余数值列作为系列
   const xData = rows.map((row) => String(row[0] ?? ''))
 
   const seriesCols = columns.slice(1).map((col, i) => ({
@@ -39,7 +54,7 @@ export function Chart({ result }: ChartProps) {
 
   const series = numericSeries.map(({ col, colIndex }) => ({
     name: col,
-    type: 'line',
+    type: 'line' as const,
     data: rows.map((row) => {
       const v = row[colIndex]
       return isNumeric(v) ? Number(v) : null
@@ -48,21 +63,25 @@ export function Chart({ result }: ChartProps) {
   }))
 
   const option = {
-    tooltip: { trigger: 'axis' },
-    legend: { data: numericSeries.map((s) => s.col) },
+    tooltip: { trigger: 'axis' as const },
+    legend: {
+      data: numericSeries.map((s) => s.col),
+      bottom: 0,
+      type: 'scroll' as const,
+    },
     xAxis: {
-      type: 'category',
+      type: 'category' as const,
       data: xData,
       axisLabel: { rotate: xData.length > 10 ? 30 : 0 },
     },
-    yAxis: { type: 'value' },
+    yAxis: { type: 'value' as const },
     series,
-    grid: { left: 40, right: 20, top: 40, bottom: 40 },
+    grid: { left: 60, right: 20, top: 30, bottom: 50 },
   }
 
   return (
     <div className="chart-wrapper" style={{ marginTop: 12, padding: 12 }}>
-      <ReactECharts option={option} style={{ height: 280 }} />
+      <ReactECharts option={option} style={{ height: 300 }} />
     </div>
   )
 }
