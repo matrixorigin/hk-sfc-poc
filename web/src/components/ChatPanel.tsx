@@ -33,6 +33,7 @@ export function ChatPanel({
   useEffect(() => {
     const prevId = prevConvIdRef.current
     const newId = conversation?.id
+    console.log('[useEffect conv change]', { prevId, newId, messagesLen: messages.length })
     prevConvIdRef.current = newId
 
     // Only reset if switching between two different existing conversations
@@ -96,10 +97,12 @@ export function ChatPanel({
 
   const handleSend = (text?: string) => {
     const question = (text || input).trim()
+    console.log('[handleSend]', { question, isLoading, input, text })
     if (!question || isLoading) return
 
     // Ensure a conversation exists
     const conv = onEnsureConversation()
+    console.log('[handleSend] conv created', { id: conv.id, sessionId: conv.sessionId })
     sessionIdRef.current = conv.sessionId
 
     const userMsg: Message = {

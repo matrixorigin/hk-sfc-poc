@@ -594,6 +594,73 @@ body {
   border-color: rgba(255,255,255,0.3);
 }
 
+/* Markdown content in AI messages */
+.markdown-content {
+  line-height: 1.65;
+}
+
+.markdown-content p {
+  margin: 0 0 8px 0;
+}
+
+.markdown-content p:last-child {
+  margin-bottom: 0;
+}
+
+.markdown-content strong {
+  font-weight: 600;
+}
+
+.markdown-content table {
+  border-collapse: collapse;
+  font-size: 12px;
+  margin: 8px 0;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #e4e7ec;
+}
+
+.markdown-content th {
+  background: #f8fafc;
+  color: #475569;
+  font-weight: 600;
+  text-align: left;
+  padding: 6px 10px;
+  border: 1px solid #e4e7ec;
+}
+
+.markdown-content td {
+  padding: 4px 10px;
+  border: 1px solid #f1f5f9;
+  color: #334155;
+}
+
+.markdown-content code {
+  background: #f1f5f9;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+
+.markdown-content pre {
+  background: #1e1e2e;
+  color: #cdd6f4;
+  padding: 10px 14px;
+  border-radius: 8px;
+  overflow-x: auto;
+  font-size: 12px;
+  margin: 8px 0;
+}
+
+.markdown-content ul, .markdown-content ol {
+  padding-left: 20px;
+  margin: 4px 0;
+}
+
+.markdown-content li {
+  margin: 2px 0;
+}
+
 /* Phase progress indicator */
 .phase-indicator {
   display: flex;

@@ -1,7 +1,8 @@
 import { useState } from 'react'
+import Markdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import type { Message } from '../types'
 import { useT } from '../i18n'
-import { DataTable } from './DataTable'
 import { Chart } from './Chart'
 
 interface MessageBubbleProps {
@@ -21,7 +22,6 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   const isUser = message.role === 'user'
   const isDone = !message.isStreaming || message.phase === 'done'
 
-  // Phase-based progress label
   const phaseLabel = message.phase && phaseLabels[message.phase]
     ? phaseLabels[message.phase][lang]
     : null
@@ -33,7 +33,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
       </div>
       <div className="message-content">
         <div className={`message-bubble ${isUser ? 'user' : 'ai'}`}>
-          {/* Phase progress indicator (before answer starts) */}
+          {/* Phase progress indicator */}
           {!isUser && message.isStreaming && !message.content && (
             <div className="phase-indicator">
               <div className="phase-spinner" />
@@ -41,12 +41,16 @@ export function MessageBubble({ message }: MessageBubbleProps) {
             </div>
           )}
 
-          {/* Text content */}
+          {/* Text content with Markdown rendering */}
           {message.content && (
-            <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.65 }}>
-              {message.content}
+            <div className="markdown-content">
+              {isUser ? (
+                <span>{message.content}</span>
+              ) : (
+                <Markdown remarkPlugins={[remarkGfm]}>{message.content}</Markdown>
+              )}
               {message.isStreaming && message.phase === 'answering' && (
-                <span className="cursor" style={{ marginLeft: 2 }}>▊</span>
+                <span className="cursor">▊</span>
               )}
             </div>
           )}
@@ -58,15 +62,20 @@ export function MessageBubble({ message }: MessageBubbleProps) {
             </div>
           )}
 
-          {/* Data table + chart — only show when we have results */}
-          {!isUser && message.sqlResults.map((result, i) => (
-            <div key={i}>
-              <DataTable result={result} />
-              <Chart result={result} />
-            </div>
-          ))}
+          {/* Chart — show only for the most detailed result (most columns) */}
+          {!isUser && isDone && message.sqlResults.length > 0 && (() => {
+            // Pick the result with most columns for the chart
+            const best = message.sqlResults.reduce((a, b) =>
+              b.columns.length > a.columns.length ? b : a
+            )
+            return (
+              <div style={{ marginTop: 12 }}>
+                <Chart result={best} />
+              </div>
+            )
+          })()}
 
-          {/* SQL toggle — only show after streaming is done */}
+          {/* SQL toggle — only after done */}
           {!isUser && isDone && message.sqlStatements.length > 0 && (
             <div>
               <button

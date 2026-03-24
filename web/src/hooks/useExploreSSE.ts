@@ -104,10 +104,28 @@ export function useExploreSSE({ onUpdate, onDone, onError }: UseExploreSSEOption
           sql: event.data?.sql,
           total_count: event.data?.total_count,
         }
-        onUpdate((msg) => ({
-          ...msg,
-          sqlResults: [...msg.sqlResults, result],
-        }))
+        // Keep only the result with the most columns (most detailed).
+        // If a new result has more columns, replace; if same or fewer, skip.
+        onUpdate((msg) => {
+          const colSig = JSON.stringify(result.columns)
+          // Skip exact duplicates (same columns + same row count)
+          const isDup = msg.sqlResults.some(
+            (r) => JSON.stringify(r.columns) === colSig && r.rows.length === result.rows.length
+          )
+          if (isDup) return msg
+
+          // If existing result is a subset (fewer columns, similar data), replace it
+          const filtered = msg.sqlResults.filter(
+            (r) => !(r.rows.length === result.rows.length && r.columns.length < result.columns.length)
+          )
+          // If new result is a subset of existing, skip
+          const isSubset = msg.sqlResults.some(
+            (r) => r.rows.length === result.rows.length && r.columns.length >= result.columns.length
+          )
+          if (isSubset) return msg
+
+          return { ...msg, sqlResults: [...filtered, result] }
+        })
         break
       }
       case 'synthesis.delta': {
