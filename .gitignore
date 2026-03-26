@@ -3,8 +3,7 @@ node_modules/
 .DS_Store
 *.pyc
 /tmp/
-POC DATA_01/.DS_Store
-POC DATA_01/数据/.DS_Store
-POC DATA_01/数据/profit_loss/.DS_Store
+POC DATA_01/
 .env
 backend/hk-poc-backend
+images/
