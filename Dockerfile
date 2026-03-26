@@ -11,6 +11,7 @@ RUN npm run build
 
 # ---- Stage 2: 后端编译 ----
 FROM golang:1.24-bookworm AS backend
+ENV GOPROXY=https://goproxy.cn,direct
 WORKDIR /build
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
