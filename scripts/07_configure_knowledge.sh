@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# HK SFC POC - 语义知识库配置脚本
+# HK SFC POC - 语义知识库配置脚本（v2: 精简版，只保留引擎无法从 schema 推断的业务知识）
 # 用法: bash scripts/07_configure_knowledge.sh
 #
 # 前置条件: Catalog 已启动, .env 中有 MOI_SYSTEM_API_KEY 和 POC_WORKSPACE_ID
@@ -51,107 +51,95 @@ done
 log "已删除 $count 条旧条目"
 
 # ============================================================
-# Step 2: Glossary（术语定义）
+# Step 2: 数据范围（引擎无法从 schema 推断）
 # ============================================================
 log ""
-log "配置 Glossary..."
+log "配置数据范围..."
 
-add "glossary" "closing_field" "CLOSING field in ms_t_stk_hsi" \
-  '"The CLOSING column in ms_t_stk_hsi indicates record type: 0 = intraday snapshot captured during trading hours, 9 = end-of-day official closing record."' \
+add "logic" "data_coverage_hsi" "ms_t_stk_hsi date range" \
+  '"ms_t_stk_hsi has trade_date from 2025-01-02 to 2026-03-03."' \
   '"ms_t_stk_hsi"'
 
-add "glossary" "material_news_definition" "Material news definition" \
-  '"Material news announcements are records in sehknews where typeid IN (0, 3, 7, 8, 10, 14, 18, 21, 25, 26, 28, 32)."' \
-  '"sehknews"'
-
-add "glossary" "fin_yr_format" "Financial year format in profit_loss" \
-  '"fin_yr in profit_loss is in YYYYMM format where MM is the fiscal year-end month. Different companies have different fiscal year-end months (e.g. 03=March, 06=June, 09=September, 12=December). Do NOT assume all companies use December (12). When querying revenue for a specific stock, first check what fin_yr values exist for that stock, or use a range query like fin_yr >= 202301 AND fin_yr <= 202512 to capture all fiscal periods."' \
-  '"profit_loss"'
-
-add "glossary" "trade_date_column" "Standard date columns" \
-  '"trade_date (DATE type) is available in ms_t_stk_hsi and ms_t_stk_sis. ref_date (DATE type) is available in ms_v_stock_capital. Use these standard DATE columns for filtering, ordering, and joins."' \
-  '"ms_t_stk_hsi","ms_t_stk_sis","ms_v_stock_capital"'
-
-# ============================================================
-# Step 3: Logic（数据模型特征）
-# ============================================================
-log ""
-log "配置 Logic（数据模型）..."
-
-add "logic" "hsi_data_granularity" "HSI table data granularity" \
-  '"ms_t_stk_hsi contains approximately 11,000 intraday snapshot records per trading day, capturing index values every few seconds. Only 1 record per day has CLOSING=9 which is the official end-of-day closing value. For daily-level analysis, the table must be filtered to CLOSING=9 first, otherwise JOINs with other daily-granularity tables will produce billions of rows."' \
-  '"ms_t_stk_hsi"'
-
-add "logic" "sis_data_granularity" "SIS table data granularity" \
-  '"ms_t_stk_sis has exactly 1 record per stock per trading day. Each row contains that stock'\''s daily closing price, high, low, and trading volume."' \
+add "logic" "data_coverage_sis" "ms_t_stk_sis date range" \
+  '"ms_t_stk_sis has trade_date from 2025-01-02 to 2026-03-03."' \
   '"ms_t_stk_sis"'
 
-add "logic" "industry_classification_model" "Industry classification data model" \
-  '"ds_t_int_hsicl_dtl only records industry classification CHANGES, not monthly snapshots. If a stock has no record for a given month, it retains its most recent classification (carry forward). When multiple records exist in one month for the same stock, the one with the latest MODIFIED_DATE is the effective classification."' \
+add "logic" "data_coverage_capital" "ms_v_stock_capital date range" \
+  '"ms_v_stock_capital has ref_date monthly from 2025-01-31 to 2025-12-31 (12 months, no 2024 data). H1 2025 market cap comparison should use ref_date 2025-01-31 vs 2025-06-30."' \
+  '"ms_v_stock_capital"'
+
+add "logic" "data_coverage_industry" "ds_t_int_hsicl_dtl date range" \
+  '"ds_t_int_hsicl_dtl has MODIFIED_DATE from 2025-01-01 to 2025-12-31."' \
   '"ds_t_int_hsicl_dtl"'
 
-add "logic" "stock_capital_granularity" "Stock capital data granularity" \
-  '"ms_v_stock_capital has 1 record per stock per month-end (12 months in 2025). SICAP is the market capitalization."' \
-  '"ms_v_stock_capital"'
+add "logic" "data_coverage_news" "sehknews date range" \
+  '"sehknews has timestamp from 2025-01-01 to 2025-12-31."' \
+  '"sehknews"'
 
-add "logic" "profit_loss_stock_code_format" "Profit loss stock code not zero-padded" \
-  '"In profit_loss, stock_code is NOT zero-padded (e.g. 88 instead of 00088). Other tables use 5-digit zero-padded codes. To join profit_loss with other tables, use LPAD(stock_code, 5, '\''0'\'')."' \
+add "logic" "data_coverage_profit" "profit_loss date range" \
+  '"profit_loss has fin_yr from 202003 to 202509."' \
   '"profit_loss"'
 
-# ============================================================
-# Step 4: Logic（表间关系）
-# ============================================================
-log ""
-log "配置 Logic（表间关系）..."
-
-add "logic" "hsi_sis_relationship" "How to join HSI with SIS" \
-  '"ms_t_stk_hsi and ms_t_stk_sis are both keyed by trade_date. However, HSI has ~11,000 rows per day (intraday snapshots) while SIS has ~11,000 rows per day (one per stock). A direct JOIN on trade_date without filtering HSI to CLOSING=9 first will produce ~130 million rows per day. Always aggregate or filter HSI to daily level before joining with SIS."' \
-  '"ms_t_stk_hsi","ms_t_stk_sis"'
-
-add "logic" "capital_industry_relationship" "How to join market cap with industry" \
-  '"To analyze market cap by industry, join ms_v_stock_capital with ds_t_int_hsicl_dtl on STKCD = STOCK_CODE. Since industry classification uses carry-forward logic, for a given month the effective industry is determined by the most recent MODIFIED_DATE on or before the month-end ref_date."' \
-  '"ms_v_stock_capital","ds_t_int_hsicl_dtl"'
-
-add "logic" "news_trading_relationship" "How to join news with trading data" \
-  '"To correlate news with trading data, join sehknews with ms_t_stk_sis using securitycode = SISTKC and matching on date. The news timestamp is a datetime, while SIS trade_date is DATE, so extract the date part from timestamp for comparison."' \
-  '"sehknews","ms_t_stk_sis"'
-
-add "logic" "ccass_comparison_model" "CCASS day-over-day comparison model" \
-  '"To find CCASS inter-broker movements, self-join ccass_holdings for two consecutive dates on stock_code + participant_id. Compare shareholding values between the two dates. Filter out cases where the earlier date shareholding is 0 to avoid division by zero."' \
+add "logic" "data_coverage_ccass" "ccass_holdings date range" \
+  '"ccass_holdings has holding_date 2026-03-17 and 2026-03-18 only (limited crawl)."' \
   '"ccass_holdings"'
 
-add "logic" "sql_dialect_constraints" "Database SQL dialect constraints" \
-  '"This database has the following SQL constraints: 1) Window functions (LAG, LEAD, ROW_NUMBER, AVG OVER, etc.) cannot be used directly in WHERE clauses. Always wrap them in a CTE or subquery first, then filter in an outer query. 2) Subqueries in JOIN conditions are not supported. Use CTEs (WITH ... AS) instead. 3) Scalar subqueries with non-equal predicates (< > >= <=) and aggregation are not supported. Use CTEs with window functions instead. Preferred pattern: WITH cte AS (SELECT ..., LAG(...) OVER (...) AS prev_val FROM ...) SELECT ... FROM cte WHERE prev_val IS NOT NULL AND ..."' \
-  '"ms_t_stk_hsi","ms_t_stk_sis","ms_v_stock_capital","ds_t_int_hsicl_dtl","sehknews","profit_loss","ccass_holdings"'
-
 # ============================================================
-# Step 5: Synonyms（同义词）
+# Step 3: 业务知识（引擎无法从列注释推断）
 # ============================================================
 log ""
-log "配置 Synonyms..."
+log "配置业务知识..."
 
-add "synonyms" "volume_synonyms" "Trading volume terms" \
-  '"trading volume","total volume","market volume","成交量","SIVOL"' \
-  '"ms_t_stk_sis"'
-
-add "synonyms" "market_cap_synonyms" "Market capitalization terms" \
-  '"market cap","market capitalization","market value","总市值","SICAP"' \
-  '"ms_v_stock_capital"'
-
-add "synonyms" "revenue_synonyms" "Revenue terms" \
-  '"revenue","turnover","sales","营收","营业收入"' \
+add "logic" "profit_loss_stock_code" "profit_loss stock_code is not zero-padded" \
+  '"In profit_loss, stock_code is NOT zero-padded (e.g. 88 instead of 00088, 700 instead of 00700). Always use stock_code to filter, not company_name_en (company names are abbreviated uppercase like TENCENT HOLDINGS LTD. and will not match common formats)."' \
   '"profit_loss"'
 
-add "synonyms" "hsi_synonyms" "Hang Seng Index terms" \
-  '"HSI","Hang Seng Index","恒生指数","market index","HSHSI"' \
-  '"ms_t_stk_hsi"'
+add "logic" "material_news_typeid" "Material news typeid definition" \
+  '"Material news in sehknews is defined as typeid IN (0, 3, 7, 8, 10, 14, 18, 21, 25, 26, 28, 32)."' \
+  '"sehknews"'
 
-add "synonyms" "price_synonyms" "Closing price terms" \
-  '"closing price","close price","last price","收盘价","SICLSE"' \
+add "logic" "derivative_filter" "SISTKC >= 10000 are derivatives" \
+  '"In ms_t_stk_sis, SISTKC >= 10000 are derivatives (warrants, CBBCs). For stock analysis (moving averages, volume ranking, screening), add WHERE SISTKC < '\''10000'\'' to exclude derivatives unless the user explicitly asks about them."' \
   '"ms_t_stk_sis"'
 
+add "logic" "ccass_participant_granularity" "CCASS inter-broker movement must compare at participant level" \
+  '"In ccass_holdings, each row is a (holding_date, stock_code, participant_id) record. When analyzing inter-broker shareholding movement or changes, always compare at the participant_id level — JOIN ON stock_code AND participant_id between two dates. Do NOT aggregate (SUM/GROUP BY) all participants into a stock-level total, as that loses the inter-broker granularity the user is asking about."' \
+  '"ccass_holdings"'
+
 # ============================================================
-# Step 6: 验证
+# Step 3b: 日线汇总表知识
+# ============================================================
+log ""
+log "配置日线汇总表知识..."
+
+add "logic" "data_coverage_hsi_daily" "ms_v_stk_hsi_daily date range and usage" \
+  '"ms_v_stk_hsi_daily is a daily summary table (one row per trading day, ~286 rows). It has pre-computed hsi_pct_change column. Use this table for daily-level HSI analysis instead of ms_t_stk_hsi (which is tick data with ~11000 rows/day)."' \
+  '"ms_v_stk_hsi_daily"'
+
+# ============================================================
+# Step 3c: 术语表（glossary）
+# ============================================================
+log ""
+log "配置术语表..."
+
+add "glossary" "hk_stock_terminology" "HK stock market terminology" \
+  '"恒生指数/恒指/HSI daily data → table ms_v_stk_hsi_daily (NOT ms_t_stk_hsi which is tick data)","成交量/交易量/volume → SIVOL column in ms_t_stk_sis","收盘价/closing price → SICLSE column in ms_t_stk_sis","行业分类/industry classification → table ds_t_int_hsicl_dtl","市值/market cap → table ms_v_stock_capital","新闻/公告/news/announcement → table sehknews","利润/营收/profit/revenue → table profit_loss","CCASS持仓/券商持仓/CCASS holdings → table ccass_holdings"' \
+  '"ms_v_stk_hsi_daily","ms_t_stk_sis","ms_v_stock_capital","ds_t_int_hsicl_dtl","sehknews","profit_loss","ccass_holdings"'
+
+# ============================================================
+# Step 3d: Fewshot 示例（case_library）
+# ============================================================
+log ""
+log "配置 fewshot 示例..."
+
+add "case_library" \
+  "Find stocks where a specific broker increased holdings by more than 50% between two dates" \
+  "CCASS broker-level holding change between two dates" \
+  '"SELECT a.stock_code, a.participant_id, a.shareholding AS shares_day2, b.shareholding AS shares_day1, (a.shareholding - b.shareholding) / b.shareholding AS change_ratio FROM ccass_holdings a JOIN ccass_holdings b ON a.stock_code = b.stock_code AND a.participant_id = b.participant_id WHERE a.holding_date = '\''2026-03-18'\'' AND b.holding_date = '\''2026-03-17'\'' AND b.shareholding > 0 AND ABS(a.shareholding - b.shareholding) / b.shareholding > 0.5","CCASS data is at (date, stock, participant) granularity. To compare holding changes between dates, always JOIN on both stock_code AND participant_id. Never aggregate participants into stock-level totals when the question asks about broker/inter-broker movement."' \
+  '"ccass_holdings"'
+
+# ============================================================
+# Step 4: 验证
 # ============================================================
 log ""
 log "验证..."
@@ -167,4 +155,5 @@ for item in items:
 print(f'总计 {len(items)} 条: {types}')
 "
 
+log ""
 log "语义知识库配置完成"

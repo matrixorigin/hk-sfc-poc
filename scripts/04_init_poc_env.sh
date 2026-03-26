@@ -18,7 +18,7 @@ MO_HOST="127.0.0.1"
 MO_PORT="16002"
 MO_USER="dump"
 MO_PASS="111"
-CATALOG_PORT="8082"
+CATALOG_PORT="8084"
 CATALOG_URL="http://localhost:$CATALOG_PORT"
 
 MYSQL_CMD="mysql -h $MO_HOST -P $MO_PORT -u $MO_USER -p$MO_PASS"
@@ -40,10 +40,12 @@ if [ ! -f "$MOI_CLI" ]; then
 fi
 log "moi-cli 可用"
 
-if ! docker image inspect matrixflow/moi-catalog:latest &>/dev/null; then
-    log "ERROR: moi-catalog 镜像不存在"
-    log "请先执行: cd $MOI_CORE_DIR && make build-images-demo"
-    exit 1
+if ! docker image inspect matrixflow/moi-catalog:poc-fix &>/dev/null; then
+    log "WARNING: moi-catalog:poc-fix 镜像不存在, 检查 latest..."
+    if ! docker image inspect matrixflow/moi-catalog:latest &>/dev/null; then
+        log "ERROR: moi-catalog 镜像不存在"
+        exit 1
+    fi
 fi
 log "Docker 镜像可用"
 
@@ -178,8 +180,8 @@ else
         -H "Content-Type: application/json" \
         -d '{
             "name": "qwen-openai-compatible",
-            "type": "OPENAI",
-            "api_key": "sk-8e7a35e7fa784756b2459cb228599ab9",
+            "type": 0,
+            "api_key_encrypted": "sk-896fe35ff766479fb0e760a7439d028e",
             "timeout_seconds": 120,
             "models": ["qwen3-max"]
         }')

@@ -8,7 +8,7 @@ set -euo pipefail
 
 source /Users/zhangqq/Documents/pythonProject/HK_POC/.env
 CATALOG="http://localhost:8084"
-COMMON='["ms_t_stk_hsi","ms_t_stk_sis","ms_v_stock_capital","ds_t_int_hsicl_dtl","sehknews","profit_loss","ccass_holdings"]'
+COMMON='["ms_t_stk_hsi","ms_v_stk_hsi_daily","ms_t_stk_sis","ms_v_stock_capital","ds_t_int_hsicl_dtl","sehknews","profit_loss","ccass_holdings"]'
 WS="$POC_WORKSPACE_ID"
 KEY="$MOI_SYSTEM_API_KEY"
 OUT=/tmp/poc_integration_test
@@ -52,6 +52,14 @@ for l in sys.stdin:
     d=json.loads(l.split('data: ',1)[1])['data']
     for b in d.get('blocks',[]):
       c=b.get('content','')
+      if not c: continue
+      # dev 版 synthesis 输出 JSON 格式，提取 answer 字段
+      c=c.strip()
+      if c.startswith('{'):
+        try:
+          parsed=json.loads(c)
+          c=parsed.get('answer',c)
+        except: pass
       if c: print(c[:200])
 " 2>/dev/null | head -1)
 
@@ -90,11 +98,15 @@ log "========== Batch 1: 英文 Q1-Q6 (并发) =========="
 fire "en-q1" "What was the total trading volume on days when the Hang Seng Index dropped by over 2% between January and June 2025?" &
 fire "en-q2" "Which three industries saw the largest aggregate market cap decline between January and June 2025?" &
 fire "en-q3" "List stocks that closed above their 50-day moving average for 10 consecutive trading days between January and March 2025." &
+
+log "3 个英文问题 (1/2) 已提交，等待..."
+wait
+
 fire "en-q4" "Detect stocks with trading volume more than 3 times the 30-day average volume on the day of material news announcements between January and March 2025. Material news is defined as typeid in (0,3,7,8,10,14,18,21,25,26,28,32)." &
 fire "en-q5" "Identify stocks with inter-broker CCASS shareholding movement greater than 30% on 2026-03-18 compared to 2026-03-17." &
 fire "en-q6" "Show me the revenue growth of stock 88 from 2023 to 2025." &
 
-log "6 个英文问题已提交，等待..."
+log "3 个英文问题 (2/2) 已提交，等待..."
 wait
 log "Batch 1 完成"
 
@@ -114,11 +126,15 @@ log "========== Batch 2: 中文 Q1-Q6 (并发) =========="
 fire "cn-q1" "在2025年1月至6月期间，市场指数单日跌幅超过2%的交易日，全市场总成交量是多少？" &
 fire "cn-q2" "2025年1月至6月期间，哪三个行业的总市值下降幅度最大？" &
 fire "cn-q3" "列出2025年1月至3月期间，收盘价连续10个交易日高于50日移动均线的股票。" &
+
+log "3 个中文问题 (1/2) 已提交，等待..."
+wait
+
 fire "cn-q4" "检测2025年1月至3月期间，在重大新闻公告发布当天，成交量超过前30日平均成交量3倍的股票。重大新闻定义为sehknews表中typeid in (0,3,7,8,10,14,18,21,25,26,28,32)的记录。" &
 fire "cn-q5" "识别在2026年3月18日相比3月17日，CCASS跨券商持仓变动超过30%的股票。" &
 fire "cn-q6" "展示股票88从2023年到2025年的营收增长情况。" &
 
-log "6 个中文问题已提交，等待..."
+log "3 个中文问题 (2/2) 已提交，等待..."
 wait
 log "Batch 2 完成"
 
@@ -134,9 +150,9 @@ log ""
 log "========== Batch 3: 前端示例-英文 (并发) =========="
 # ============================================================
 
-fire "fe-en-1" "What was the total trading volume when HSI dropped over 2%?" &
-fire "fe-en-2" "Which 3 industries saw the largest market cap decline?" &
-fire "fe-en-3" "List stocks above 50-day moving average for 10 days" &
+fire "fe-en-1" "In April 2025, which top 20 stocks had the highest volume when HSI dropped over 2%?" &
+fire "fe-en-2" "Which 3 industries saw the largest market cap decline in H1 2025?" &
+fire "fe-en-3" "List stocks above 50-day moving average for 10 consecutive days in Q1 2025" &
 fire "fe-en-4" "Show revenue growth of stock 88 from 2023 to 2025" &
 
 log "4 个前端英文示例已提交，等待..."
@@ -153,10 +169,10 @@ log ""
 log "========== Batch 4: 前端示例-中文 (并发) =========="
 # ============================================================
 
-fire "fe-cn-1" "恒生指数单日跌幅超过2%时，全市场总成交量是多少？" &
-fire "fe-cn-2" "哪三个行业的总市值下降幅度最大？" &
-fire "fe-cn-3" "列出收盘价连续10天高于50日均线的股票" &
-fire "fe-cn-4" "展示股票88从2023年到2025年的营收增长情况" &
+fire "fe-cn-1" "2025年4月恒指跌幅超过2%时，成交量最大的20只股票是哪些？" &
+fire "fe-cn-2" "2025年上半年哪三个行业的总市值下降幅度最大？" &
+fire "fe-cn-3" "2025年一季度有哪些股票连续10天收盘价高于50日均线？" &
+fire "fe-cn-4" "股票88从2023年到2025年的营收增长情况" &
 
 log "4 个前端中文示例已提交，等待..."
 wait

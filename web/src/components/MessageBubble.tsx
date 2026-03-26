@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
+import 'katex/dist/katex.min.css'
 import type { Message } from '../types'
 import { useT } from '../i18n'
 import { Chart } from './Chart'
@@ -47,7 +50,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
               {isUser ? (
                 <span>{message.content}</span>
               ) : (
-                <Markdown remarkPlugins={[remarkGfm]}>{message.content}</Markdown>
+                <Markdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>{message.content}</Markdown>
               )}
               {message.isStreaming && message.phase === 'answering' && (
                 <span className="cursor">▊</span>
@@ -77,17 +80,34 @@ export function MessageBubble({ message }: MessageBubbleProps) {
 
           {/* SQL toggle — only after done */}
           {!isUser && isDone && message.sqlStatements.length > 0 && (
-            <div>
+            <div className="sql-section">
               <button
                 onClick={() => setShowSQL(!showSQL)}
-                className="sql-toggle"
+                className={`sql-toggle ${showSQL ? 'open' : ''}`}
               >
-                {showSQL ? '▾' : '▸'} {showSQL ? t('hideSQL') : t('showSQL')}
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" />
+                </svg>
+                {showSQL ? t('hideSQL') : t('showSQL')}
+                <span className={`sql-toggle-arrow ${showSQL ? 'open' : ''}`}>›</span>
               </button>
               {showSQL && (
-                <pre className="sql-code">
-                  {message.sqlStatements.join('\n\n')}
-                </pre>
+                <div className="sql-code-wrapper">
+                  <div className="sql-code-header">
+                    <span>SQL</span>
+                    <button
+                      className="sql-copy-btn"
+                      onClick={() => {
+                        navigator.clipboard.writeText(message.sqlStatements.join('\n\n'))
+                      }}
+                    >
+                      Copy
+                    </button>
+                  </div>
+                  <pre className="sql-code">
+                    {message.sqlStatements.join('\n\n')}
+                  </pre>
+                </div>
               )}
             </div>
           )}

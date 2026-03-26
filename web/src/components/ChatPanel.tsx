@@ -27,27 +27,31 @@ export function ChatPanel({
   const streamingMsgIdRef = useRef<string | null>(null)
   const sessionIdRef = useRef(conversation?.sessionId || uuidv4())
   const prevConvIdRef = useRef<string | null | undefined>(conversation?.id)
+  const sendingRef = useRef(false) // 标记是否正在发送（避免 useEffect 重置消息）
+  const loadingHistoryRef = useRef(false) // 标记正在加载历史（避免触发 onMessagesChange）
 
-  // Sync messages when switching to a DIFFERENT existing conversation.
-  // Skip when transitioning from welcome (null) to a new conversation (keeps current messages).
   useEffect(() => {
     const prevId = prevConvIdRef.current
     const newId = conversation?.id
-    console.log('[useEffect conv change]', { prevId, newId, messagesLen: messages.length })
     prevConvIdRef.current = newId
 
-    // Only reset if switching between two different existing conversations
-    if (prevId && newId && prevId !== newId) {
+    // 发送消息时自动创建的会话，不要重置 messages
+    if (sendingRef.current) {
+      sendingRef.current = false
+      if (newId) sessionIdRef.current = conversation?.sessionId || uuidv4()
+      return
+    }
+
+    // 切到不同会话：加载它的 messages（空或有历史）
+    if (newId && prevId !== newId) {
+      loadingHistoryRef.current = true
       setMessages(conversation?.messages || [])
       sessionIdRef.current = conversation?.sessionId || uuidv4()
       setIsLoading(false)
+      setInput('')
       streamingMsgIdRef.current = null
     }
-    // When going from null (welcome) to a new conv, just update sessionId
-    if (!prevId && newId) {
-      sessionIdRef.current = conversation?.sessionId || uuidv4()
-    }
-    // When going to null (new chat clicked from sidebar), reset
+    // activeId 清空
     if (prevId && !newId) {
       setMessages([])
       setInput('')
@@ -56,8 +60,12 @@ export function ChatPanel({
     }
   }, [conversation?.id])
 
-  // Notify parent of message changes
+  // Notify parent of message changes (skip when loading history to avoid updatedAt change)
   useEffect(() => {
+    if (loadingHistoryRef.current) {
+      loadingHistoryRef.current = false
+      return
+    }
     if (conversation) {
       onMessagesChange(messages)
     }
@@ -100,9 +108,9 @@ export function ChatPanel({
     console.log('[handleSend]', { question, isLoading, input, text })
     if (!question || isLoading) return
 
-    // Ensure a conversation exists
+    // Ensure a conversation exists (标记发送中，防止 useEffect 重置 messages)
+    sendingRef.current = true
     const conv = onEnsureConversation()
-    console.log('[handleSend] conv created', { id: conv.id, sessionId: conv.sessionId })
     sessionIdRef.current = conv.sessionId
 
     const userMsg: Message = {

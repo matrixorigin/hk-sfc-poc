@@ -1,6 +1,46 @@
 import { useRef, useCallback } from 'react'
 import type { ExploreEvent, SQLResult, Message } from '../types'
 
+/**
+ * Strip JSON wrapper from synthesis output.
+ * Dev explore outputs {"answer": "...", "sources": [...]}.
+ * Truncation continuation may produce multiple JSON objects concatenated.
+ */
+function stripJsonWrapper(text: string): string {
+  const trimmed = text.trimStart()
+  if (!trimmed.startsWith('{')) return text
+
+  const parts: string[] = []
+  const re = /"answer"\s*:\s*"/g
+  let match
+  while ((match = re.exec(trimmed)) !== null) {
+    const start = match.index + match[0].length
+    let end = start
+    let escaped = false
+    for (let i = start; i < trimmed.length; i++) {
+      if (escaped) { escaped = false; continue }
+      if (trimmed[i] === '\\') { escaped = true; continue }
+      if (trimmed[i] === '"') { end = i; break }
+    }
+    if (end > start) {
+      parts.push(trimmed.slice(start, end))
+    } else {
+      parts.push(trimmed.slice(start))
+    }
+  }
+
+  if (parts.length === 0) {
+    if (trimmed.length < 15) return ''
+    return text
+  }
+
+  return parts.join('')
+    .replace(/\\n/g, '\n')
+    .replace(/\\t/g, '\t')
+    .replace(/\\"/g, '"')
+    .replace(/\\\\/g, '\\')
+}
+
 interface UseExploreSSEOptions {
   onUpdate: (updater: (msg: Message) => Message) => void
   onDone: () => void
@@ -84,20 +124,25 @@ export function useExploreSSE({ onUpdate, onDone, onError }: UseExploreSSEOption
       }
       case 'sql.schema.ready':
       case 'sql.generated': {
-        // Store SQL but don't change phase to 'querying' until first sql.generated
-        const sql: string = event.data?.sql ?? ''
-        if (event.event === 'sql.generated' && sql) {
-          onUpdate((msg) => ({
-            ...msg,
-            phase: 'querying',
-            sqlStatements: [...msg.sqlStatements, sql],
-          }))
+        // Update phase on sql.generated but don't store SQL yet — wait for sql.result which has the actually executed SQL
+        if (event.event === 'sql.generated') {
+          onUpdate((msg) => ({ ...msg, phase: 'querying' }))
         } else {
           onUpdate((msg) => ({ ...msg, phase: msg.phase === 'thinking' ? 'planning' : msg.phase }))
         }
         break
       }
       case 'sql.result': {
+        // Store the actually executed SQL (may differ from sql.generated if repair happened)
+        const executedSQL: string = event.data?.sql ?? ''
+        if (executedSQL) {
+          onUpdate((msg) => ({
+            ...msg,
+            sqlStatements: msg.sqlStatements.includes(executedSQL)
+              ? msg.sqlStatements
+              : [...msg.sqlStatements, executedSQL],
+          }))
+        }
         const result: SQLResult = {
           columns: event.data?.columns ?? [],
           rows: event.data?.rows ?? [],
@@ -130,11 +175,11 @@ export function useExploreSSE({ onUpdate, onDone, onError }: UseExploreSSEOption
       }
       case 'synthesis.delta': {
         const delta: string = event.data?.delta ?? ''
-        onUpdate((msg) => ({
-          ...msg,
-          phase: 'answering',
-          content: msg.content + delta,
-        }))
+        onUpdate((msg) => {
+          const raw = (msg as any)._rawContent ?? msg.content
+          const newRaw = raw + delta
+          return { ...msg, phase: 'answering', content: stripJsonWrapper(newRaw), _rawContent: newRaw } as any
+        })
         break
       }
       case 'run.error': {
@@ -147,7 +192,11 @@ export function useExploreSSE({ onUpdate, onDone, onError }: UseExploreSSEOption
         break
       }
       case 'synthesis.done': {
-        onUpdate((msg) => ({ ...msg, isStreaming: false, phase: 'done' }))
+        onUpdate((msg) => {
+          const m = { ...msg, isStreaming: false, phase: 'done' } as any
+          delete m._rawContent
+          return m
+        })
         onDone()
         break
       }

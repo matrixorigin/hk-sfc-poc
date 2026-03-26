@@ -10,6 +10,7 @@ explore:
   db_name: "hk_sfc"
   tables:
     - ms_t_stk_hsi
+    - ms_v_stk_hsi_daily
     - ms_t_stk_sis
     - ms_v_stock_capital
     - ds_t_int_hsicl_dtl

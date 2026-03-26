@@ -49,9 +49,7 @@ function App() {
   const activeConv = conversations.find((c) => c.id === activeId) || null
 
   const handleNewChat = useCallback(() => {
-    const conv = createConversation()
-    setConversations((prev) => [conv, ...prev])
-    setActiveId(conv.id)
+    setActiveId(null) // 回到欢迎页，会话在发消息时才创建
   }, [])
 
   const handleSelect = useCallback((id: string) => {

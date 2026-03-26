@@ -37,7 +37,7 @@ Knowledge Base ID: `10001` (name: hk-sfc-semantic)
 | stock_capital_granularity | ms_v_stock_capital | 每只股票每月末 1 条 |
 | profit_loss_stock_code_format | profit_loss | stock_code 无零填充 |
 
-### Logic（表间关系）— 4 条
+### Logic（表间关系）— 5 条
 
 | key | 关联表 | 说明 |
 |-----|--------|------|
@@ -45,6 +45,7 @@ Knowledge Base ID: `10001` (name: hk-sfc-semantic)
 | capital_industry_relationship | ms_v_stock_capital, ds_t_int_hsicl_dtl | 市值与行业通过 STKCD=STOCK_CODE 关联 |
 | news_trading_relationship | sehknews, ms_t_stk_sis | 新闻与行情通过 securitycode=SISTKC + 日期关联 |
 | ccass_comparison_model | ccass_holdings | CCASS 跨日对比通过 self-join on stock_code + participant_id |
+| hsi_drop_volume_detail | ms_t_stk_hsi, ms_t_stk_sis | 查询指数跌幅对应的成交量时，应同时返回个股名称、收盘价、涨跌幅和成交量明细 |
 | sql_dialect_constraints | 全部 7 张表 | MO SQL 限制：窗口函数不能在 WHERE 里、JOIN 不能用子查询、标量子查询不支持非等值聚合 |
 
 ### Synonyms（同义词）— 5 条
@@ -58,6 +59,11 @@ Knowledge Base ID: `10001` (name: hk-sfc-semantic)
 | price_synonyms | ms_t_stk_sis | closing price, 收盘价, SICLSE |
 
 ## 变更历史
+
+### v4 (2026-03-24)
+- 新增 hsi_drop_volume_detail：引导 LLM 在查询指数跌幅成交量时默认返回个股明细
+- Chart 组件改进：智能识别日期列作为 x 轴（不再硬编码第一列）
+- 总计 20 条（glossary 4 + logic 11 + synonyms 5）
 
 ### v3 (2026-03-24)
 - 更新 fin_yr_format：明确不同公司裁年月份不同，不能假设 12 月

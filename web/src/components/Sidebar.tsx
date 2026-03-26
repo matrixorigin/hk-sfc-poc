@@ -32,7 +32,10 @@ export function Sidebar({
     )
   }
 
-  const sorted = [...conversations].sort((a, b) => b.updatedAt - a.updatedAt)
+  // 只显示有消息的会话，过滤掉空会话
+  const sorted = [...conversations]
+    .filter((c) => c.messages.length > 0)
+    .sort((a, b) => b.updatedAt - a.updatedAt)
 
   return (
     <div className="sidebar">

@@ -14,10 +14,11 @@ type ChatRequest struct {
 	SessionID string `json:"session_id,omitempty"`
 }
 
-// ChatHandler 持有 Explore 客户端和配置。
+// ChatHandler 持有 Explore 客户端、Clarifier 和配置。
 type ChatHandler struct {
-	client *ExploreClient
-	cfg    *Config
+	client   *ExploreClient
+	clarify  *Clarifier
+	cfg      *Config
 }
 
 // preProcess 对问题做预处理，当前直接透传。
@@ -66,6 +67,20 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	processedQuestion := h.preProcess(chatReq.Question)
 
+	// 反问检查：参数不完整时直接返回反问，不调 Explore
+	if h.clarify != nil {
+		finalQ, reply, err := h.clarify.Process(r.Context(), sessionID, processedQuestion)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("clarify error: %v", err), http.StatusInternalServerError)
+			return
+		}
+		if reply != "" {
+			writeClarifySSE(w, reply)
+			return
+		}
+		processedQuestion = finalQ
+	}
+
 	// 构造上游 ExploreRequest
 	exploreReq := &ExploreRequest{
 		Query: QueryDomain{Question: processedQuestion},
@@ -103,6 +118,11 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer stream.Close()
 
+	// 标记该 session 已有 Explore 查询，后续追问直接放行
+	if h.clarify != nil {
+		h.clarify.MarkExplored(sessionID)
+	}
+
 	// 设置 SSE 响应头
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -120,4 +140,38 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 	}
+}
+
+// writeClarifySSE 发送反问响应，模拟 Explore SSE 格式使前端无需改动。
+func writeClarifySSE(w http.ResponseWriter, reply string) {
+	setCORSHeaders(w)
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+
+	flusher, canFlush := w.(http.Flusher)
+	write := func(event, data string) {
+		_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, data)
+		if canFlush {
+			flusher.Flush()
+		}
+	}
+
+	runID := "clarify"
+
+	write("run.started", fmt.Sprintf(`{"data":{"run_id":"%s"},"event":"run.started","run_id":"%s","schema_version":"run.v1","seq":1}`, runID, runID))
+
+	// 用 synthesis.delta 发送反问内容（前端按 delta 拼接显示）
+	deltaData, _ := json.Marshal(map[string]any{
+		"data":           map[string]any{"block_type": "text", "delta": reply},
+		"event":          "synthesis.delta",
+		"run_id":         runID,
+		"schema_version": "run.v1",
+		"seq":            2,
+	})
+	write("synthesis.delta", string(deltaData))
+
+	write("synthesis.done", fmt.Sprintf(`{"data":{},"event":"synthesis.done","run_id":"%s","schema_version":"run.v1","seq":3}`, runID))
+	write("run.completed", fmt.Sprintf(`{"data":{"status":"completed"},"event":"run.completed","run_id":"%s","schema_version":"run.v1","seq":4}`, runID))
 }
