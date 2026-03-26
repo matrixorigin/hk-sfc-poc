@@ -20,7 +20,8 @@ RUN CGO_ENABLED=0 go build -o hk-poc-backend .
 
 # ---- Stage 3: 运行 ----
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources && \
+    apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=backend /build/hk-poc-backend .
 COPY --from=frontend /build/dist ./web/dist
