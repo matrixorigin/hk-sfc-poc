@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -23,6 +25,20 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/chat", chatHandler.ServeHTTP)
+
+	if cfg.Server.StaticDir != "" {
+		absDir, _ := filepath.Abs(cfg.Server.StaticDir)
+		log.Printf("serving frontend from %s", absDir)
+		fs := http.FileServer(http.Dir(absDir))
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			filePath := filepath.Join(absDir, r.URL.Path)
+			if info, err := os.Stat(filePath); err != nil || info.IsDir() {
+				http.ServeFile(w, r, filepath.Join(absDir, "index.html"))
+				return
+			}
+			fs.ServeHTTP(w, r)
+		})
+	}
 
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	log.Printf("starting server on %s", addr)

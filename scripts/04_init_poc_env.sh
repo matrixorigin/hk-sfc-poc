@@ -12,7 +12,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-MOI_CORE_DIR="${MOI_CORE_DIR:-$(dirname "$(dirname "$SCRIPT_DIR")")/matrixflow/moi-core}"
+
+if [ -z "${MOI_CORE_DIR:-}" ]; then
+    echo "ERROR: 请设置 MOI_CORE_DIR 环境变量，指向 moi-core 目录"
+    echo "  export MOI_CORE_DIR=/path/to/matrixflow/moi-core"
+    exit 1
+fi
 
 MO_HOST="127.0.0.1"
 MO_PORT="16002"
@@ -167,9 +172,12 @@ fi
 log "Workspace ID: $WS_ID"
 
 # 保存到 .env
-grep -q "POC_WORKSPACE_ID=" "$ENV_FILE" 2>/dev/null && \
-    sed -i '' "s/POC_WORKSPACE_ID=.*/POC_WORKSPACE_ID=$WS_ID/" "$ENV_FILE" || \
+if grep -q "POC_WORKSPACE_ID=" "$ENV_FILE" 2>/dev/null; then
+    tmpf=$(mktemp)
+    sed "s/POC_WORKSPACE_ID=.*/POC_WORKSPACE_ID=$WS_ID/" "$ENV_FILE" > "$tmpf" && mv "$tmpf" "$ENV_FILE"
+else
     echo "POC_WORKSPACE_ID=$WS_ID" >> "$ENV_FILE"
+fi
 
 # ============================================================
 # Step 6: 配置 LLM Backend（qwen3-max）

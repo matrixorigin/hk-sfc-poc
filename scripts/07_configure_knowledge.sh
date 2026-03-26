@@ -7,7 +7,10 @@
 
 set -euo pipefail
 
-source /Users/zhangqq/Documents/pythonProject/HK_POC/.env
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
+source "$PROJECT_DIR/.env"
 CATALOG="http://localhost:8084"
 WS="$POC_WORKSPACE_ID"
 KEY="$MOI_SYSTEM_API_KEY"

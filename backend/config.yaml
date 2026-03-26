@@ -1,5 +1,6 @@
 server:
   port: 8083
+  static_dir: "${STATIC_DIR:-}"
 
 catalog:
   url: "http://localhost:8084"

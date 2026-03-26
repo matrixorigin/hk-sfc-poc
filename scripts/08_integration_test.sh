@@ -6,7 +6,10 @@
 
 set -euo pipefail
 
-source /Users/zhangqq/Documents/pythonProject/HK_POC/.env
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
+source "$PROJECT_DIR/.env"
 CATALOG="http://localhost:8084"
 COMMON='["ms_t_stk_hsi","ms_v_stk_hsi_daily","ms_t_stk_sis","ms_v_stock_capital","ds_t_int_hsicl_dtl","sehknews","profit_loss","ccass_holdings"]'
 WS="$POC_WORKSPACE_ID"

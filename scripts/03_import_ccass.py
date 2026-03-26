@@ -54,7 +54,7 @@ def parse_args():
     p.add_argument("--top", type=int, default=200, help="爬取前 N 只股票 (默认 200)")
     p.add_argument("--all", action="store_true", help="爬全量股票 (覆盖 --top)")
     p.add_argument("--mo-host", default=os.getenv("MO_HOST", "127.0.0.1"))
-    p.add_argument("--mo-port", default=os.getenv("MO_PORT", "16001"))
+    p.add_argument("--mo-port", default=os.getenv("MO_PORT", "16002"))
     p.add_argument("--mo-user", default=os.getenv("MO_USER", "dump"))
     p.add_argument("--mo-pass", default=os.getenv("MO_PASS", "111"))
     p.add_argument("--mo-db", default="hk_sfc")
