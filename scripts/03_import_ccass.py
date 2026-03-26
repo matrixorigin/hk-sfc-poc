@@ -14,8 +14,17 @@ Explore 引擎可直接 SQL 查询计算跨券商持仓变动。
     # 指定前 N 只
     python 03_import_ccass.py --dates 2026/03/18 2026/03/17 --top 500
 
+    # 只爬不入库（保存本地 CSV，可后续用 --from-cache 入库）
+    python 03_import_ccass.py --dates 2026/03/18 --dry-run
+
+    # 从本地缓存入库（跳过爬取）
+    python 03_import_ccass.py --dates 2026/03/18 2026/03/17 --from-cache
+
+    # 指定缓存目录
+    python 03_import_ccass.py --dates 2026/03/18 --cache-dir /tmp/ccass_cache
+
 依赖:
-    pip install requests beautifulsoup4 pymysql
+    pip install requests beautifulsoup4
 """
 
 import argparse
@@ -36,6 +45,7 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     "Referer": SEARCH_URL,
 }
+DEFAULT_CACHE_DIR = "data/ccass_cache"
 
 
 def parse_args():
@@ -48,7 +58,9 @@ def parse_args():
     p.add_argument("--mo-user", default=os.getenv("MO_USER", "dump"))
     p.add_argument("--mo-pass", default=os.getenv("MO_PASS", "111"))
     p.add_argument("--mo-db", default="hk_sfc")
-    p.add_argument("--dry-run", action="store_true", help="只爬不入库，输出 CSV")
+    p.add_argument("--dry-run", action="store_true", help="只爬不入库，保存本地 CSV")
+    p.add_argument("--from-cache", action="store_true", help="跳过爬取，从本地缓存入库")
+    p.add_argument("--cache-dir", default=DEFAULT_CACHE_DIR, help="缓存目录 (默认 data/ccass_cache)")
     return p.parse_args()
 
 
@@ -128,48 +140,101 @@ def fetch_broker_holdings(session, vs, vs_gn, stock_code: str, date: str):
     return brokers
 
 
-def crawl_date(date: str, stocks: list) -> list:
-    """爬取一天的所有股票持仓，返回 [(date, stock_code, stock_name, pid, shareholding), ...]"""
+# ── 缓存 ──
+
+def cache_path(cache_dir: str, date: str) -> str:
+    """返回某天数据的缓存文件路径"""
+    db_date = date.replace("/", "-")
+    return os.path.join(cache_dir, f"ccass_{db_date}.csv")
+
+
+def save_to_cache(rows: list, cache_dir: str, date: str):
+    """将一天的数据保存到本地 CSV 缓存"""
+    os.makedirs(cache_dir, exist_ok=True)
+    path = cache_path(cache_dir, date)
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["holding_date", "stock_code", "stock_name", "participant_id", "shareholding"])
+        writer.writerows(rows)
+    print(f"  -> 缓存已保存: {path} ({len(rows)} 行)")
+
+
+def load_from_cache(cache_dir: str, date: str) -> list:
+    """从本地 CSV 缓存加载一天的数据"""
+    path = cache_path(cache_dir, date)
+    if not os.path.exists(path):
+        print(f"  缓存不存在: {path}")
+        return []
+    rows = []
+    with open(path, "r", encoding="utf-8") as f:
+        reader = csv.reader(f)
+        next(reader)  # skip header
+        for r in reader:
+            rows.append(tuple(r))
+    print(f"  -> 从缓存加载: {path} ({len(rows)} 行)")
+    return rows
+
+
+# ── 爬取 ──
+
+def crawl_date(date: str, stocks: list, cache_dir: str = None) -> list:
+    """爬取一天的所有股票持仓，返回 rows 列表。每只股票爬完立即追加到缓存文件。"""
     session, vs, vs_gn = get_session()
     rows = []
-    # 将 yyyy/mm/dd 转换为 yyyy-mm-dd 用于数据库
     db_date = date.replace("/", "-")
 
-    for i, (code, name) in enumerate(stocks, 1):
-        print(f"  [{i}/{len(stocks)}] {code} {name}", end=" ... ", flush=True)
-        try:
-            brokers = fetch_broker_holdings(session, vs, vs_gn, code, date)
-            print(f"{len(brokers)} brokers")
-            for pid, sh in brokers.items():
-                rows.append((db_date, code, name, pid, sh))
-        except Exception as e:
-            print(f"ERROR: {e}")
-        time.sleep(0.2)
+    # 准备追加模式的缓存文件
+    cache_file = None
+    cache_writer = None
+    if cache_dir:
+        os.makedirs(cache_dir, exist_ok=True)
+        path = cache_path(cache_dir, date)
+        cache_file = open(path, "w", newline="", encoding="utf-8")
+        cache_writer = csv.writer(cache_file)
+        cache_writer.writerow(["holding_date", "stock_code", "stock_name", "participant_id", "shareholding"])
+
+    try:
+        for i, (code, name) in enumerate(stocks, 1):
+            print(f"  [{i}/{len(stocks)}] {code} {name}", end=" ... ", flush=True)
+            try:
+                brokers = fetch_broker_holdings(session, vs, vs_gn, code, date)
+                print(f"{len(brokers)} brokers")
+                for pid, sh in brokers.items():
+                    row = (db_date, code, name, pid, sh)
+                    rows.append(row)
+                    if cache_writer:
+                        cache_writer.writerow(row)
+                # 每只股票爬完就 flush 缓存
+                if cache_file:
+                    cache_file.flush()
+            except Exception as e:
+                print(f"ERROR: {e}")
+            time.sleep(0.2)
+    finally:
+        if cache_file:
+            cache_file.close()
+            print(f"  -> 缓存已保存: {cache_path(cache_dir, date)} ({len(rows)} 行)")
 
     return rows
 
 
-def load_to_mo(rows, args):
-    """将数据通过临时 CSV + LOAD DATA LOCAL INFILE 写入 MO"""
+# ── MO 入库 ──
+
+def mysql_args_list(args):
+    """构造 mysql 命令参数列表（避免 shell 转义问题）"""
+    return [
+        "mysql", "-h", args.mo_host, "-P", str(args.mo_port),
+        "-u", args.mo_user, f"-p{args.mo_pass}",
+        "--local-infile=1", args.mo_db,
+    ]
+
+
+def load_rows_to_mo(rows, args):
+    """将 rows 通过临时 CSV + LOAD DATA 写入 MO"""
     if not rows:
         print("  没有数据需要导入")
         return
 
-    # 先删除这些日期的旧数据
-    dates = sorted(set(r[0] for r in rows))
-    date_list = ",".join(f"'{d}'" for d in dates)
-    delete_sql = f"DELETE FROM ccass_holdings WHERE holding_date IN ({date_list});"
-
-    mysql_base = (
-        f"mysql -h {args.mo_host} -P {args.mo_port} "
-        f"-u {args.mo_user} -p{args.mo_pass} --local-infile=1 {args.mo_db}"
-    )
-
-    print(f"  清理旧数据: {dates}")
-    subprocess.run(f'{mysql_base} -e "{delete_sql}"', shell=True, check=True,
-                   capture_output=True)
-
-    # 写临时 CSV
     tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False,
                                       newline="", encoding="utf-8")
     try:
@@ -180,21 +245,14 @@ def load_to_mo(rows, args):
 
         load_sql = (
             f"LOAD DATA LOCAL INFILE '{tmp.name}' INTO TABLE ccass_holdings "
-            f"FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '\\\"' "
+            f"FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '\"' "
             f"LINES TERMINATED BY '\\n' IGNORE 1 LINES;"
         )
 
-        print(f"  导入 {len(rows)} 行...")
-        subprocess.run(f"{mysql_base} -e \"{load_sql}\"", shell=True, check=True,
-                       capture_output=True)
-
-        # 验证
-        result = subprocess.run(
-            f'{mysql_base} -N -e "SELECT COUNT(*) FROM ccass_holdings WHERE holding_date IN ({date_list});"',
-            shell=True, capture_output=True, text=True
-        )
-        count = result.stdout.strip()
-        print(f"  -> ccass_holdings 新增 {count} 行 (日期: {dates})")
+        print(f"  导入 {len(rows)} 行...", flush=True)
+        subprocess.run(mysql_args_list(args) + ["-e", load_sql],
+                       check=True, capture_output=True)
+        print(f"  -> 入库完成")
     finally:
         os.unlink(tmp.name)
 
@@ -207,15 +265,17 @@ def main():
     print("CCASS Holdings Crawler → MatrixOne")
     print(f"日期: {args.dates}")
     print(f"股票数: {'全部' if args.all else f'前 {top_n}'}")
-    print(f"MO: {args.mo_host}:{args.mo_port}/{args.mo_db}")
+    print(f"缓存目录: {args.cache_dir}")
+    if args.from_cache:
+        print("模式: 从缓存入库（跳过爬取）")
+    elif args.dry_run:
+        print("模式: 只爬不入库")
+    else:
+        print(f"MO: {args.mo_host}:{args.mo_port}/{args.mo_db}")
     print("=" * 60)
 
     # 确保表存在
     if not args.dry_run:
-        mysql_base = (
-            f"mysql -h {args.mo_host} -P {args.mo_port} "
-            f"-u {args.mo_user} -p{args.mo_pass} {args.mo_db}"
-        )
         create_sql = (
             "CREATE TABLE IF NOT EXISTS ccass_holdings ("
             "holding_date DATE NOT NULL, "
@@ -224,31 +284,39 @@ def main():
             "participant_id VARCHAR(20) NOT NULL, "
             "shareholding BIGINT NOT NULL);"
         )
-        subprocess.run(f'{mysql_base} -e "{create_sql}"', shell=True,
-                       capture_output=True)
+        subprocess.run(mysql_args_list(args) + ["-e", create_sql], capture_output=True)
+
+    # 清理目标日期的旧数据
+    if not args.dry_run:
+        db_dates = ",".join(f"'{d.replace('/', '-')}'" for d in args.dates)
+        subprocess.run(
+            mysql_args_list(args) + ["-e", f"DELETE FROM ccass_holdings WHERE holding_date IN ({db_dates});"],
+            capture_output=True
+        )
+        print(f"已清理旧数据: {args.dates}")
 
     all_rows = []
     for date in args.dates:
-        print(f"\n[爬取] {date}")
-        stocks = fetch_stock_list(date, top_n=top_n)
-        print(f"  股票列表: {len(stocks)} 只")
-        rows = crawl_date(date, stocks)
+        print(f"\n[{date}]")
+
+        if args.from_cache:
+            # 从缓存加载
+            rows = load_from_cache(args.cache_dir, date)
+        else:
+            # 爬取（同时写缓存）
+            stocks = fetch_stock_list(date, top_n=top_n)
+            print(f"  股票列表: {len(stocks)} 只")
+            rows = crawl_date(date, stocks, cache_dir=args.cache_dir)
+
         all_rows.extend(rows)
         print(f"  本日合计: {len(rows)} 条持仓记录")
 
-    print(f"\n总计爬取 {len(all_rows)} 条记录")
+        # 每天爬完就入库（不等全部日期完成）
+        if not args.dry_run and rows:
+            load_rows_to_mo(rows, args)
 
-    if args.dry_run:
-        out_csv = "ccass_holdings.csv"
-        with open(out_csv, "w", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
-            writer.writerow(["holding_date", "stock_code", "stock_name", "participant_id", "shareholding"])
-            writer.writerows(all_rows)
-        print(f"-> 保存至 {out_csv}")
-    else:
-        load_to_mo(all_rows, args)
-
-    print("\n完成!")
+    print(f"\n总计 {len(all_rows)} 条记录")
+    print("完成!")
 
 
 if __name__ == "__main__":

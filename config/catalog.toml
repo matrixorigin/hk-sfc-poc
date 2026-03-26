@@ -4,12 +4,12 @@
 [server]
 host = "0.0.0.0"
 port = 8081
-read_timeout = 30
-write_timeout = 30
+read_timeout = 300
+write_timeout = 300
 
 [database]
-host = "host.docker.internal"
-port = 16001
+host = "mo"
+port = 6001
 user = "dump"
 password = "111"
 database = "moi_poc"
@@ -21,8 +21,8 @@ conn_max_lifetime = 3600
 type = "local"
 
 [provider.local]
-host = "host.docker.internal"
-port = 16001
+host = "mo"
+port = 6001
 
 [storage]
 type = "local"
@@ -64,7 +64,7 @@ session_title_timeout_seconds = 10
 max_repair_attempts = 3
 rag_top_k = 5
 concurrency_limit = 3
-sub_question_timeout_seconds = 60
+sub_question_timeout_seconds = 600
 
 [explore.context]
 schema_cache_ttl_seconds = 300
@@ -75,6 +75,7 @@ max_file_count = 3
 max_total_bytes = 512000
 
 [explore.budget]
+total_time_budget_seconds = 0
 guaranteed_min_token_ratio = 0.4
 guaranteed_min_time_ratio = 0.5
 token_estimation_strategy = "chars_div_4"

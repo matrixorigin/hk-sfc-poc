@@ -2,43 +2,47 @@
 # HK SFC POC - 一键初始化独立 moi-core 环境
 # 用法: bash scripts/04_init_poc_env.sh
 #
-# 复用现有 MO (16001)，独立启动 Catalog (8082) + Workers
+# 独立 MO (16002) + Catalog (8082) + Workers
 #
 # 前置条件:
 #   - moi-core 镜像已构建: cd ../matrixflow/moi-core && make build-images-demo
 #   - moi-cli 已编译: cd ../matrixflow/moi-core && make build-cli
-#   - hk_sfc 数据已导入 (bash scripts/02_import_data.sh)
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-MOI_CORE_DIR="/Users/zhangqq/Documents/pythonProject/matrixflow/moi-core"
+MOI_CORE_DIR="${MOI_CORE_DIR:-$(dirname "$(dirname "$SCRIPT_DIR")")/matrixflow/moi-core}"
 
 MO_HOST="127.0.0.1"
-MO_PORT="16001"
+MO_PORT="16002"
 MO_USER="dump"
 MO_PASS="111"
-CATALOG_PORT="8082"
+CATALOG_PORT="8084"
 CATALOG_URL="http://localhost:$CATALOG_PORT"
 
 MYSQL_CMD="mysql -h $MO_HOST -P $MO_PORT -u $MO_USER -p$MO_PASS"
 MOI_CLI="$MOI_CORE_DIR/dist/bin/moi-cli"
-SCHEMA_DIR="$MOI_CORE_DIR/dist/schema"
+SCHEMA_DIR="$SCRIPT_DIR/schema"
 ENV_FILE="$PROJECT_DIR/.env"
 
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
 
+# 检查 DASHSCOPE_API_KEY
+DASHSCOPE_API_KEY="${DASHSCOPE_API_KEY:-}"
+if [ -z "$DASHSCOPE_API_KEY" ]; then
+    echo -n "请输入 DashScope API Key: "
+    read -r DASHSCOPE_API_KEY
+    if [ -z "$DASHSCOPE_API_KEY" ]; then
+        log "ERROR: DASHSCOPE_API_KEY 不能为空"
+        exit 1
+    fi
+fi
+
 # ============================================================
 # Step 1: 检查前置条件
 # ============================================================
-log "========== Step 1: 检查前置条件 =========="
-
-if ! $MYSQL_CMD -e "SELECT 1" &>/dev/null; then
-    log "ERROR: MatrixOne ($MO_HOST:$MO_PORT) 不可用"
-    exit 1
-fi
-log "MatrixOne 可用"
+log "========== Step 1: 启动容器并检查前置条件 =========="
 
 if [ ! -f "$MOI_CLI" ]; then
     log "ERROR: moi-cli 不存在: $MOI_CLI"
@@ -47,12 +51,30 @@ if [ ! -f "$MOI_CLI" ]; then
 fi
 log "moi-cli 可用"
 
-if ! docker image inspect matrixflow/moi-catalog:latest &>/dev/null; then
-    log "ERROR: moi-catalog 镜像不存在"
-    log "请先执行: cd $MOI_CORE_DIR && make build-images-demo"
-    exit 1
+if ! docker image inspect matrixflow/moi-catalog:poc-fix &>/dev/null; then
+    log "WARNING: moi-catalog:poc-fix 镜像不存在, 检查 latest..."
+    if ! docker image inspect matrixflow/moi-catalog:latest &>/dev/null; then
+        log "ERROR: moi-catalog 镜像不存在"
+        exit 1
+    fi
 fi
 log "Docker 镜像可用"
+
+# 先启动 MO 容器
+cd "$PROJECT_DIR"
+docker compose up -d 2>/dev/null || docker-compose up -d mo
+log "等待 MatrixOne 就绪..."
+for i in $(seq 1 60); do
+    if $MYSQL_CMD -e "SELECT 1" &>/dev/null; then
+        log "MatrixOne 就绪"
+        break
+    fi
+    if [ "$i" -eq 60 ]; then
+        log "ERROR: MatrixOne 启动超时"
+        exit 1
+    fi
+    sleep 3
+done
 
 # ============================================================
 # Step 2: 初始化 moi_poc 系统库（独立于现有 moi 库）
@@ -94,7 +116,7 @@ log "API_KEY: ${API_KEY:0:20}..."
 log ""
 log "========== Step 4: 启动 Catalog + Workers =========="
 cd "$PROJECT_DIR"
-docker compose up -d
+docker compose up -d 2>/dev/null || docker-compose up -d catalog go-worker python-worker
 log "等待 Catalog 就绪..."
 
 for i in $(seq 1 30); do
@@ -169,8 +191,8 @@ else
         -H "Content-Type: application/json" \
         -d '{
             "name": "qwen-openai-compatible",
-            "type": "OPENAI",
-            "api_key": "sk-8e7a35e7fa784756b2459cb228599ab9",
+            "type": 0,
+            "api_key_encrypted": "'${DASHSCOPE_API_KEY}'",
             "timeout_seconds": 120,
             "models": ["qwen3-max"]
         }')

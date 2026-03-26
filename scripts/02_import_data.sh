@@ -8,7 +8,7 @@ set -euo pipefail
 
 # ---- 配置 ----
 MO_HOST="${MO_HOST:-127.0.0.1}"
-MO_PORT="${MO_PORT:-16001}"
+MO_PORT="${MO_PORT:-16002}"
 MO_USER="${MO_USER:-dump}"
 MO_PASS="${MO_PASS:-111}"
 MO_DB="hk_sfc"
@@ -170,11 +170,99 @@ PYEOF
 load_csv "profit_loss" "$PROFIT_LOSS_CSV"
 rm -f "$PROFIT_LOSS_CSV"
 
-# ---- Step 4: 验证 ----
+# ---- Step 4: 预计算列 (ms_t_stk_sis) ----
 log ""
-log "========== Step 4: 数据验证 =========="
+log "========== Step 4: 预计算列 =========="
+
+log "计算 MA20/MA50/MA100..."
+run_sql "
+UPDATE ms_t_stk_sis t
+JOIN (
+    SELECT SISTKC, trade_date,
+           AVG(SICLSE) OVER (PARTITION BY SISTKC ORDER BY trade_date ROWS BETWEEN 19 PRECEDING AND CURRENT ROW) AS ma20,
+           AVG(SICLSE) OVER (PARTITION BY SISTKC ORDER BY trade_date ROWS BETWEEN 49 PRECEDING AND CURRENT ROW) AS ma50,
+           AVG(SICLSE) OVER (PARTITION BY SISTKC ORDER BY trade_date ROWS BETWEEN 99 PRECEDING AND CURRENT ROW) AS ma100
+    FROM ms_t_stk_sis
+    WHERE SISTKC < '10000'
+) calc ON t.SISTKC = calc.SISTKC AND t.trade_date = calc.trade_date
+SET t.ma_20 = calc.ma20, t.ma_50 = calc.ma50, t.ma_100 = calc.ma100;
+"
+
+log "计算 consecutive_above_ma50..."
+run_sql "
+UPDATE ms_t_stk_sis t
+JOIN (
+    SELECT SISTKC, trade_date,
+           SUM(CASE WHEN SICLSE > ma_50 THEN 1 ELSE 0 END) OVER (
+               PARTITION BY SISTKC ORDER BY trade_date
+               ROWS BETWEEN 49 PRECEDING AND CURRENT ROW
+           ) AS consec
+    FROM ms_t_stk_sis
+    WHERE SISTKC < '10000' AND ma_50 IS NOT NULL
+) calc ON t.SISTKC = calc.SISTKC AND t.trade_date = calc.trade_date
+SET t.consecutive_above_ma50 = calc.consec;
+"
+
+log "计算 avg_vol_30d..."
+run_sql "
+UPDATE ms_t_stk_sis t
+JOIN (
+    SELECT SISTKC, trade_date,
+           AVG(SIVOL) OVER (PARTITION BY SISTKC ORDER BY trade_date ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING) AS avg30
+    FROM ms_t_stk_sis
+    WHERE SISTKC < '10000'
+) calc ON t.SISTKC = calc.SISTKC AND t.trade_date = calc.trade_date
+SET t.avg_vol_30d = calc.avg30;
+"
+log "预计算列完成"
+
+# ---- Step 5: 日线汇总表 (ms_v_stk_hsi_daily) ----
+log ""
+log "========== Step 5: HSI 日线汇总表 =========="
+run_sql "DROP TABLE IF EXISTS ms_v_stk_hsi_daily;"
+run_sql "
+CREATE TABLE ms_v_stk_hsi_daily AS
+SELECT trade_date, HSHSI, HSFIN, HSUTL, HSPROP, HSCANI,
+       (HSHSI - LAG(HSHSI) OVER (ORDER BY trade_date))
+       / LAG(HSHSI) OVER (ORDER BY trade_date) * 100 AS hsi_pct_change
+FROM ms_t_stk_hsi
+WHERE CLOSING = 9
+ORDER BY trade_date;
+"
+run_sql "UPDATE ms_v_stk_hsi_daily SET hsi_pct_change = 0 WHERE hsi_pct_change IS NULL;"
+run_sql "ALTER TABLE ms_v_stk_hsi_daily MODIFY COLUMN trade_date DATE COMMENT 'Trading date (one row per trading day, excludes weekends/holidays). 交易日期（每个交易日一行，不含周末和节假日）。To query a specific month closing, use <= month_end_date ORDER BY trade_date DESC LIMIT 1.';"
+run_sql "ALTER TABLE ms_v_stk_hsi_daily MODIFY COLUMN HSHSI DECIMAL(16,4) COMMENT 'Hang Seng Index daily closing value. 恒生指数/恒指收盘值。';"
+run_sql "ALTER TABLE ms_v_stk_hsi_daily MODIFY COLUMN HSFIN DECIMAL(16,4) COMMENT 'Hang Seng Finance Sub-index daily closing. 恒生金融分类指数。';"
+run_sql "ALTER TABLE ms_v_stk_hsi_daily MODIFY COLUMN HSUTL DECIMAL(16,4) COMMENT 'Hang Seng Utilities Sub-index daily closing. 恒生公用事业分类指数。';"
+run_sql "ALTER TABLE ms_v_stk_hsi_daily MODIFY COLUMN HSPROP DECIMAL(16,4) COMMENT 'Hang Seng Properties Sub-index daily closing. 恒生地产分类指数。';"
+run_sql "ALTER TABLE ms_v_stk_hsi_daily MODIFY COLUMN HSCANI DECIMAL(16,4) COMMENT 'Hang Seng Commerce & Industry Sub-index daily closing. 恒生工商业分类指数。';"
+run_sql "ALTER TABLE ms_v_stk_hsi_daily MODIFY COLUMN hsi_pct_change DECIMAL(16,10) COMMENT 'HSI daily percentage change vs previous trading day. 恒指日涨跌幅(%)。Negative means decline, e.g. -2.5 means dropped 2.5%.';"
+log "日线汇总表完成 ($(run_sql "SELECT COUNT(*) FROM ms_v_stk_hsi_daily" | tail -1) 行)"
+
+# ---- Step 6: HSI tick 表列注释 ----
+log ""
+log "========== Step 6: 列注释更新 =========="
+run_sql "ALTER TABLE ms_t_stk_hsi MODIFY COLUMN CLOSING TINYINT COMMENT 'Record type: 0=intraday tick (~11000 rows/day), 9=daily closing (1 row/day). For any daily-level analysis, MUST filter WHERE CLOSING = 9.';"
+log "列注释更新完成"
+
+# ---- Step 7: 创建索引 ----
+log ""
+log "========== Step 7: 创建索引 =========="
+run_sql "CREATE INDEX idx_hsi_closing_date ON ms_t_stk_hsi(CLOSING, trade_date);"
+run_sql "CREATE INDEX idx_sis_stk_date ON ms_t_stk_sis(SISTKC, trade_date);"
+run_sql "CREATE INDEX idx_cap_date_stk ON ms_v_stock_capital(ref_date, STKCD);"
+run_sql "CREATE INDEX idx_ind_stk_date ON ds_t_int_hsicl_dtl(STOCK_CODE, MODIFIED_DATE);"
+run_sql "CREATE INDEX idx_news_date_sec ON sehknews(securitycode, timestamp);"
+run_sql "CREATE INDEX idx_pl_stk_yr ON profit_loss(stock_code, fin_yr);"
+run_sql "CREATE INDEX idx_hsi_daily_date ON ms_v_stk_hsi_daily(trade_date);"
+log "索引创建完成"
+
+# ---- Step 8: 验证 ----
+log ""
+log "========== Step 8: 数据验证 =========="
 run_sql "
 SELECT 'ms_t_stk_hsi' AS tbl, COUNT(*) AS cnt FROM ms_t_stk_hsi
+UNION ALL SELECT 'ms_v_stk_hsi_daily', COUNT(*) FROM ms_v_stk_hsi_daily
 UNION ALL SELECT 'ms_t_stk_sis', COUNT(*) FROM ms_t_stk_sis
 UNION ALL SELECT 'ms_v_stock_capital', COUNT(*) FROM ms_v_stock_capital
 UNION ALL SELECT 'ds_t_int_hsicl_dtl', COUNT(*) FROM ds_t_int_hsicl_dtl
