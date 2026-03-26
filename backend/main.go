@@ -44,7 +44,7 @@ func main() {
 	log.Printf("starting server on %s", addr)
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           mux,
+		Handler:           gzipMiddleware(mux),
 		ReadHeaderTimeout: 10 * time.Second,
 		WriteTimeout:      10 * time.Minute,
 		IdleTimeout:       10 * time.Minute,
