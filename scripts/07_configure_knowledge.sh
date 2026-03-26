@@ -106,6 +106,18 @@ add "logic" "ccass_participant_granularity" "CCASS inter-broker movement must co
   '"In ccass_holdings, each row is a (holding_date, stock_code, participant_id) record. When analyzing inter-broker shareholding movement or changes, always compare at the participant_id level — JOIN ON stock_code AND participant_id between two dates. Do NOT aggregate (SUM/GROUP BY) all participants into a stock-level total, as that loses the inter-broker granularity the user is asking about."' \
   '"ccass_holdings"'
 
+add "logic" "industry_carry_forward" "Industry classification uses carry-forward logic" \
+  '"ds_t_int_hsicl_dtl only records classification changes, NOT monthly snapshots. When a stock has no record for a given month, carry forward the most recent classification (use MAX(MODIFIED_DATE) WHERE MODIFIED_DATE <= target_date). If multiple records exist within the same month, use the one with the latest MODIFIED_DATE."' \
+  '"ds_t_int_hsicl_dtl"'
+
+add "logic" "news_non_trading_day" "News on non-trading day uses next trading day volume" \
+  '"When a news announcement in sehknews falls on a non-trading day or after market hours, use the next available trading day volume from ms_t_stk_sis for comparison. Match using DATE(timestamp) to find the closest trade_date >= DATE(timestamp)."' \
+  '"sehknews","ms_t_stk_sis"'
+
+add "logic" "profit_loss_fin_yr_matching" "Revenue comparison must match fin_yr type" \
+  '"When comparing revenue growth across years in profit_loss, always match the same fin_yr type (e.g. 202512 vs 202312 for annual, 202506 vs 202306 for interim). Do NOT compare different fin_yr types (e.g. 202512 vs 202306). The fin_yr format is YYYYMM where MM indicates the fiscal year ending month."' \
+  '"profit_loss"'
+
 # ============================================================
 # Step 3b: 日线汇总表知识
 # ============================================================
