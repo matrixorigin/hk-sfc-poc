@@ -118,6 +118,10 @@ add "logic" "profit_loss_fin_yr_matching" "Revenue comparison must match fin_yr 
   '"When comparing revenue growth across years in profit_loss, always match the same fin_yr type (e.g. 202512 vs 202312 for annual, 202506 vs 202306 for interim). Do NOT compare different fin_yr types (e.g. 202512 vs 202306). The fin_yr format is YYYYMM where MM indicates the fiscal year ending month."' \
   '"profit_loss"'
 
+add "logic" "chart_friendly_output" "Generate chart-friendly SQL when visualization is requested" \
+  '"When the question asks for charts, plots, trends, or visualization (图表/绘制/趋势/走势), generate SQL that returns time series data with a date column and numeric value columns suitable for line chart rendering. Limit results to top 5 representative items (e.g. ORDER BY ... DESC LIMIT 5) if the full result set would be too large for visualization. The frontend can automatically render ECharts line charts from time series data."' \
+  '"ms_t_stk_sis","ms_v_stk_hsi_daily","profit_loss","ms_v_stock_capital"'
+
 # ============================================================
 # Step 3b: 日线汇总表知识
 # ============================================================
