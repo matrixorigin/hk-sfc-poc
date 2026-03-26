@@ -197,14 +197,15 @@ build_app() {
   pkill -f "hk-poc-backend" 2>/dev/null || true
   sleep 1
 
-  # 启动后端（同时托管前端静态文件）
-  log "启动应用 (port 8083, 前端 + API)..."
+  # 启动后端（同时托管前端静态文件，端口 3000）
+  log "启动应用 (port 3000, 前端 + API)..."
   export STATIC_DIR="$PROJECT_DIR/web/dist"
+  export SERVER_PORT=3000
   nohup ./hk-poc-backend -config config.yaml > /tmp/hk-poc-backend.log 2>&1 &
   sleep 2
 
-  echo -n "  API: "; curl -s -o /dev/null -w "%{http_code}" --max-time 3 http://localhost:8083/api/chat -X OPTIONS 2>/dev/null; echo ""
-  echo -n "  Frontend: "; curl -s -o /dev/null -w "%{http_code}" --max-time 3 http://localhost:8083 2>/dev/null; echo ""
+  echo -n "  API: "; curl -s -o /dev/null -w "%{http_code}" --max-time 3 http://localhost:3000/api/chat -X OPTIONS 2>/dev/null; echo ""
+  echo -n "  Frontend: "; curl -s -o /dev/null -w "%{http_code}" --max-time 3 http://localhost:3000 2>/dev/null; echo ""
 }
 
 # ============================================================
@@ -216,8 +217,8 @@ verify() {
 
   echo -n "  MO: "; mysql -h 127.0.0.1 -P 16002 -u dump -p111 -e "SELECT 1" &>/dev/null && echo "OK" || echo "FAIL"
   echo -n "  Catalog: "; curl -s http://localhost:8084/health | python3 -c "import sys,json; print(json.load(sys.stdin)['status'])" 2>/dev/null || echo "FAIL"
-  echo -n "  API: "; curl -s -o /dev/null -w "%{http_code}" --max-time 3 http://localhost:8083/api/chat -X OPTIONS 2>/dev/null; echo ""
-  echo -n "  Frontend: "; curl -s -o /dev/null -w "%{http_code}" --max-time 3 http://localhost:8083 2>/dev/null; echo ""
+  echo -n "  API: "; curl -s -o /dev/null -w "%{http_code}" --max-time 3 http://localhost:3000/api/chat -X OPTIONS 2>/dev/null; echo ""
+  echo -n "  Frontend: "; curl -s -o /dev/null -w "%{http_code}" --max-time 3 http://localhost:3000 2>/dev/null; echo ""
 
   log ""
   log "快速 Explore 测试..."
@@ -234,7 +235,7 @@ for l in sys.stdin:
 
   log ""
   log "========== 部署完成 =========="
-  log "应用: http://<server-ip>:8083 (前端 + API)"
+  log "应用: http://<server-ip>:3000 (前端 + API)"
   log "Catalog: http://<server-ip>:8084"
 }
 

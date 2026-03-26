@@ -46,5 +46,9 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("parse config yaml: %w", err)
 	}
 
+	if cfg.Server.Port == 0 {
+		cfg.Server.Port = 8083
+	}
+
 	return &cfg, nil
 }
