@@ -175,34 +175,17 @@ config_kb() {
 # Step 6: 构建应用
 # ============================================================
 build_app() {
-  log "========== Step 6: 构建应用 =========="
+  log "========== Step 6: 构建并启动应用 =========="
   cd "$PROJECT_DIR"
   source "$PROJECT_DIR/.env"
   export MOI_SYSTEM_API_KEY POC_WORKSPACE_ID
 
-  # 前端
-  log "构建前端..."
-  cd "$PROJECT_DIR/web"
-  npm install --legacy-peer-deps
-  npm run build
-  log "前端构建完成"
+  log "构建应用镜像..."
+  docker compose build app 2>&1 | tail -5
 
-  # 后端
-  log "编译后端..."
-  cd "$PROJECT_DIR/backend"
-  go build -o hk-poc-backend .
-  log "后端编译完成"
-
-  # 停掉旧进程
-  pkill -f "hk-poc-backend" 2>/dev/null || true
-  sleep 1
-
-  # 启动后端（同时托管前端静态文件，端口 3000）
-  log "启动应用 (port 3000, 前端 + API)..."
-  export STATIC_DIR="$PROJECT_DIR/web/dist"
-  export SERVER_PORT=3000
-  nohup ./hk-poc-backend -config config.yaml > /tmp/hk-poc-backend.log 2>&1 &
-  sleep 2
+  log "启动应用容器 (port 3000)..."
+  docker compose up -d app
+  sleep 3
 
   echo -n "  API: "; curl -s -o /dev/null -w "%{http_code}" --max-time 3 http://localhost:3000/api/chat -X OPTIONS 2>/dev/null; echo ""
   echo -n "  Frontend: "; curl -s -o /dev/null -w "%{http_code}" --max-time 3 http://localhost:3000 2>/dev/null; echo ""

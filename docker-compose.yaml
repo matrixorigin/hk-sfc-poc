@@ -63,6 +63,23 @@ services:
       - "host.docker.internal:host-gateway"
     restart: on-failure
 
+  app:
+    build: .
+    image: hk-poc-app:latest
+    container_name: hk-poc-app
+    ports:
+      - "3000:3000"
+    environment:
+      MOI_SYSTEM_API_KEY: ${MOI_SYSTEM_API_KEY:-}
+      POC_WORKSPACE_ID: ${POC_WORKSPACE_ID:-}
+      STATIC_DIR: /app/web/dist
+      SERVER_PORT: "3000"
+    depends_on:
+      - catalog
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: always
+
 volumes:
   poc_mo_data: {}
   poc_catalog_data: {}
