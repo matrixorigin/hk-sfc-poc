@@ -118,9 +118,9 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer stream.Close()
 
-	// 标记该 session 已有 Explore 查询，后续追问直接放行
+	// 记录该问题到对话历史，供后续 Clarifier 判断追问上下文
 	if h.clarify != nil {
-		h.clarify.MarkExplored(sessionID)
+		h.clarify.RecordExplored(sessionID, processedQuestion)
 	}
 
 	// 设置 SSE 响应头

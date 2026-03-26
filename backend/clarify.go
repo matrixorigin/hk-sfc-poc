@@ -11,34 +11,30 @@ import (
 	"sync"
 )
 
-const classifySystemPrompt = `你是一个参数完整性检查器。用户在问港股数据分析问题。
-判断用户问题是否缺少必要参数。
+const classifySystemPrompt = `你是香港证券市场数据分析平台的参数完整性检查器。
 
-规则：
-- 涉及指数行情/个股行情/成交量/均线分析：需要时间范围（日期、月份、季度、年份均可）
-- 涉及财务数据（营收、利润）：需要股票代码或股票名称
-- 涉及 CCASS 持仓变动：需要具体日期（至少一天）
-- 涉及行业分类/市值对比：需要时间范围
-- "今年"、"最近"、"上半年"、"Q1"等表述视为已提供时间范围
+系统背景：
+- 本平台专注于港交所（HKEX）上市证券的数据分析
+- 数据覆盖：恒生指数行情、个股行情与成交量、行业分类与市值、新闻公告、CCASS券商持仓、上市公司财务报表
+- 默认分析对象为恒生指数和港股主板股票
+
+你的职责：
+判断用户的提问是否包含执行查询所需的关键参数。结合对话历史综合判断，仅在确实缺少必要参数时才反问，一次只问一个最关键的缺失参数。
+
+需要的关键参数：
+- 时间范围：指数分析、成交量统计、均线筛选、新闻异常检测、行业市值对比等场景需要
+- 股票标识：个股财务数据（营收、利润）查询需要股票代码或名称
+- 具体日期：CCASS持仓变动分析需要
+
+判断规则：
+- "今年"、"最近"、"上半年"、"Q1 2025"等表述视为已提供时间范围
 - "腾讯"、"00700"、"stock 88"等视为已提供股票标识
-- 如果问题是闲聊、打招呼或与港股数据无关，返回 complete
+- 如果用户的问题是对之前查询的追问或修改条件（如"那超过3%的呢"、"换成月度数据"、"占比多少"），所需参数可从对话历史中继承，视为参数齐全
+- 闲聊或无法归类的问题视为参数齐全
 
 仅返回 JSON，不要其他内容：
 - 参数齐全：{"complete": true}
-- 参数缺失：{"complete": false, "reply": "用自然语言反问用户补充缺失参数，简洁友好，一句话"}
-
-示例：
-用户: "恒指大跌的时候哪些股票成交量最大"
-返回: {"complete": false, "reply": "请问您想查看哪个时间段的数据？比如2025年上半年，或者某个具体月份？"}
-
-用户: "2025年4月恒指跌超2%时成交量最大的股票"
-返回: {"complete": true}
-
-用户: "营收增长情况"
-返回: {"complete": false, "reply": "请问您想查看哪只股票的营收数据？请提供股票代码或名称。"}
-
-用户: "股票88从2023到2025的营收"
-返回: {"complete": true}`
+- 参数缺失：{"complete": false, "reply": "用自然语言反问用户补充缺失参数，简洁友好，一句话"}`
 
 const mergeSystemPrompt = `你是一个问题合并助手。用户之前问了一个不完整的问题，现在补充了信息。
 请判断用户的新输入：
@@ -61,9 +57,9 @@ type Clarifier struct {
 	model       string
 	httpClient  *http.Client
 
-	mu       sync.Mutex
-	pending  map[string]string // session_id → 被反问的原始问题
-	explored map[string]bool   // session_id → 是否已经有过 Explore 查询
+	mu      sync.Mutex
+	pending map[string]string   // session_id → 被反问的原始问题
+	history map[string][]string // session_id → 已发送到 Explore 的历史问题
 }
 
 func NewClarifier(catalogURL, apiKey, workspaceID, model string) *Clarifier {
@@ -74,7 +70,7 @@ func NewClarifier(catalogURL, apiKey, workspaceID, model string) *Clarifier {
 		model:       model,
 		httpClient:  &http.Client{},
 		pending:     make(map[string]string),
-		explored:    make(map[string]bool),
+		history:     make(map[string][]string),
 	}
 }
 
@@ -83,24 +79,24 @@ func NewClarifier(catalogURL, apiKey, workspaceID, model string) *Clarifier {
 //   - 如果参数齐全：返回 (question, "", nil)，调用方继续走 Explore
 //   - 如果需要反问：返回 ("", reply, nil)，调用方返回反问 SSE
 func (c *Clarifier) Process(ctx context.Context, sessionID, question string) (finalQuestion string, clarifyReply string, err error) {
-	// Step 0: 如果该 session 已有 Explore 查询历史，短句追问直接放行给 Explore
 	c.mu.Lock()
-	hasExplored := c.explored[sessionID]
 	pendingQ, hasPending := c.pending[sessionID]
 	if hasPending {
 		delete(c.pending, sessionID)
 	}
+	hist := make([]string, len(c.history[sessionID]))
+	copy(hist, c.history[sessionID])
 	c.mu.Unlock()
 
-	// Step 1: 如果有 pending，先合并
+	// Step 1: 用户回答反问 → merge 后直接放行，不再二次检查
 	if hasPending {
 		merged := c.merge(ctx, pendingQ, question)
 		log.Printf("clarify: merged pending=%q + input=%q → %q", pendingQ, question, merged)
-		question = merged
+		return merged, "", nil
 	}
 
-	// Step 2: 检查参数完整性（传入 session 是否已有查询历史）
-	result := c.check(ctx, question, hasExplored)
+	// Step 2: 带对话历史检查参数完整性
+	result := c.check(ctx, question, hist)
 	if result == nil {
 		return question, "", nil
 	}
@@ -113,17 +109,23 @@ func (c *Clarifier) Process(ctx context.Context, sessionID, question string) (fi
 	return "", result.Reply, nil
 }
 
-// ClearPending 清除某个 session 的 pending 状态（如用户点了 New Chat）。
-func (c *Clarifier) ClearPending(sessionID string) {
+// ClearSession 清除某个 session 的全部状态（如用户点了 New Chat）。
+func (c *Clarifier) ClearSession(sessionID string) {
 	c.mu.Lock()
 	delete(c.pending, sessionID)
+	delete(c.history, sessionID)
 	c.mu.Unlock()
 }
 
-// MarkExplored 标记该 session 已经有过 Explore 查询。
-func (c *Clarifier) MarkExplored(sessionID string) {
+// RecordExplored 记录一条已发送到 Explore 的问题，用于后续对话历史上下文。
+func (c *Clarifier) RecordExplored(sessionID, question string) {
 	c.mu.Lock()
-	c.explored[sessionID] = true
+	h := c.history[sessionID]
+	h = append(h, question)
+	if len(h) > 5 {
+		h = h[len(h)-5:]
+	}
+	c.history[sessionID] = h
 	c.mu.Unlock()
 }
 
@@ -138,17 +140,21 @@ func (c *Clarifier) merge(ctx context.Context, original, supplement string) stri
 	return content
 }
 
-// check 调用 LLM 判断参数完整性。hasHistory 为 true 时提示 LLM 考虑追问场景。
-func (c *Clarifier) check(ctx context.Context, question string, hasHistory bool) *ClarifyResult {
-	prompt := classifySystemPrompt
-	if hasHistory {
-		prompt += `
-
-重要补充：当前对话已有之前的查询历史。用户可能在追问或修改之前的查询条件（如"超过3%的呢"、"那2023年呢"、"排除衍生品"、"换成月度数据"等）。
-这类追问虽然看起来缺少完整参数，但它们引用了之前的上下文，应该被视为参数齐全（complete=true），交给对话引擎处理。
-只有当用户的问题是一个全新的、与之前无关的话题且确实缺少必要参数时，才返回 complete=false。`
+// check 调用 LLM 判断参数完整性，传入对话历史供 LLM 综合判断。
+func (c *Clarifier) check(ctx context.Context, question string, history []string) *ClarifyResult {
+	// 构造包含对话历史的用户消息
+	var userContent string
+	if len(history) > 0 {
+		userContent = "本次对话中用户的历史提问（均已获得回答）：\n"
+		for i, q := range history {
+			userContent += fmt.Sprintf("%d. %s\n", i+1, q)
+		}
+		userContent += fmt.Sprintf("\n当前提问：%s", question)
+	} else {
+		userContent = question
 	}
-	content, err := c.callLLM(ctx, prompt, question)
+
+	content, err := c.callLLM(ctx, classifySystemPrompt, userContent)
 	if err != nil {
 		log.Printf("clarify: check LLM error: %v", err)
 		return nil // 出错时放行
