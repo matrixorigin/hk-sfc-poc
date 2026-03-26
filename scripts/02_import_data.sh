@@ -98,7 +98,7 @@ csv_columns = [
 ]
 
 rows = []
-xml_files = sorted([f for f in os.listdir(xml_dir) if f.endswith('.xml')])
+xml_files = sorted([f for f in os.listdir(xml_dir) if f.endswith('.xml') and not f.startswith('._')])
 print(f"解析 {len(xml_files)} 个 XML 文件...")
 
 for fname in xml_files:
@@ -131,7 +131,6 @@ for fname in xml_files:
             }
 
             def clean_num(v):
-                """清洗数值：去除非法值如 '--', 'N/A' 等"""
                 if not v:
                     return None
                 v = v.strip()
@@ -170,9 +169,62 @@ PYEOF
 load_csv "profit_loss" "$PROFIT_LOSS_CSV"
 rm -f "$PROFIT_LOSS_CSV"
 
-# ---- Step 4: 预计算列 (ms_t_stk_sis) ----
+# ---- Step 4: 日期标准化 ----
 log ""
-log "========== Step 4: 预计算列 =========="
+log "========== Step 4: 日期标准化 =========="
+
+log "ms_t_stk_hsi.trade_date..."
+run_sql "
+UPDATE ms_t_stk_hsi SET trade_date = CAST(
+  CONCAT(
+    SUBSTR(HSTXDT, 6, 4), '-',
+    CASE SUBSTR(HSTXDT, 3, 3)
+      WHEN 'JAN' THEN '01' WHEN 'FEB' THEN '02' WHEN 'MAR' THEN '03'
+      WHEN 'APR' THEN '04' WHEN 'MAY' THEN '05' WHEN 'JUN' THEN '06'
+      WHEN 'JUL' THEN '07' WHEN 'AUG' THEN '08' WHEN 'SEP' THEN '09'
+      WHEN 'OCT' THEN '10' WHEN 'NOV' THEN '11' WHEN 'DEC' THEN '12'
+    END, '-',
+    SUBSTR(HSTXDT, 1, 2)
+  ) AS DATE
+) WHERE trade_date IS NULL;
+"
+
+log "ms_t_stk_sis.trade_date..."
+run_sql "
+UPDATE ms_t_stk_sis SET trade_date = CAST(
+  CONCAT(
+    SUBSTR(SITXDT, 6, 4), '-',
+    CASE SUBSTR(SITXDT, 3, 3)
+      WHEN 'JAN' THEN '01' WHEN 'FEB' THEN '02' WHEN 'MAR' THEN '03'
+      WHEN 'APR' THEN '04' WHEN 'MAY' THEN '05' WHEN 'JUN' THEN '06'
+      WHEN 'JUL' THEN '07' WHEN 'AUG' THEN '08' WHEN 'SEP' THEN '09'
+      WHEN 'OCT' THEN '10' WHEN 'NOV' THEN '11' WHEN 'DEC' THEN '12'
+    END, '-',
+    SUBSTR(SITXDT, 1, 2)
+  ) AS DATE
+) WHERE trade_date IS NULL;
+"
+
+log "ms_v_stock_capital.ref_date..."
+run_sql "
+UPDATE ms_v_stock_capital SET ref_date = CAST(
+  CONCAT(
+    '20', SUBSTR(SIRXDT, 8, 2), '-',
+    CASE SUBSTR(SIRXDT, 4, 3)
+      WHEN 'JAN' THEN '01' WHEN 'FEB' THEN '02' WHEN 'MAR' THEN '03'
+      WHEN 'APR' THEN '04' WHEN 'MAY' THEN '05' WHEN 'JUN' THEN '06'
+      WHEN 'JUL' THEN '07' WHEN 'AUG' THEN '08' WHEN 'SEP' THEN '09'
+      WHEN 'OCT' THEN '10' WHEN 'NOV' THEN '11' WHEN 'DEC' THEN '12'
+    END, '-',
+    SUBSTR(SIRXDT, 1, 2)
+  ) AS DATE
+) WHERE ref_date IS NULL;
+"
+log "日期标准化完成"
+
+# ---- Step 5: 预计算列 (ms_t_stk_sis) ----
+log ""
+log "========== Step 5: 预计算列 =========="
 
 log "计算 MA20/MA50/MA100..."
 run_sql "
@@ -216,9 +268,13 @@ SET t.avg_vol_30d = calc.avg30;
 "
 log "预计算列完成"
 
-# ---- Step 5: 日线汇总表 (ms_v_stk_hsi_daily) ----
+# 验证预计算列
+log "验证预计算列..."
+run_sql "SELECT SUM(CASE WHEN ma_50 IS NOT NULL THEN 1 ELSE 0 END) as has_ma50, SUM(CASE WHEN consecutive_above_ma50 IS NOT NULL THEN 1 ELSE 0 END) as has_consec, SUM(CASE WHEN avg_vol_30d IS NOT NULL THEN 1 ELSE 0 END) as has_avgvol FROM ms_t_stk_sis;"
+
+# ---- Step 6: 日线汇总表 (ms_v_stk_hsi_daily) ----
 log ""
-log "========== Step 5: HSI 日线汇总表 =========="
+log "========== Step 6: HSI 日线汇总表 =========="
 run_sql "DROP TABLE IF EXISTS ms_v_stk_hsi_daily;"
 run_sql "
 CREATE TABLE ms_v_stk_hsi_daily AS
@@ -239,27 +295,27 @@ run_sql "ALTER TABLE ms_v_stk_hsi_daily MODIFY COLUMN HSCANI DECIMAL(16,4) COMME
 run_sql "ALTER TABLE ms_v_stk_hsi_daily MODIFY COLUMN hsi_pct_change DECIMAL(16,10) COMMENT 'HSI daily percentage change vs previous trading day. 恒指日涨跌幅(%)。Negative means decline, e.g. -2.5 means dropped 2.5%.';"
 log "日线汇总表完成 ($(run_sql "SELECT COUNT(*) FROM ms_v_stk_hsi_daily" | tail -1) 行)"
 
-# ---- Step 6: HSI tick 表列注释 ----
+# ---- Step 7: 列注释更新 ----
 log ""
-log "========== Step 6: 列注释更新 =========="
+log "========== Step 7: 列注释更新 =========="
 run_sql "ALTER TABLE ms_t_stk_hsi MODIFY COLUMN CLOSING TINYINT COMMENT 'Record type: 0=intraday tick (~11000 rows/day), 9=daily closing (1 row/day). For any daily-level analysis, MUST filter WHERE CLOSING = 9.';"
 log "列注释更新完成"
 
-# ---- Step 7: 创建索引 ----
+# ---- Step 8: 创建索引（忽略已存在的错误） ----
 log ""
-log "========== Step 7: 创建索引 =========="
-run_sql "CREATE INDEX idx_hsi_closing_date ON ms_t_stk_hsi(CLOSING, trade_date);"
-run_sql "CREATE INDEX idx_sis_stk_date ON ms_t_stk_sis(SISTKC, trade_date);"
-run_sql "CREATE INDEX idx_cap_date_stk ON ms_v_stock_capital(ref_date, STKCD);"
-run_sql "CREATE INDEX idx_ind_stk_date ON ds_t_int_hsicl_dtl(STOCK_CODE, MODIFIED_DATE);"
-run_sql "CREATE INDEX idx_news_date_sec ON sehknews(securitycode, timestamp);"
-run_sql "CREATE INDEX idx_pl_stk_yr ON profit_loss(stock_code, fin_yr);"
-run_sql "CREATE INDEX idx_hsi_daily_date ON ms_v_stk_hsi_daily(trade_date);"
+log "========== Step 8: 创建索引 =========="
+run_sql "CREATE INDEX idx_hsi_closing_date ON ms_t_stk_hsi(CLOSING, trade_date);" || true
+run_sql "CREATE INDEX idx_sis_stk_date ON ms_t_stk_sis(SISTKC, trade_date);" || true
+run_sql "CREATE INDEX idx_cap_date_stk ON ms_v_stock_capital(ref_date, STKCD);" || true
+run_sql "CREATE INDEX idx_ind_stk_date ON ds_t_int_hsicl_dtl(STOCK_CODE, MODIFIED_DATE);" || true
+run_sql "CREATE INDEX idx_news_date_sec ON sehknews(securitycode, timestamp);" || true
+run_sql "CREATE INDEX idx_pl_stk_yr ON profit_loss(stock_code, fin_yr);" || true
+run_sql "CREATE INDEX idx_hsi_daily_date ON ms_v_stk_hsi_daily(trade_date);" || true
 log "索引创建完成"
 
-# ---- Step 8: 验证 ----
+# ---- Step 9: 验证 ----
 log ""
-log "========== Step 8: 数据验证 =========="
+log "========== Step 9: 数据验证 =========="
 run_sql "
 SELECT 'ms_t_stk_hsi' AS tbl, COUNT(*) AS cnt FROM ms_t_stk_hsi
 UNION ALL SELECT 'ms_v_stk_hsi_daily', COUNT(*) FROM ms_v_stk_hsi_daily
@@ -269,6 +325,11 @@ UNION ALL SELECT 'ds_t_int_hsicl_dtl', COUNT(*) FROM ds_t_int_hsicl_dtl
 UNION ALL SELECT 'sehknews', COUNT(*) FROM sehknews
 UNION ALL SELECT 'profit_loss', COUNT(*) FROM profit_loss;
 "
+
+# 验证关键字段非空
+log ""
+log "关键字段验证:"
+run_sql "SELECT 'trade_date NULL' AS chk, COUNT(*) AS cnt FROM ms_t_stk_sis WHERE trade_date IS NULL UNION ALL SELECT 'ma_50 NULL', COUNT(*) FROM ms_t_stk_sis WHERE ma_50 IS NULL AND SISTKC < '10000' UNION ALL SELECT 'ref_date NULL', COUNT(*) FROM ms_v_stock_capital WHERE ref_date IS NULL;"
 
 log ""
 log "========== 全部导入完成 =========="
