@@ -35,6 +35,8 @@ function isIdentifierColumn(colName: string, values: any[]): boolean {
   const lc = colName.toLowerCase()
   // 列名含 code/id/name/symbol 的大概率是标识列
   if (/\b(code|id|name|symbol|ticker|stock|participant|industry)\b/.test(lc)) return true
+  // HK POC specific: SISTKC (stock code), SISTKN (stock name) are identifier columns
+  if (/^(sistkc|sistkn|stkcd|stock_code|securitycode)$/.test(lc)) return true
   // 唯一值极少（< 5）的数值列很可能是标识
   const uniqueVals = new Set(values.map((v) => String(v)))
   if (uniqueVals.size <= 3 && values.length > 10) return true
