@@ -72,6 +72,7 @@ services:
     environment:
       MOI_SYSTEM_API_KEY: ${MOI_SYSTEM_API_KEY:-}
       POC_WORKSPACE_ID: ${POC_WORKSPACE_ID:-}
+      CATALOG_URL: http://catalog:8081
       STATIC_DIR: /app/web/dist
       SERVER_PORT: "3000"
     depends_on:

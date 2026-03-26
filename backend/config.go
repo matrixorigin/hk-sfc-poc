@@ -49,6 +49,9 @@ func LoadConfig(path string) (*Config, error) {
 	if cfg.Server.Port == 0 {
 		cfg.Server.Port = 8083
 	}
+	if cfg.Catalog.URL == "" {
+		cfg.Catalog.URL = "http://localhost:8084"
+	}
 
 	return &cfg, nil
 }

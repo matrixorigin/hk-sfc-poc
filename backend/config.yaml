@@ -3,7 +3,7 @@ server:
   static_dir: "${STATIC_DIR}"
 
 catalog:
-  url: "http://localhost:8084"
+  url: "${CATALOG_URL}"
   api_key: "${MOI_SYSTEM_API_KEY}"
   workspace_id: "${POC_WORKSPACE_ID}"
 
