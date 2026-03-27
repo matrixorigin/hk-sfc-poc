@@ -132,7 +132,12 @@ export function useExploreSSE({ onUpdate, onDone, onError }: UseExploreSSEOption
         }
         break
       }
+      case 'retrieval.progress': {
+        onUpdate((msg) => ({ ...msg, phase: 'querying' }))
+        break
+      }
       case 'sql.result': {
+        onUpdate((msg) => ({ ...msg, phase: 'querying' }))
         // Store the actually executed SQL (may differ from sql.generated if repair happened)
         const executedSQL: string = event.data?.sql ?? ''
         if (executedSQL) {

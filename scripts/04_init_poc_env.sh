@@ -180,7 +180,7 @@ else
 fi
 
 # ============================================================
-# Step 6: 配置 LLM Backend（qwen3-max）
+# Step 6: 配置 LLM Backend（qwen3-max + qwen3.5-plus 等）
 # ============================================================
 log ""
 log "========== Step 6: 配置 LLM Backend =========="
@@ -202,7 +202,7 @@ else
             "type": 0,
             "api_key_encrypted": "'${DASHSCOPE_API_KEY}'",
             "timeout_seconds": 120,
-            "models": ["qwen3-max"]
+            "models": ["qwen3-max", "qwen3.5-plus", "qwen3.5-flash", "qwen-plus", "qwen-max"]
         }')
 
     BACKEND_ID=$(echo "$BACKEND_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('data',{}).get('id',''))" 2>/dev/null || true)

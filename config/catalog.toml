@@ -29,7 +29,7 @@ type = "local"
 endpoint = "/data"
 
 [logging]
-level = "info"
+level = "debug"
 format = "json"
 output = "stdout"
 
@@ -86,3 +86,7 @@ recent_window = 5
 history_token_budget = 2000
 enable_result_context = true
 enable_summary = true
+
+[explore.planner]
+model = "qwen3.5-plus"
+enable_thinking = false
