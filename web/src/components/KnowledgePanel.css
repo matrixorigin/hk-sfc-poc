@@ -1,0 +1,432 @@
+/* Knowledge Panel - Slide-over Drawer */
+.knowledge-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 100;
+  animation: kp-fadeIn 0.2s ease-out;
+}
+
+@keyframes kp-fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes kp-slideIn {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+.knowledge-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 640px;
+  max-width: 90vw;
+  height: 100vh;
+  background: #fff;
+  z-index: 101;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.12);
+  animation: kp-slideIn 0.25s ease-out;
+}
+
+/* Header */
+.knowledge-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e4e7ec;
+  flex-shrink: 0;
+}
+
+.knowledge-panel-header-left h2 {
+  font-size: 17px;
+  font-weight: 600;
+  color: #1a1a2e;
+  margin: 0;
+}
+
+.knowledge-panel-header-left p {
+  font-size: 12px;
+  color: #94a3b8;
+  margin: 2px 0 0 0;
+}
+
+.knowledge-panel-close {
+  background: none;
+  border: none;
+  font-size: 20px;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.15s;
+  line-height: 1;
+}
+
+.knowledge-panel-close:hover {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+/* Toolbar: filter tabs + add button */
+.knowledge-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  border-bottom: 1px solid #f1f5f9;
+  flex-shrink: 0;
+  gap: 12px;
+}
+
+.knowledge-filter-tabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.knowledge-filter-tab {
+  padding: 5px 14px;
+  border: 1px solid #e4e7ec;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  color: #64748b;
+  transition: all 0.15s;
+}
+
+.knowledge-filter-tab:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.knowledge-filter-tab.active {
+  background: #eef2ff;
+  border-color: #c7d2fe;
+  color: #4f46e5;
+}
+
+.knowledge-add-btn {
+  padding: 7px 16px;
+  background: linear-gradient(135deg, #0f3460, #1a1a2e);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+}
+
+.knowledge-add-btn:hover {
+  opacity: 0.9;
+}
+
+/* Scrollable list */
+.knowledge-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+}
+
+.knowledge-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.knowledge-list::-webkit-scrollbar-thumb {
+  background: #ddd;
+  border-radius: 2px;
+}
+
+.knowledge-empty {
+  text-align: center;
+  color: #94a3b8;
+  font-size: 13px;
+  padding: 40px 0;
+}
+
+/* Loading state */
+.knowledge-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 40px 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+/* Knowledge Card */
+.knowledge-card {
+  background: #fff;
+  border: 1px solid #e4e7ec;
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  transition: all 0.15s;
+}
+
+.knowledge-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.knowledge-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.knowledge-card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.knowledge-card-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a1a2e;
+}
+
+.knowledge-card-key {
+  font-size: 11px;
+  color: #94a3b8;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  background: #f8fafc;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.knowledge-card-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.knowledge-card-actions button {
+  padding: 4px 10px;
+  border: 1px solid #e4e7ec;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 11px;
+  color: #64748b;
+  transition: all 0.15s;
+}
+
+.knowledge-card-actions button:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #475569;
+}
+
+.knowledge-card-actions button.delete:hover {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #ef4444;
+}
+
+/* Type badge */
+.knowledge-type-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.knowledge-type-badge.logic {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.knowledge-type-badge.glossary {
+  background: #f0fdf4;
+  color: #16a34a;
+}
+
+.knowledge-type-badge.case_library {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+/* Knowledge values list */
+.knowledge-card-values {
+  margin: 8px 0;
+}
+
+.knowledge-card-values ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.knowledge-card-values li {
+  font-size: 13px;
+  color: #475569;
+  line-height: 1.5;
+  padding: 2px 0 2px 12px;
+  position: relative;
+}
+
+.knowledge-card-values li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 10px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #cbd5e1;
+}
+
+/* Table tags */
+.knowledge-card-tables {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.knowledge-table-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  background: #f8fafc;
+  border: 1px solid #e4e7ec;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #64748b;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+/* Modal Form */
+.knowledge-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: kp-fadeIn 0.15s ease-out;
+}
+
+.knowledge-modal {
+  background: #fff;
+  border-radius: 12px;
+  width: 520px;
+  max-width: 90vw;
+  max-height: 85vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+  padding: 24px;
+}
+
+.knowledge-modal h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1a1a2e;
+  margin: 0 0 20px 0;
+}
+
+.knowledge-form-group {
+  margin-bottom: 16px;
+}
+
+.knowledge-form-group label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: #475569;
+  margin-bottom: 6px;
+}
+
+.knowledge-form-group select,
+.knowledge-form-group input,
+.knowledge-form-group textarea {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1.5px solid #e4e7ec;
+  border-radius: 8px;
+  font-size: 13px;
+  font-family: inherit;
+  color: #1a1a2e;
+  background: #f8fafc;
+  outline: none;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.knowledge-form-group select:focus,
+.knowledge-form-group input:focus,
+.knowledge-form-group textarea:focus {
+  border-color: #0f3460;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(15, 52, 96, 0.08);
+}
+
+.knowledge-form-group textarea {
+  resize: vertical;
+  min-height: 100px;
+  line-height: 1.5;
+}
+
+.knowledge-form-group .form-hint {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: 4px;
+}
+
+.knowledge-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.knowledge-form-actions button {
+  padding: 8px 20px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.knowledge-btn-cancel {
+  background: #fff;
+  border: 1px solid #e4e7ec;
+  color: #64748b;
+}
+
+.knowledge-btn-cancel:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.knowledge-btn-save {
+  background: linear-gradient(135deg, #0f3460, #1a1a2e);
+  border: none;
+  color: #fff;
+}
+
+.knowledge-btn-save:hover {
+  opacity: 0.9;
+}
+
+.knowledge-btn-save:disabled {
+  background: #cbd5e1;
+  cursor: not-allowed;
+}

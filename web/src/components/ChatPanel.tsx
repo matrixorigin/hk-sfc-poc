@@ -33,6 +33,7 @@ export function ChatPanel({
   useEffect(() => {
     const prevId = prevConvIdRef.current
     const newId = conversation?.id
+    console.log('[ChatPanel useEffect] prevId:', prevId, 'newId:', newId, 'messages:', messages.length, 'isLoading:', isLoading)
     prevConvIdRef.current = newId
 
     // 发送消息时自动创建的会话，不要重置 messages
@@ -51,8 +52,9 @@ export function ChatPanel({
       setInput('')
       streamingMsgIdRef.current = null
     }
-    // activeId 清空
-    if (prevId && !newId) {
+    // activeId 清空 (New Chat) — 也处理 prevId 为 undefined 但有消息的情况
+    if (!newId && (prevId || messages.length > 0)) {
+      cancel() // 取消正在进行的 SSE 流
       setMessages([])
       setInput('')
       setIsLoading(false)
@@ -97,7 +99,7 @@ export function ChatPanel({
     streamingMsgIdRef.current = null
   }, [])
 
-  const { send } = useExploreSSE({ onUpdate, onDone, onError })
+  const { send, cancel } = useExploreSSE({ onUpdate, onDone, onError })
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -152,7 +154,7 @@ export function ChatPanel({
     { icon: '📉', text: t('example1') },
     { icon: '🏭', text: t('example2') },
     { icon: '📊', text: t('example3') },
-    { icon: '💰', text: t('example4') },
+    { icon: '📰', text: t('example4') },
   ]
 
   return (

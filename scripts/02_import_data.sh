@@ -220,6 +220,24 @@ UPDATE ms_v_stock_capital SET ref_date = CAST(
   ) AS DATE
 ) WHERE ref_date IS NULL;
 "
+log "sehknews.trade_date (nearest trading day)..."
+run_sql "
+UPDATE sehknews n
+JOIN (
+    SELECT news_date, trade_date
+    FROM (
+        SELECT nd.dt AS news_date, td.trade_date,
+               ROW_NUMBER() OVER (PARTITION BY nd.dt ORDER BY td.trade_date) AS rn
+        FROM (SELECT DISTINCT DATE(\`timestamp\`) AS dt FROM sehknews) nd
+        JOIN (SELECT DISTINCT trade_date FROM ms_t_stk_sis) td
+          ON td.trade_date >= nd.dt
+          AND td.trade_date <= DATE_ADD(nd.dt, INTERVAL 7 DAY)
+    ) ranked WHERE rn = 1
+) mapping ON DATE(n.\`timestamp\`) = mapping.news_date
+SET n.trade_date = mapping.trade_date
+WHERE n.trade_date IS NULL;
+"
+
 log "日期标准化完成"
 
 # ---- Step 5: 预计算列 (ms_t_stk_sis) ----

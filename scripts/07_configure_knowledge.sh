@@ -110,11 +110,11 @@ add "logic" "ccass_participant_granularity" "CCASS inter-broker movement must co
   '"ccass_holdings"'
 
 add "logic" "industry_carry_forward" "Industry classification uses carry-forward logic" \
-  '"ds_t_int_hsicl_dtl only records classification changes, NOT monthly snapshots. When a stock has no record for a given month, carry forward the most recent classification (use MAX(MODIFIED_DATE) WHERE MODIFIED_DATE <= target_date). If multiple records exist within the same month, use the one with the latest MODIFIED_DATE."' \
+  '"ds_t_int_hsicl_dtl only records classification changes, NOT monthly snapshots. To find a stock'\''s industry at a given date, use ROW_NUMBER() OVER (PARTITION BY STOCK_CODE ORDER BY MODIFIED_DATE DESC) with WHERE MODIFIED_DATE <= target_date, then filter rn = 1. Do NOT use correlated subqueries with MAX(MODIFIED_DATE) — use window functions with inline derived tables instead."' \
   '"ds_t_int_hsicl_dtl"'
 
-add "logic" "news_non_trading_day" "News on non-trading day uses next trading day volume" \
-  '"When a news announcement in sehknews falls on a non-trading day or after market hours, use the next available trading day volume from ms_t_stk_sis for comparison. Match using DATE(timestamp) to find the closest trade_date >= DATE(timestamp)."' \
+add "logic" "news_non_trading_day" "sehknews.trade_date is pre-computed nearest trading day" \
+  '"sehknews.trade_date is pre-computed as the nearest trading day on or after the news timestamp. To match news with trading data, JOIN sehknews.trade_date = ms_t_stk_sis.trade_date directly. Do NOT use DATE(timestamp) with subqueries to find the nearest trading day — use the pre-computed trade_date column."' \
   '"sehknews","ms_t_stk_sis"'
 
 add "logic" "profit_loss_fin_yr_matching" "Revenue comparison must match fin_yr type" \

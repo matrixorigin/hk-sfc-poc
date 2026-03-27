@@ -26,6 +26,10 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/chat", chatHandler.ServeHTTP)
 
+	knowledgeHandler := NewKnowledgeHandler(cfg)
+	mux.Handle("/api/knowledge/", knowledgeHandler)
+	mux.Handle("/api/knowledge", knowledgeHandler)
+
 	if cfg.Server.StaticDir != "" {
 		absDir, _ := filepath.Abs(cfg.Server.StaticDir)
 		log.Printf("serving frontend from %s", absDir)

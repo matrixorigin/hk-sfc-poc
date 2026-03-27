@@ -5,6 +5,7 @@ import { LangContext, getT } from './i18n'
 import { LangSwitch } from './components/LangSwitch'
 import { ChatPanel } from './components/ChatPanel'
 import { Sidebar } from './components/Sidebar'
+import { KnowledgePanel } from './components/KnowledgePanel'
 import './App.css'
 
 const STORAGE_KEY = 'hk-poc-conversations'
@@ -40,6 +41,7 @@ function App() {
   const [conversations, setConversations] = useState<Conversation[]>(loadConversations)
   const [activeId, setActiveId] = useState<string | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [knowledgeOpen, setKnowledgeOpen] = useState(false)
 
   // Persist conversations on change
   useEffect(() => {
@@ -49,8 +51,9 @@ function App() {
   const activeConv = conversations.find((c) => c.id === activeId) || null
 
   const handleNewChat = useCallback(() => {
+    console.log('[handleNewChat] activeId before clear:', activeId)
     setActiveId(null) // 回到欢迎页，会话在发消息时才创建
-  }, [])
+  }, [activeId])
 
   const handleSelect = useCallback((id: string) => {
     setActiveId(id)
@@ -107,7 +110,15 @@ function App() {
               <div className="header-subtitle">{t('subtitle')}</div>
             </div>
           </div>
-          <LangSwitch />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button
+              className="lang-switch"
+              onClick={() => setKnowledgeOpen(true)}
+            >
+              {t('knowledge')}
+            </button>
+            <LangSwitch />
+          </div>
         </header>
         <div className="app-body">
           <Sidebar
@@ -129,6 +140,7 @@ function App() {
           </main>
         </div>
       </div>
+      <KnowledgePanel open={knowledgeOpen} onClose={() => setKnowledgeOpen(false)} />
     </LangContext.Provider>
   )
 }
