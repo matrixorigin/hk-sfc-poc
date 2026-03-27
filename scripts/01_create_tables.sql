@@ -89,7 +89,8 @@ CREATE TABLE sehknews (
     securitycode   VARCHAR(10)   NULL COMMENT 'Stock code the news relates to.',
     typeid         INT           NULL     COMMENT 'News category ID.',
     `type`         VARCHAR(200)  NULL     COMMENT 'News category description.',
-    `text`         TEXT          NULL     COMMENT 'News headline or content.'
+    `text`         TEXT          NULL     COMMENT 'News headline or content.',
+    trade_date     DATE          NULL     COMMENT 'Nearest trading day on or after the news timestamp. Pre-computed from ms_t_stk_sis. Use this column to JOIN with ms_t_stk_sis.trade_date instead of converting timestamp.'
 );
 
 -- ============================================================
