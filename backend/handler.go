@@ -2,10 +2,13 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"sync"
 )
 
 // ChatRequest 是前端发来的请求体。
@@ -19,6 +22,9 @@ type ChatHandler struct {
 	client   *ExploreClient
 	clarify  *Clarifier
 	cfg      *Config
+
+	sessionMu  sync.Mutex
+	sessionMap map[string]string // 前端 UUID → Catalog 数字 session ID
 }
 
 // preProcess 对问题做预处理，当前直接透传。
@@ -60,16 +66,19 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessionID := chatReq.SessionID
-	if sessionID == "" {
-		sessionID = "default"
+	frontendSessionID := chatReq.SessionID
+	if frontendSessionID == "" {
+		frontendSessionID = "default"
 	}
+
+	// 将前端 UUID session ID 映射为 Catalog 数字 session ID（Explore 历史存储需要）
+	catalogSessionID := h.getOrCreateSession(r.Context(), frontendSessionID)
 
 	processedQuestion := h.preProcess(chatReq.Question)
 
 	// 反问检查：参数不完整时直接返回反问，不调 Explore
 	if h.clarify != nil {
-		finalQ, reply, err := h.clarify.Process(r.Context(), sessionID, processedQuestion)
+		finalQ, reply, err := h.clarify.Process(r.Context(), frontendSessionID, processedQuestion)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("clarify error: %v", err), http.StatusInternalServerError)
 			return
@@ -85,8 +94,9 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	exploreReq := &ExploreRequest{
 		Query: QueryDomain{Question: processedQuestion},
 		Session: SessionDomain{
-			SessionID:   sessionID,
+			SessionID:   catalogSessionID,
 			WorkspaceID: h.cfg.Catalog.WorkspaceID,
+			UserID:      "poc-user",
 		},
 		DataSources: DataSourceDomain{
 			Tables: &TableSource{
@@ -120,7 +130,7 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// 记录该问题到对话历史，供后续 Clarifier 判断追问上下文
 	if h.clarify != nil {
-		h.clarify.RecordExplored(sessionID, processedQuestion)
+		h.clarify.RecordExplored(frontendSessionID, processedQuestion)
 	}
 
 	// 设置 SSE 响应头
@@ -140,6 +150,29 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 	}
+}
+
+// getOrCreateSession 将前端 UUID 映射为 Catalog 数字 session ID。
+func (h *ChatHandler) getOrCreateSession(ctx context.Context, frontendID string) string {
+	h.sessionMu.Lock()
+	if id, ok := h.sessionMap[frontendID]; ok {
+		h.sessionMu.Unlock()
+		return id
+	}
+	h.sessionMu.Unlock()
+
+	catalogID, err := h.client.CreateSession(ctx, h.cfg.Catalog.WorkspaceID, "poc-"+frontendID[:8])
+	if err != nil {
+		log.Printf("session: create failed for %s: %v, falling back to frontend ID", frontendID, err)
+		return frontendID
+	}
+
+	h.sessionMu.Lock()
+	h.sessionMap[frontendID] = catalogID
+	h.sessionMu.Unlock()
+
+	log.Printf("session: mapped %s → %s", frontendID, catalogID)
+	return catalogID
 }
 
 // writeClarifySSE 发送反问响应，模拟 Explore SSE 格式使前端无需改动。

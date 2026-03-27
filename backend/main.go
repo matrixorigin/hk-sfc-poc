@@ -21,7 +21,7 @@ func main() {
 
 	client := NewExploreClient(cfg.Catalog.URL, cfg.Catalog.APIKey)
 	clarifier := NewClarifier(cfg.Catalog.URL, cfg.Catalog.APIKey, cfg.Catalog.WorkspaceID, cfg.Explore.LLMModel)
-	chatHandler := &ChatHandler{client: client, clarify: clarifier, cfg: cfg}
+	chatHandler := &ChatHandler{client: client, clarify: clarifier, cfg: cfg, sessionMap: make(map[string]string)}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/chat", chatHandler.ServeHTTP)

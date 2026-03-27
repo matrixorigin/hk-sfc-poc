@@ -26,6 +26,7 @@ type QueryDomain struct {
 type SessionDomain struct {
 	SessionID   string `json:"session_id"`
 	WorkspaceID string `json:"workspace_id"`
+	UserID      string `json:"user_id,omitempty"`
 }
 
 type DataSourceDomain struct {
@@ -70,6 +71,52 @@ func NewExploreClient(catalogURL, apiKey string) *ExploreClient {
 		apiKey:     apiKey,
 		httpClient: &http.Client{},
 	}
+}
+
+// CreateSession 调用 Catalog API 创建 LLM 会话，返回数字 session ID。
+func (c *ExploreClient) CreateSession(ctx context.Context, workspaceID, title string) (string, error) {
+	reqBody := map[string]string{"title": title, "source": "explore"}
+	bodyBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("marshal: %w", err)
+	}
+
+	endpoint := fmt.Sprintf("%s/api/v1/workspaces/%s/llm/sessions", c.catalogURL, workspaceID)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return "", fmt.Errorf("create request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		httpReq.Header.Set("X-API-Key", c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return "", fmt.Errorf("do request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return "", fmt.Errorf("create session returned %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result struct {
+		Data struct {
+			ID     int64  `json:"id"`
+			UserID string `json:"user_id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return "", fmt.Errorf("parse response: %w", err)
+	}
+
+	return fmt.Sprintf("%d", result.Data.ID), nil
 }
 
 // QueryStream 发起 POST 请求到 Explore SSE 接口，返回 response body 流。
