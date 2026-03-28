@@ -88,63 +88,65 @@ add "logic" "data_coverage_ccass" "ccass_holdings date range" \
   '"ccass_holdings"'
 
 # ============================================================
-# Step 3: 业务知识（引擎无法从列注释推断）
+# Step 3: 业务约束（logic — 描述"是什么"和"为什么"，不给 SQL）
 # ============================================================
 log ""
-log "配置业务知识..."
+log "配置业务约束..."
 
-add "logic" "profit_loss_stock_code" "profit_loss stock_code is not zero-padded" \
-  '"In profit_loss, stock_code is NOT zero-padded (e.g. 88 instead of 00088, 700 instead of 00700). When the user mentions a company by name (especially names containing numbers like 360鲁大师), do NOT extract a number as stock_code — search by company_name_sc (simplified Chinese) using LIKE instead. Example: WHERE company_name_sc LIKE '\''%鲁大师%'\''. Always verify the actual stock_code from the matched row rather than guessing from the company name."' \
-  '"profit_loss"'
-
-add "logic" "material_news_typeid" "Material news typeid definition" \
-  '"Material news in sehknews is defined as typeid IN (0, 3, 7, 8, 10, 14, 18, 21, 25, 26, 28, 32)."' \
-  '"sehknews"'
-
+# --- 个股行情 ---
 add "logic" "derivative_filter" "SISTKC >= 10000 are derivatives, exclude by default" \
-  '"In ms_t_stk_sis, SISTKC >= 10000 are derivatives (warrants, CBBCs, 29000+ codes). Always add WHERE SISTKC < '\''10000'\'' to exclude derivatives unless the user explicitly asks about warrants/CBBCs/derivatives."' \
+  '"In ms_t_stk_sis, SISTKC >= 10000 are derivatives (warrants, CBBCs). Always add WHERE SISTKC < '\''10000'\'' unless the user explicitly asks about derivatives."' \
   '"ms_t_stk_sis"'
 
-add "logic" "ccass_participant_granularity" "CCASS inter-broker movement must compare at participant level" \
-  '"In ccass_holdings, each row is a (holding_date, stock_code, participant_id) record. When analyzing inter-broker shareholding movement or changes, always compare at the participant_id level — JOIN ON stock_code AND participant_id between two dates. Do NOT aggregate (SUM/GROUP BY) all participants into a stock-level total, as that loses the inter-broker granularity the user is asking about."' \
-  '"ccass_holdings"'
-
+# --- 行业分类 ---
 add "logic" "industry_carry_forward" "Industry classification uses carry-forward logic" \
-  '"ds_t_int_hsicl_dtl only records classification changes, NOT monthly snapshots. To find a stock'\''s industry at a given date, use ROW_NUMBER() OVER (PARTITION BY STOCK_CODE ORDER BY MODIFIED_DATE DESC) with WHERE MODIFIED_DATE <= target_date, then filter rn = 1. Do NOT use correlated subqueries with MAX(MODIFIED_DATE) — use window functions with inline derived tables instead."' \
+  '"ds_t_int_hsicl_dtl only records classification changes, NOT monthly snapshots. To find a stock'\''s industry at a given date, get the most recent record with MODIFIED_DATE <= target_date per STOCK_CODE."' \
   '"ds_t_int_hsicl_dtl"'
 
-add "logic" "news_non_trading_day" "sehknews.trade_date is pre-computed nearest trading day" \
-  '"sehknews.trade_date is pre-computed as the nearest trading day on or after the news timestamp. To match news with trading data, JOIN sehknews.trade_date = ms_t_stk_sis.trade_date directly. Do NOT use DATE(timestamp) with subqueries to find the nearest trading day — use the pre-computed trade_date column."' \
+# --- 新闻公告 ---
+add "logic" "material_news_typeid" "Material news typeid definition" \
+  '"Material news (重大新闻/重大公告) in sehknews is defined as typeid IN (0, 3, 7, 8, 10, 14, 18, 21, 25, 26, 28, 32)."' \
+  '"sehknews"'
+
+add "logic" "news_trade_date" "sehknews.trade_date is pre-computed nearest trading day" \
+  '"sehknews.trade_date is pre-computed as the nearest trading day on or after the news timestamp. Always use this column (not DATE(timestamp)) to JOIN with ms_t_stk_sis.trade_date."' \
   '"sehknews","ms_t_stk_sis"'
 
-add "logic" "news_dedup_before_join" "Deduplicate news per stock per day before JOIN" \
-  '"When joining sehknews with ms_t_stk_sis for volume or price analysis, ALWAYS deduplicate news first: GROUP BY securitycode, trade_date (keeping one random row per stock per day) BEFORE joining with trading data. This prevents result inflation from multiple news articles for the same stock on the same day. Use a subquery like: SELECT securitycode, trade_date, MIN(text) AS text FROM sehknews WHERE ... GROUP BY securitycode, trade_date."' \
+add "logic" "news_dedup" "Deduplicate news per stock per day before joining trading data" \
+  '"A stock may have multiple news articles on the same day. When joining sehknews with trading data for analysis, always deduplicate by (securitycode, trade_date) first to avoid result inflation."' \
   '"sehknews","ms_t_stk_sis"'
 
-add "logic" "profit_loss_query_pattern" "How to query profit_loss for revenue growth" \
-  '"profit_loss.fin_yr is YYYYMM format where MM is the fiscal year ending month. The quarter column is Final (annual) or Interim (half-year). When analyzing revenue growth across years, you MUST compare like-for-like periods: Final vs Final (e.g. 202412 vs 202312), Interim vs Interim (e.g. 202506 vs 202406). Use self-JOIN on quarter to compute year-over-year change and percentage. Example: SELECT a.fin_yr, a.quarter, a.turnover AS current_turnover, b.turnover AS previous_turnover, a.turnover - b.turnover AS turnover_change, ROUND((a.turnover - b.turnover)/b.turnover*100, 2) AS change_pct FROM profit_loss a JOIN profit_loss b ON a.stock_code = b.stock_code AND a.quarter = b.quarter AND CAST(SUBSTRING(a.fin_yr,1,4) AS UNSIGNED) = CAST(SUBSTRING(b.fin_yr,1,4) AS UNSIGNED) + 1 AND SUBSTRING(a.fin_yr,5,2) = SUBSTRING(b.fin_yr,5,2) WHERE a.fin_yr >= target_start. Note: for 2023-2025 growth, filter a.fin_yr >= 202301 so that b side covers 2022+ as baseline. The data range is fin_yr 202003 to 202509."' \
+# --- CCASS ---
+add "logic" "ccass_participant_granularity" "CCASS must compare at participant level" \
+  '"ccass_holdings is at (holding_date, stock_code, participant_id) granularity. When analyzing broker movement or changes, always compare at participant_id level between two dates. Do NOT aggregate participants into stock-level totals."' \
+  '"ccass_holdings"'
+
+# --- 利润表 ---
+add "logic" "profit_loss_stock_code" "profit_loss stock_code format and company name search" \
+  '"In profit_loss, stock_code is NOT zero-padded (e.g. 88 not 00088). When the user references a company by name, use company_name_sc with LIKE for fuzzy matching — do NOT extract numbers from the name as stock_code (e.g. \"360鲁大师\" → stock_code is 3601, not 360)."' \
   '"profit_loss"'
 
+add "logic" "profit_loss_period_comparison" "Revenue/profit analysis must use like-for-like period comparison" \
+  '"profit_loss.fin_yr is YYYYMM format (e.g. 202312 = Dec 2023). quarter is Final (annual) or Interim (half-year). When comparing across years, MUST match same quarter type: Final vs Final, Interim vs Interim. Never directly compare Final with Interim. To cover \"2023-2025 growth\", the query should include 2022+ data as baseline for computing 2023 changes."' \
+  '"profit_loss"'
+
+# --- 日线汇总 ---
+add "logic" "hsi_daily_usage" "Use ms_v_stk_hsi_daily for daily HSI analysis" \
+  '"ms_v_stk_hsi_daily is a daily summary table (one row per trading day, ~286 rows) with pre-computed hsi_pct_change. Use this instead of ms_t_stk_hsi (tick data, ~11000 rows/day) for daily-level HSI analysis."' \
+  '"ms_v_stk_hsi_daily"'
+
+# --- 可视化 ---
 add "logic" "chart_friendly_output" "Generate chart-friendly SQL when visualization is requested" \
-  '"When the question asks for charts, plots, trends, or visualization (图表/绘制/趋势/走势), generate SQL that returns time series data with a date column and numeric value columns suitable for line chart rendering. Limit results to top 5 representative items (e.g. ORDER BY ... DESC LIMIT 5) if the full result set would be too large for visualization. The frontend can automatically render ECharts line charts from time series data."' \
+  '"When the question asks for charts/plots/trends/visualization (图表/绘制/趋势/走势), return time series data with a date column and numeric columns. Limit to top 5 items if the result set would be too large."' \
   '"ms_t_stk_sis","ms_v_stk_hsi_daily","profit_loss","ms_v_stock_capital"'
 
+# --- SQL 方言 ---
 add "logic" "sql_dialect_matrixone" "MatrixOne SQL dialect constraints" \
-  '"MatrixOne does not support: RIGHT() function (use SUBSTRING(col, LEN-N+1, N) instead), CHANGE as column alias (it is a reserved word — use turnover_change, value_diff, etc.). Window functions like LAG/LEAD cannot contain CASE WHEN expressions inside them — pre-compute the flag column first, then apply LAG/LEAD on the flag."' \
+  '"MatrixOne limitations: (1) RIGHT() not supported — use SUBSTRING(col, LENGTH(col)-N+1, N). (2) CHANGE, RANK are reserved words — use aliases like turnover_change, rnk. (3) LAG/LEAD cannot wrap CASE WHEN expressions — pre-compute flag columns in a subquery first. (4) REGEXP works but CAST(VARCHAR AS UNSIGNED) may panic when combined with window functions — filter string conditions in an inner subquery."' \
   '"ms_t_stk_sis","profit_loss","ms_v_stock_capital","sehknews","ds_t_int_hsicl_dtl"'
 
 # ============================================================
-# Step 3b: 日线汇总表知识
-# ============================================================
-log ""
-log "配置日线汇总表知识..."
-
-add "logic" "data_coverage_hsi_daily" "ms_v_stk_hsi_daily date range and usage" \
-  '"ms_v_stk_hsi_daily is a daily summary table (one row per trading day, ~286 rows). It has pre-computed hsi_pct_change column. Use this table for daily-level HSI analysis instead of ms_t_stk_hsi (which is tick data with ~11000 rows/day)."' \
-  '"ms_v_stk_hsi_daily"'
-
-# ============================================================
-# Step 3c: 术语表（glossary）
+# Step 3b: 术语表（glossary）
 # ============================================================
 log ""
 log "配置术语表..."
@@ -154,7 +156,7 @@ add "glossary" "hk_stock_terminology" "HK stock market terminology" \
   '"ms_v_stk_hsi_daily","ms_t_stk_sis","ms_v_stock_capital","ds_t_int_hsicl_dtl","sehknews","profit_loss","ccass_holdings"'
 
 # ============================================================
-# Step 3d: Fewshot 示例（case_library）
+# Step 3c: Fewshot 示例（case_library — 可复用的 SQL 模式）
 # ============================================================
 log ""
 log "配置 fewshot 示例..."
@@ -162,8 +164,20 @@ log "配置 fewshot 示例..."
 add "case_library" \
   "Find stocks where a specific broker increased holdings by more than 50% between two dates" \
   "CCASS broker-level holding change between two dates" \
-  '"SELECT a.stock_code, a.participant_id, a.shareholding AS shares_day2, b.shareholding AS shares_day1, (a.shareholding - b.shareholding) / b.shareholding AS change_ratio FROM ccass_holdings a JOIN ccass_holdings b ON a.stock_code = b.stock_code AND a.participant_id = b.participant_id WHERE a.holding_date = '\''2026-03-18'\'' AND b.holding_date = '\''2026-03-17'\'' AND b.shareholding > 0 AND ABS(a.shareholding - b.shareholding) / b.shareholding > 0.5","CCASS data is at (date, stock, participant) granularity. To compare holding changes between dates, always JOIN on both stock_code AND participant_id. Never aggregate participants into stock-level totals when the question asks about broker/inter-broker movement."' \
+  '"SELECT a.stock_code, a.participant_id, a.shareholding AS shares_day2, b.shareholding AS shares_day1, (a.shareholding - b.shareholding) / b.shareholding AS change_ratio FROM ccass_holdings a JOIN ccass_holdings b ON a.stock_code = b.stock_code AND a.participant_id = b.participant_id WHERE a.holding_date = '\''2026-03-18'\'' AND b.holding_date = '\''2026-03-17'\'' AND b.shareholding > 0 AND ABS(a.shareholding - b.shareholding) / b.shareholding > 0.5"' \
   '"ccass_holdings"'
+
+add "case_library" \
+  "Compare revenue or profit year-over-year for a company" \
+  "Year-over-year financial comparison using self-JOIN on profit_loss" \
+  '"SELECT a.fin_yr, a.quarter, a.turnover AS current_turnover, b.turnover AS previous_turnover, a.turnover - b.turnover AS turnover_change, ROUND((a.turnover - b.turnover) / b.turnover * 100, 2) AS change_pct FROM profit_loss a JOIN profit_loss b ON a.stock_code = b.stock_code AND a.quarter = b.quarter AND CAST(SUBSTRING(a.fin_yr, 1, 4) AS UNSIGNED) = CAST(SUBSTRING(b.fin_yr, 1, 4) AS UNSIGNED) + 1 AND SUBSTRING(a.fin_yr, 5, 2) = SUBSTRING(b.fin_yr, 5, 2) WHERE a.company_name_sc LIKE '\''%公司名%'\'' AND a.fin_yr >= '\''202301'\'' ORDER BY a.fin_yr, a.quarter"' \
+  '"profit_loss"'
+
+add "case_library" \
+  "Find stocks with abnormal volume around news announcements" \
+  "News volume anomaly detection with dedup and avg_vol_30d" \
+  '"SELECT n.trade_date AS announcement_date, n.text AS announcement_content, n.securitycode AS stock_code, s.SISTKN AS stock_name FROM (SELECT securitycode, trade_date, MIN(text) AS text FROM sehknews WHERE typeid IN (0,3,7,8,10,14,18,21,25,26,28,32) AND timestamp >= '\''2025-01-01'\'' AND timestamp < '\''2025-05-01'\'' GROUP BY securitycode, trade_date) n JOIN ms_t_stk_sis s ON n.securitycode = s.SISTKC AND n.trade_date = s.trade_date WHERE s.SISTKC < '\''10000'\'' AND s.SIVOL > s.avg_vol_30d * 3"' \
+  '"sehknews","ms_t_stk_sis"'
 
 # ============================================================
 # Step 4: 验证
