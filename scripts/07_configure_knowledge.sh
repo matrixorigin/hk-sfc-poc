@@ -95,7 +95,7 @@ log "配置业务约束..."
 
 # --- 个股行情 ---
 add "logic" "derivative_filter" "SISTKC >= 10000 are derivatives, exclude by default" \
-  '"In ms_t_stk_sis, SISTKC >= 10000 are derivatives (warrants, CBBCs). Always add WHERE SISTKC < '\''10000'\'' unless the user explicitly asks about derivatives."' \
+  '"In ms_t_stk_sis, codes >= 10000 are derivatives (warrants, CBBCs). Always add WHERE SISTKC < '\''10000'\'' unless the user explicitly asks about derivatives."' \
   '"ms_t_stk_sis"'
 
 # --- 行业分类 ---

@@ -34,7 +34,7 @@ CREATE TABLE ms_t_stk_hsi (
 DROP TABLE IF EXISTS ms_t_stk_sis;
 CREATE TABLE ms_t_stk_sis (
     SITXDT  VARCHAR(24)    NOT NULL COMMENT 'Trading date. Format: DDMONYYYY:HH:MI:SS (e.g. 02JAN2025:00:00:00).',
-    SISTKC  VARCHAR(10)    NOT NULL COMMENT 'HKEX stock code (e.g. 00001, 00005).',
+    SISTKC  VARCHAR(10)    NOT NULL COMMENT 'HKEX stock code, 5-digit zero-padded VARCHAR (e.g. ''00001'', ''00005''). Always use zero-padded string for comparison (e.g. < ''00100'' not < ''100'').',
     SISTKN  VARCHAR(100)   NULL     COMMENT 'Stock name / company name in English.',
     SIHIGH  DECIMAL(16,4)  NULL     COMMENT 'Highest traded price of the day (HKD).',
     SILOW   DECIMAL(16,4)  NULL     COMMENT 'Lowest traded price of the day (HKD).',
