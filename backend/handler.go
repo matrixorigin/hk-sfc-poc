@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 )
 
@@ -26,16 +27,6 @@ type ChatHandler struct {
 
 	sessionMu  sync.Mutex
 	sessionMap map[string]string // 前端 UUID → Catalog 数字 session ID
-}
-
-// preProcess 对问题做预处理，当前直接透传。
-func (h *ChatHandler) preProcess(question string) string {
-	return question
-}
-
-// postProcess 对 SSE 行做后处理，当前直接透传。
-func (h *ChatHandler) postProcess(line string) string {
-	return line
 }
 
 func setCORSHeaders(w http.ResponseWriter) {
@@ -75,7 +66,7 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// 将前端 UUID session ID 映射为 Catalog 数字 session ID（Explore 历史存储需要）
 	catalogSessionID := h.getOrCreateSession(r.Context(), frontendSessionID)
 
-	processedQuestion := h.preProcess(chatReq.Question)
+	processedQuestion := chatReq.Question
 
 	// 反问检查：参数不完整时直接返回反问，不调 Explore
 	if h.clarify != nil {
@@ -151,13 +142,38 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	flusher, canFlush := w.(http.Flusher)
 
+	ep := NewEventProcessor()
 	scanner := bufio.NewScanner(stream)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+
+	var eventBuf strings.Builder
 	for scanner.Scan() {
-		line := h.postProcess(scanner.Text())
-		_, _ = io.WriteString(w, line+"\n")
-		if canFlush {
-			flusher.Flush()
+		line := scanner.Text()
+		eventBuf.WriteString(line)
+		eventBuf.WriteString("\n")
+
+		// SSE events are terminated by blank lines.
+		if strings.TrimSpace(line) == "" {
+			for _, parsed := range ParseSSEBlock(eventBuf.String()) {
+				for _, out := range ep.ProcessEvent(parsed) {
+					_, _ = io.WriteString(w, FormatSSEEvent(out))
+					if canFlush {
+						flusher.Flush()
+					}
+				}
+			}
+			eventBuf.Reset()
+		}
+	}
+	// Flush remaining buffered content.
+	if eventBuf.Len() > 0 {
+		for _, parsed := range ParseSSEBlock(eventBuf.String()) {
+			for _, out := range ep.ProcessEvent(parsed) {
+				_, _ = io.WriteString(w, FormatSSEEvent(out))
+				if canFlush {
+					flusher.Flush()
+				}
+			}
 		}
 	}
 }
