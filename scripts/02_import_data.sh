@@ -240,6 +240,77 @@ WHERE n.trade_date IS NULL;
 
 log "日期标准化完成"
 
+# ---- Step 4b: ms_v_stock_capital.industry_name (carry-forward) ----
+log ""
+log "计算 ms_v_stock_capital.industry_name..."
+# 对每只股票每个月，取 MODIFIED_DATE <= ref_date 的最新行业分类
+# 用 Python 计算避免 MO 窗口函数限制
+$MYSQL_CMD "$MO_DB" -N -B -e "
+SELECT STOCK_CODE, MODIFIED_DATE, INDUSTRY_NAME
+FROM ds_t_int_hsicl_dtl ORDER BY STOCK_CODE, MODIFIED_DATE;
+" 2>/dev/null > /tmp/_industry_cls.tsv
+
+$MYSQL_CMD "$MO_DB" -N -B -e "
+SELECT DISTINCT STKCD, ref_date FROM ms_v_stock_capital WHERE ref_date IS NOT NULL ORDER BY STKCD, ref_date;
+" 2>/dev/null > /tmp/_cap_dates.tsv
+
+python3 -c "
+import sys
+from bisect import bisect_right
+
+# 读取行业分类变更记录
+cls = {}  # stock_code -> [(date, industry_name), ...]
+with open('/tmp/_industry_cls.tsv') as f:
+    for line in f:
+        parts = line.strip().split('\t')
+        if len(parts) >= 3:
+            code, date, name = parts[0], parts[1], parts[2]
+            cls.setdefault(code, []).append((date, name))
+
+# 对每只股票的分类按日期排序
+for code in cls:
+    cls[code].sort()
+
+# 对每个 (STKCD, ref_date) 找最新分类
+with open('/tmp/_cap_industry.csv', 'w') as out:
+    with open('/tmp/_cap_dates.tsv') as f:
+        for line in f:
+            parts = line.strip().split('\t')
+            if len(parts) < 2: continue
+            stkcd, ref_date = parts[0], parts[1]
+            records = cls.get(stkcd, [])
+            if not records:
+                continue
+            dates = [r[0] for r in records]
+            idx = bisect_right(dates, ref_date) - 1
+            if idx >= 0:
+                industry = records[idx][1]
+                out.write(f'{stkcd},{ref_date},{industry}\n')
+
+import os
+count = sum(1 for _ in open('/tmp/_cap_industry.csv'))
+print(f'{count} rows')
+"
+
+run_sql "DROP TABLE IF EXISTS _tmp_cap_industry;"
+run_sql "CREATE TABLE _tmp_cap_industry (STKCD VARCHAR(10), ref_date DATE, industry_name VARCHAR(100));"
+$MYSQL_CMD "$MO_DB" --local-infile=1 -e "
+LOAD DATA LOCAL INFILE '/tmp/_cap_industry.csv'
+INTO TABLE _tmp_cap_industry
+FIELDS TERMINATED BY ','
+LINES TERMINATED BY '\n';
+" 2>&1 | { grep -v "Warning.*password" || true; }
+run_sql "
+UPDATE ms_v_stock_capital t
+JOIN _tmp_cap_industry c ON t.STKCD = c.STKCD AND t.ref_date = c.ref_date
+SET t.industry_name = c.industry_name;
+"
+run_sql "DROP TABLE IF EXISTS _tmp_cap_industry;"
+rm -f /tmp/_industry_cls.tsv /tmp/_cap_dates.tsv /tmp/_cap_industry.csv
+
+filled=$($MYSQL_CMD "$MO_DB" -N -B -e "SELECT COUNT(*) FROM ms_v_stock_capital WHERE industry_name IS NOT NULL;" 2>/dev/null)
+log "  industry_name 填充: $filled 行"
+
 # ---- Step 5: 预计算列 (ms_t_stk_sis) ----
 log ""
 log "========== Step 5: 预计算列 =========="

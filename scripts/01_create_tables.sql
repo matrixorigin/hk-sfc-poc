@@ -62,7 +62,8 @@ CREATE TABLE ms_v_stock_capital (
     SLCSE   DECIMAL(16,4)    NULL     COMMENT 'Closing share price at month-end (HKD).',
     STTNIS  BIGINT           NULL     COMMENT 'Total shares in issue (outstanding).',
     SICAP   DECIMAL(24,4)    NULL     COMMENT 'Market capitalization = SLCSE * STTNIS.',
-    ref_date DATE             NULL     COMMENT 'Month-end reference date (standardized from SIRXDT). Use this column for date filtering and comparison.'
+    ref_date DATE             NULL     COMMENT 'Month-end reference date (standardized from SIRXDT). Use this column for date filtering and comparison.',
+    industry_name VARCHAR(100) NULL    COMMENT 'Industry classification at this month-end (carry-forward from ds_t_int_hsicl_dtl). Pre-computed.'
 );
 
 -- ============================================================

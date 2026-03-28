@@ -202,8 +202,8 @@ b6	B6: 恒指最大跌幅	2025年恒生指数单日最大跌幅是多少？发�
 CASES_EOF
 )
 
-# V2: 行业市值下降 — ground truth 较复杂，单独定义
-V2_GT="SELECT oct.industry_name, (oct.total_cap - nov.total_cap) AS decline FROM (SELECT cls.INDUSTRY_NAME AS industry_name, SUM(cap.SICAP) AS total_cap FROM ms_v_stock_capital cap JOIN (SELECT a.STOCK_CODE, a.INDUSTRY_NAME FROM ds_t_int_hsicl_dtl a JOIN (SELECT STOCK_CODE, MAX(MODIFIED_DATE) AS md FROM ds_t_int_hsicl_dtl WHERE MODIFIED_DATE <= '2025-10-31' GROUP BY STOCK_CODE) b ON a.STOCK_CODE = b.STOCK_CODE AND a.MODIFIED_DATE = b.md) cls ON cap.STKCD = cls.STOCK_CODE WHERE cap.ref_date = '2025-10-31' GROUP BY cls.INDUSTRY_NAME) oct JOIN (SELECT cls.INDUSTRY_NAME AS industry_name, SUM(cap.SICAP) AS total_cap FROM ms_v_stock_capital cap JOIN (SELECT a.STOCK_CODE, a.INDUSTRY_NAME FROM ds_t_int_hsicl_dtl a JOIN (SELECT STOCK_CODE, MAX(MODIFIED_DATE) AS md FROM ds_t_int_hsicl_dtl WHERE MODIFIED_DATE <= '2025-11-30' GROUP BY STOCK_CODE) b ON a.STOCK_CODE = b.STOCK_CODE AND a.MODIFIED_DATE = b.md) cls ON cap.STKCD = cls.STOCK_CODE WHERE cap.ref_date = '2025-11-30' GROUP BY cls.INDUSTRY_NAME) nov ON oct.industry_name = nov.industry_name ORDER BY decline DESC LIMIT 3"
+# V2: 行业市值下降 — 使用预计算的 industry_name
+V2_GT="SELECT oct.industry_name, (oct.cap - nov.cap) AS decline FROM (SELECT industry_name, SUM(SICAP) AS cap FROM ms_v_stock_capital WHERE ref_date = '2025-10-31' AND industry_name IS NOT NULL GROUP BY industry_name) oct JOIN (SELECT industry_name, SUM(SICAP) AS cap FROM ms_v_stock_capital WHERE ref_date = '2025-11-30' AND industry_name IS NOT NULL GROUP BY industry_name) nov ON oct.industry_name = nov.industry_name ORDER BY decline DESC LIMIT 3"
 
 # ============================================================
 log ""

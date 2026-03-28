@@ -99,9 +99,9 @@ add "logic" "derivative_filter" "SISTKC >= 10000 are derivatives, exclude by def
   '"ms_t_stk_sis"'
 
 # --- 行业分类 ---
-add "logic" "industry_carry_forward" "Industry classification uses carry-forward logic" \
-  '"ds_t_int_hsicl_dtl only records classification changes, NOT monthly snapshots. To find a stock'\''s industry at a given date, get the most recent record with MODIFIED_DATE <= target_date per STOCK_CODE."' \
-  '"ds_t_int_hsicl_dtl"'
+add "logic" "industry_carry_forward" "Industry classification is pre-computed on ms_v_stock_capital" \
+  '"ms_v_stock_capital.industry_name is pre-computed from ds_t_int_hsicl_dtl (carry-forward: latest classification as of each month-end). For industry-level market cap analysis, use ms_v_stock_capital.industry_name directly — do NOT join ds_t_int_hsicl_dtl yourself."' \
+  '"ms_v_stock_capital","ds_t_int_hsicl_dtl"'
 
 # --- 新闻公告 ---
 add "logic" "material_news_typeid" "Material news typeid definition" \
