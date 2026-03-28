@@ -117,6 +117,10 @@ add "logic" "news_non_trading_day" "sehknews.trade_date is pre-computed nearest 
   '"sehknews.trade_date is pre-computed as the nearest trading day on or after the news timestamp. To match news with trading data, JOIN sehknews.trade_date = ms_t_stk_sis.trade_date directly. Do NOT use DATE(timestamp) with subqueries to find the nearest trading day — use the pre-computed trade_date column."' \
   '"sehknews","ms_t_stk_sis"'
 
+add "logic" "news_dedup_before_join" "Deduplicate news per stock per day before JOIN" \
+  '"When joining sehknews with ms_t_stk_sis for volume or price analysis, ALWAYS deduplicate news first: GROUP BY securitycode, trade_date (keeping one random row per stock per day) BEFORE joining with trading data. This prevents result inflation from multiple news articles for the same stock on the same day. Use a subquery like: SELECT securitycode, trade_date, MIN(text) AS text FROM sehknews WHERE ... GROUP BY securitycode, trade_date."' \
+  '"sehknews","ms_t_stk_sis"'
+
 add "logic" "profit_loss_query_pattern" "How to query profit_loss for revenue growth" \
   '"profit_loss.fin_yr is YYYYMM format where MM is the fiscal year ending month. The quarter column is Final (annual) or Interim (half-year). When querying revenue growth across years, do NOT hardcode specific fin_yr values — use a range filter (e.g. fin_yr >= 202303 AND fin_yr <= 202509) and return all matching rows with fin_yr and quarter columns. This lets the user see all available periods. The data range is fin_yr 202003 to 202509."' \
   '"profit_loss"'
