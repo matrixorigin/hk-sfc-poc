@@ -94,7 +94,7 @@ log ""
 log "配置业务知识..."
 
 add "logic" "profit_loss_stock_code" "profit_loss stock_code is not zero-padded" \
-  '"In profit_loss, stock_code is NOT zero-padded (e.g. 88 instead of 00088, 700 instead of 00700). Always use stock_code to filter, not company_name_en (company names are abbreviated uppercase like TENCENT HOLDINGS LTD. and will not match common formats)."' \
+  '"In profit_loss, stock_code is NOT zero-padded (e.g. 88 instead of 00088, 700 instead of 00700). When the user mentions a company by name (especially names containing numbers like 360鲁大师), do NOT extract a number as stock_code — search by company_name_sc (simplified Chinese) using LIKE instead. Example: WHERE company_name_sc LIKE '\''%鲁大师%'\''. Always verify the actual stock_code from the matched row rather than guessing from the company name."' \
   '"profit_loss"'
 
 add "logic" "material_news_typeid" "Material news typeid definition" \
@@ -122,12 +122,16 @@ add "logic" "news_dedup_before_join" "Deduplicate news per stock per day before 
   '"sehknews","ms_t_stk_sis"'
 
 add "logic" "profit_loss_query_pattern" "How to query profit_loss for revenue growth" \
-  '"profit_loss.fin_yr is YYYYMM format where MM is the fiscal year ending month. The quarter column is Final (annual) or Interim (half-year). When querying revenue growth across years, do NOT hardcode specific fin_yr values — use a range filter (e.g. fin_yr >= 202303 AND fin_yr <= 202509) and return all matching rows with fin_yr and quarter columns. This lets the user see all available periods. The data range is fin_yr 202003 to 202509."' \
+  '"profit_loss.fin_yr is YYYYMM format where MM is the fiscal year ending month. The quarter column is Final (annual) or Interim (half-year). When analyzing revenue growth across years, you MUST compare like-for-like periods: Final vs Final (e.g. 202412 vs 202312), Interim vs Interim (e.g. 202506 vs 202406). Use self-JOIN on quarter to compute year-over-year change and percentage. Example: SELECT a.fin_yr, a.quarter, a.turnover AS current_turnover, b.turnover AS previous_turnover, a.turnover - b.turnover AS turnover_change, ROUND((a.turnover - b.turnover)/b.turnover*100, 2) AS change_pct FROM profit_loss a JOIN profit_loss b ON a.stock_code = b.stock_code AND a.quarter = b.quarter AND CAST(SUBSTRING(a.fin_yr,1,4) AS UNSIGNED) = CAST(SUBSTRING(b.fin_yr,1,4) AS UNSIGNED) + 1 AND SUBSTRING(a.fin_yr,5,2) = SUBSTRING(b.fin_yr,5,2) WHERE a.fin_yr >= target_start. Note: for 2023-2025 growth, filter a.fin_yr >= 202301 so that b side covers 2022+ as baseline. The data range is fin_yr 202003 to 202509."' \
   '"profit_loss"'
 
 add "logic" "chart_friendly_output" "Generate chart-friendly SQL when visualization is requested" \
   '"When the question asks for charts, plots, trends, or visualization (图表/绘制/趋势/走势), generate SQL that returns time series data with a date column and numeric value columns suitable for line chart rendering. Limit results to top 5 representative items (e.g. ORDER BY ... DESC LIMIT 5) if the full result set would be too large for visualization. The frontend can automatically render ECharts line charts from time series data."' \
   '"ms_t_stk_sis","ms_v_stk_hsi_daily","profit_loss","ms_v_stock_capital"'
+
+add "logic" "sql_dialect_matrixone" "MatrixOne SQL dialect constraints" \
+  '"MatrixOne does not support: RIGHT() function (use SUBSTRING(col, LEN-N+1, N) instead), CHANGE as column alias (it is a reserved word — use turnover_change, value_diff, etc.). Window functions like LAG/LEAD cannot contain CASE WHEN expressions inside them — pre-compute the flag column first, then apply LAG/LEAD on the flag."' \
+  '"ms_t_stk_sis","profit_loss","ms_v_stock_capital","sehknews","ds_t_int_hsicl_dtl"'
 
 # ============================================================
 # Step 3b: 日线汇总表知识
