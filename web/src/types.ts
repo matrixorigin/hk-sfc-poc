@@ -8,11 +8,20 @@ export interface ExploreEvent {
   data: any
 }
 
+export interface ChartSpec {
+  chart_type: 'bar' | 'line' | 'pie' | 'auto' | 'none'
+  x?: { field: string; label: string; type: 'category' | 'time' }
+  y?: { field: string; label: string }[]
+  display_mode?: 'chart' | 'table' | 'both'
+  round_index?: number
+}
+
 export interface SQLResult {
   columns: string[]
   rows: any[][]
   sql?: string
   total_count?: number
+  round_index?: number
 }
 
 export type Phase = 'thinking' | 'planning' | 'querying' | 'answering' | 'done'
@@ -26,6 +35,7 @@ export interface Message {
   isStreaming: boolean
   phase?: Phase
   error?: string
+  chartSpec?: ChartSpec
 }
 
 export type Language = 'en' | 'zh'
