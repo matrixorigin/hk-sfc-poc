@@ -203,7 +203,7 @@ CASES_EOF
 )
 
 # V2: 行业市值下降 — 使用预计算的 industry_name
-V2_GT="SELECT oct.industry_name, (oct.cap - nov.cap) AS decline FROM (SELECT industry_name, SUM(SICAP) AS cap FROM ms_v_stock_capital WHERE ref_date = '2025-10-31' AND industry_name IS NOT NULL GROUP BY industry_name) oct JOIN (SELECT industry_name, SUM(SICAP) AS cap FROM ms_v_stock_capital WHERE ref_date = '2025-11-30' AND industry_name IS NOT NULL GROUP BY industry_name) nov ON oct.industry_name = nov.industry_name ORDER BY decline DESC LIMIT 3"
+V2_GT="SELECT oct.industry_name, (oct.cap - nov.cap) AS decline FROM (SELECT industry_name, SUM(SICAP) AS cap FROM ms_v_stock_capital WHERE ref_date = '2025-10-31' AND industry_name IS NOT NULL GROUP BY industry_name) oct JOIN (SELECT industry_name, SUM(SICAP) AS cap FROM ms_v_stock_capital WHERE ref_date = '2025-11-30' AND industry_name IS NOT NULL GROUP BY industry_name) nov ON oct.industry_name = nov.industry_name WHERE oct.cap > nov.cap ORDER BY decline DESC LIMIT 3"
 
 # ============================================================
 log ""
