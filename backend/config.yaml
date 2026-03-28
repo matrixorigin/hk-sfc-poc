@@ -9,7 +9,7 @@ catalog:
 
 jobs:
   ccass:
-    enabled: false        # 设为 true 启用 CCASS 定时爬取
+    enabled: true         # 设为 true 启用 CCASS 定时爬取
     schedule: "20:00"     # 每天执行时间 (HH:MM)
     top: 200              # 爬取前 N 只股票，0 = 全量
     script: "scripts/cron_ccass.sh"
