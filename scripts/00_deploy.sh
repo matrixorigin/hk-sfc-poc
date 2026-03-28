@@ -152,12 +152,10 @@ import_data() {
 
   bash "$SCRIPT_DIR/02_import_data.sh"
 
-  # CCASS 数据
-  if [ -f "$SCRIPT_DIR/03_import_ccass.py" ]; then
+  # CCASS 数据（爬取最近两个交易日）
+  if [ -f "$SCRIPT_DIR/cron_ccass.sh" ]; then
     log "导入 CCASS 数据..."
-    python3 "$SCRIPT_DIR/03_import_ccass.py" --from-cache 2>/dev/null || \
-    python3 "$SCRIPT_DIR/03_import_ccass.py" 2>/dev/null || \
-    log "  CCASS 导入跳过（需要网络访问 HKEX）"
+    bash "$SCRIPT_DIR/cron_ccass.sh" || log "  CCASS 导入跳过（需要网络访问 HKEX 或 pip install requests beautifulsoup4）"
   fi
 }
 
