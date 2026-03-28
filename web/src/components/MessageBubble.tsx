@@ -65,17 +65,20 @@ export function MessageBubble({ message }: MessageBubbleProps) {
             </div>
           )}
 
-          {/* Chart — show only for the most detailed result (most columns) */}
+          {/* Chart — driven by chartSpec when available */}
           {!isUser && isDone && message.sqlResults.length > 0 && (() => {
-            // Pick the result with most columns for the chart
-            const best = message.sqlResults.reduce((a, b) =>
-              b.columns.length > a.columns.length ? b : a
-            )
-            return (
-              <div style={{ marginTop: 12 }}>
-                <Chart result={best} />
-              </div>
-            )
+            const { chartSpec } = message
+            if (chartSpec?.chart_type === 'none') return null
+
+            let chartResult = chartSpec?.round_index !== undefined
+              ? message.sqlResults.find((r) => r.round_index === chartSpec.round_index)
+              : undefined
+            if (!chartResult) {
+              chartResult = message.sqlResults.reduce((best, r) =>
+                r.columns.length > best.columns.length ? r : best
+              )
+            }
+            return <Chart result={chartResult} spec={chartSpec} />
           })()}
 
           {/* SQL toggle — only after done */}
