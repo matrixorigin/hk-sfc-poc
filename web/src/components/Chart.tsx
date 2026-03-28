@@ -1,8 +1,9 @@
 import ReactECharts from 'echarts-for-react'
-import type { SQLResult } from '../types'
+import type { SQLResult, ChartSpec } from '../types'
 
 interface ChartProps {
   result: SQLResult
+  spec?: ChartSpec
 }
 
 // ── 工具函数 ──
@@ -75,6 +76,21 @@ function formatColumnName(col: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
+function findCategoryColumnIndex(result: SQLResult): number {
+  // First try identifier columns
+  for (let ci = 0; ci < result.columns.length; ci++) {
+    if (isIdentifierColumn(result.columns[ci], result.rows.map((r) => r[ci]))) {
+      return ci
+    }
+  }
+  // Fallback: first string column
+  for (let ci = 0; ci < result.columns.length; ci++) {
+    const hasStrings = result.rows.some((row) => typeof row[ci] === 'string' && !isNumeric(row[ci]))
+    if (hasStrings) return ci
+  }
+  return 0
+}
+
 // ── 金融配色 ──
 const COLORS = [
   '#1a73e8', // 蓝
@@ -85,7 +101,7 @@ const COLORS = [
   '#16a34a', // 绿
 ]
 
-// ── 核心 ──
+// ── 判断函数 ──
 
 function canRenderChart(result: SQLResult): boolean {
   if (result.columns.length < 2) return false
@@ -106,7 +122,18 @@ function canRenderChart(result: SQLResult): boolean {
   return hasNumericCol
 }
 
-export function Chart({ result }: ChartProps) {
+function canRenderBarChart(result: SQLResult): boolean {
+  if (result.columns.length < 2 || result.rows.length < 1) return false
+  const catCol = findCategoryColumnIndex(result)
+  return result.columns.some((col, ci) =>
+    ci !== catCol && !isIdentifierColumn(col, result.rows.map((r) => r[ci])) &&
+    result.rows.some((row) => isNumeric(row[ci]))
+  )
+}
+
+// ── 子图表组件 ──
+
+function LineChart({ result }: { result: SQLResult }) {
   if (!canRenderChart(result)) return null
 
   const { columns, rows } = result
@@ -221,4 +248,120 @@ export function Chart({ result }: ChartProps) {
       <ReactECharts option={option} style={{ height: needSlider ? 340 : 300 }} />
     </div>
   )
+}
+
+function BarChart({ result, spec }: ChartProps) {
+  const { columns, rows } = result
+  const xCol = spec?.x?.field
+    ? columns.indexOf(spec.x.field)
+    : findCategoryColumnIndex(result)
+  if (xCol < 0 && columns.length > 0) return null
+
+  const xData = rows.map((row) => String(row[xCol] ?? ''))
+
+  const yColIndices = spec?.y?.length
+    ? spec.y.map((y) => columns.indexOf(y.field)).filter((i) => i >= 0)
+    : columns.map((_, ci) => ci).filter((ci) =>
+        ci !== xCol && !isIdentifierColumn(columns[ci], rows.map((r) => r[ci])) &&
+        rows.some((row) => isNumeric(row[ci]))
+      )
+
+  if (yColIndices.length === 0) return null
+
+  const series = yColIndices.map((ci, idx) => ({
+    name: formatColumnName(columns[ci]),
+    type: 'bar' as const,
+    data: rows.map((row) => (isNumeric(row[ci]) ? Number(row[ci]) : null)),
+    itemStyle: { color: COLORS[idx % COLORS.length] },
+  }))
+
+  const option: any = {
+    color: COLORS,
+    tooltip: { trigger: 'axis', backgroundColor: 'rgba(255,255,255,0.96)', borderColor: '#e5e7eb', textStyle: { color: '#374151', fontSize: 12 } },
+    legend: { data: series.map((s) => s.name), top: 4, textStyle: { fontSize: 12, color: '#6b7280' }, icon: 'roundRect', itemWidth: 16, itemHeight: 3 },
+    grid: { left: 60, right: 20, top: 36, bottom: 36, containLabel: false },
+    xAxis: { type: 'category', data: xData, axisLabel: { fontSize: 11, color: '#9ca3af', rotate: xData.length > 8 ? 45 : 0 }, axisLine: { lineStyle: { color: '#e5e7eb' } }, axisTick: { show: false } },
+    yAxis: { type: 'value', splitLine: { lineStyle: { color: '#f3f4f6', type: 'dashed' } }, axisLabel: { fontSize: 11, color: '#9ca3af' }, axisLine: { show: false }, axisTick: { show: false } },
+    series,
+  }
+
+  return (
+    <div className="chart-wrapper" style={{ marginTop: 12, padding: '12px 12px 4px', background: '#fff', borderRadius: 8, border: '1px solid #f0f0f0' }}>
+      <ReactECharts option={option} style={{ height: 300 }} />
+    </div>
+  )
+}
+
+function PieChart({ result, spec }: ChartProps) {
+  const { columns, rows } = result
+  const nameCol = spec?.x?.field
+    ? columns.indexOf(spec.x.field)
+    : findCategoryColumnIndex(result)
+
+  const valueCol = spec?.y?.[0]?.field
+    ? columns.indexOf(spec.y[0].field)
+    : columns.findIndex((col, ci) =>
+        ci !== nameCol && !isIdentifierColumn(col, rows.map((r) => r[ci])) &&
+        rows.some((row) => isNumeric(row[ci]))
+      )
+
+  if (nameCol < 0 || valueCol < 0) return null
+
+  const data = rows
+    .filter((row) => isNumeric(row[valueCol]))
+    .slice(0, 20) // max 20 slices
+    .map((row) => ({
+      name: String(row[nameCol] ?? ''),
+      value: Number(row[valueCol]),
+    }))
+
+  if (data.length === 0) return null
+
+  const option: any = {
+    color: COLORS,
+    tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+    legend: { orient: 'vertical', right: 10, top: 'center', textStyle: { fontSize: 12 } },
+    series: [{
+      type: 'pie',
+      radius: ['40%', '70%'],
+      avoidLabelOverlap: true,
+      itemStyle: { borderRadius: 4, borderColor: '#fff', borderWidth: 2 },
+      label: { show: false },
+      emphasis: { label: { show: true, fontSize: 14, fontWeight: 'bold' } },
+      data,
+    }],
+  }
+
+  return (
+    <div className="chart-wrapper" style={{ marginTop: 12, padding: '12px 12px 4px', background: '#fff', borderRadius: 8, border: '1px solid #f0f0f0' }}>
+      <ReactECharts option={option} style={{ height: 300 }} />
+    </div>
+  )
+}
+
+// ── 路由入口 ──
+
+function resolveChartType(result: SQLResult, spec?: ChartSpec): string | null {
+  if (spec?.chart_type === 'none') return null
+  if (spec?.chart_type && spec.chart_type !== 'auto') return spec.chart_type
+  // Fallback heuristics
+  if (canRenderChart(result)) return 'line'
+  if (canRenderBarChart(result)) return 'bar'
+  return null
+}
+
+export function Chart({ result, spec }: ChartProps) {
+  const chartType = resolveChartType(result, spec)
+  if (!chartType) return null
+
+  switch (chartType) {
+    case 'line':
+      return <LineChart result={result} />
+    case 'bar':
+      return <BarChart result={result} spec={spec} />
+    case 'pie':
+      return <PieChart result={result} spec={spec} />
+    default:
+      return null
+  }
 }
