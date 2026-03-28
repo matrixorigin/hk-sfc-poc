@@ -43,10 +43,16 @@ type KnowledgeBaseRef struct {
 	KnowledgeBaseID int64 `json:"knowledge_base_id"`
 }
 
+type MemoryConfig struct {
+	EnableResultContext bool `json:"enable_result_context,omitempty"`
+	EnableSummary       bool `json:"enable_summary,omitempty"`
+}
+
 type ExploreOptions struct {
-	PlanningMode string     `json:"planning_mode,omitempty"`
-	Verbose      string     `json:"verbose,omitempty"`
-	LLM          *LLMConfig `json:"llm,omitempty"`
+	PlanningMode string        `json:"planning_mode,omitempty"`
+	Verbose      string        `json:"verbose,omitempty"`
+	LLM          *LLMConfig    `json:"llm,omitempty"`
+	Memory       *MemoryConfig `json:"memory,omitempty"`
 }
 
 type LLMConfig struct {

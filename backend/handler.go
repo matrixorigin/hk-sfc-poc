@@ -119,6 +119,10 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Options: ExploreOptions{
 			PlanningMode: h.cfg.Explore.PlanningMode,
 			Verbose:      h.cfg.Explore.Verbose,
+			Memory: &MemoryConfig{
+				EnableResultContext: true,
+				EnableSummary:       true,
+			},
 		},
 		Trace: TraceOptions{Enabled: true},
 	}
