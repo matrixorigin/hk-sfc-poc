@@ -244,19 +244,56 @@ log "日期标准化完成"
 log ""
 log "========== Step 5: 预计算列 =========="
 
-log "计算 MA20/MA50/MA100..."
+log "计算 MA3/MA20/MA50/MA100..."
 run_sql "
 UPDATE ms_t_stk_sis t
 JOIN (
     SELECT SISTKC, trade_date,
+           AVG(SICLSE) OVER (PARTITION BY SISTKC ORDER BY trade_date ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS ma3,
            AVG(SICLSE) OVER (PARTITION BY SISTKC ORDER BY trade_date ROWS BETWEEN 19 PRECEDING AND CURRENT ROW) AS ma20,
            AVG(SICLSE) OVER (PARTITION BY SISTKC ORDER BY trade_date ROWS BETWEEN 49 PRECEDING AND CURRENT ROW) AS ma50,
            AVG(SICLSE) OVER (PARTITION BY SISTKC ORDER BY trade_date ROWS BETWEEN 99 PRECEDING AND CURRENT ROW) AS ma100
     FROM ms_t_stk_sis
     WHERE SISTKC < '10000'
 ) calc ON t.SISTKC = calc.SISTKC AND t.trade_date = calc.trade_date
-SET t.ma_20 = calc.ma20, t.ma_50 = calc.ma50, t.ma_100 = calc.ma100;
+SET t.ma_3 = calc.ma3, t.ma_20 = calc.ma20, t.ma_50 = calc.ma50, t.ma_100 = calc.ma100;
 "
+
+log "计算 consecutive_above_ma3 (Python + temp table)..."
+# 导出 → Python 计算连续天数 → 写 CSV → LOAD DATA LOCAL
+$MYSQL_CMD "$MO_DB" -N -B -e "
+SELECT SISTKC, trade_date, CASE WHEN SICLSE > ma_3 THEN 1 ELSE 0 END
+FROM ms_t_stk_sis
+WHERE SISTKC < '10000' AND ma_3 IS NOT NULL
+ORDER BY SISTKC, trade_date;
+" 2>/dev/null | python3 -c "
+import sys
+prev, streak = None, 0
+for line in sys.stdin:
+    code, date, above = line.strip().split('\t')
+    if code != prev: streak = 0; prev = code
+    streak = streak + 1 if above == '1' else 0
+    print(f'{code},{date},{streak}')
+" > /tmp/_consecutive_ma3.csv
+
+row_count=$(wc -l < /tmp/_consecutive_ma3.csv)
+log "  Python 计算完成: $row_count 行"
+
+run_sql "DROP TABLE IF EXISTS _tmp_consec_ma3;"
+run_sql "CREATE TABLE _tmp_consec_ma3 (SISTKC VARCHAR(10), trade_date DATE, streak INT);"
+$MYSQL_CMD "$MO_DB" --local-infile=1 -e "
+LOAD DATA LOCAL INFILE '/tmp/_consecutive_ma3.csv'
+INTO TABLE _tmp_consec_ma3
+FIELDS TERMINATED BY ','
+LINES TERMINATED BY '\n';
+" 2>&1 | { grep -v "Warning.*password" || true; }
+run_sql "
+UPDATE ms_t_stk_sis t
+JOIN _tmp_consec_ma3 c ON t.SISTKC = c.SISTKC AND t.trade_date = c.trade_date
+SET t.consecutive_above_ma3 = c.streak;
+"
+run_sql "DROP TABLE IF EXISTS _tmp_consec_ma3;"
+rm -f /tmp/_consecutive_ma3.csv
 
 log "计算 consecutive_above_ma50..."
 run_sql "
