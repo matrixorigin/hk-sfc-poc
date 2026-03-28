@@ -1,12 +1,7 @@
 #!/usr/bin/env bash
-# HK SFC POC - 数据准确性验证测试
-# 验证 LLM 生成的 SQL 是否返回正确的行数和关键数据
+# HK SFC POC - 准确性测试
+# 验证 LLM 生成的 SQL 返回正确的行数和关键数据
 # 用法: bash scripts/09_accuracy_test.sh
-#
-# 每个测试用例验证:
-#   1. 查询成功完成（run.completed + status=completed）
-#   2. SQL 结果行数在预期范围内
-#   3. 关键数据存在/不存在于结果中
 
 set -euo pipefail
 
@@ -169,39 +164,37 @@ echo -n "  Catalog: "; curl -s "$CATALOG_URL/health" 2>/dev/null | python3 -c "i
 
 # ============================================================
 log ""
-log "========== 验数问题（来自同事验证报告）=========="
+log "========== 数据准确性 =========="
 # ============================================================
 
-# --- V1: HSI 跌幅 >2% 总成交量（验数问题1）---
+# --- V1: HSI 跌幅 + 总成交量 ---
 log "V1: 市场指数日跌幅超过2%的交易日总成交量..."
 query "v1" "在2026年市场指数日跌幅超过2%的交易日，全市场总成交量是多少？"
 extract_result "v1"
-# 验数问题1 已 PASS，只需确认能跑出结果
 assert_result "V1: HSI跌幅>2%成交量" "v1" 1 -1
 
-# --- V2: 行业市值下降 Top3（验数问题2）---
+# --- V2: 行业市值下降 ---
 log "V2: 行业市值下降..."
 query "v2" "计算各行业2025年11月相对2025年10月总市值下降值，取top3"
 extract_result "v2"
-# 正确答案：只有2个行业下降（Consumer Discretionary, Energy），不满3个是正常的
+# 只有2个行业下降（Consumer Discretionary, Energy），不满3个是正常的
 assert_result "V2: 行业市值下降" "v2" 1 3 "Consumer Discretionary"
 
-# --- V3: MA3 连续3天（验数问题3）---
+# --- V3: MA3 连续3天 ---
 log "V3: 连续3天高于3日均线..."
 query "v3" "2026年中，对于股票代码是数字且小于100，列出收盘价连续3个交易日高于3日移动均线的股票"
 extract_result "v3"
-# 正确答案：81只股票，00046 不应在结果中
+# 81只股票，00046 不应在结果中
 assert_result "V3: MA3连续3天 (code<100)" "v3" 75 90 "" "00046"
 
-# --- V4: 新闻放量（验数问题4）---
+# --- V4: 新闻放量 ---
 log "V4: 重大新闻放量3倍..."
 query "v4" "在2025年1月1日到2025年4月30日期间，在重大新闻公告发布前，成交量超过30日平均值3倍的股票，应将第T日排除在平均值计算之外，如果新闻是在非交易日发布使用下一个交易日的交易量进行比较。仅当typeid in (0,3,7,8,10,14,18,21,25,26,28,32)时认为是重大新闻公告。如果一只股票在一天发布多条重大新闻公告则认为当天仅发布一次随机取一条。列出所有满足条件的公告发布日期、公告内容、股票代码、股票名称。"
 extract_result "v4"
-# 正确答案：1517条（去重后）
+# 1517条（去重后）
 assert_result "V4: 新闻放量3倍" "v4" 1400 1600
 
-# --- V5: CCASS 持仓变动（验数问题5）---
-# 数据覆盖问题，需要先爬取数据
+# --- V5: CCASS 持仓变动 ---
 HAS_CCASS=$(mysql -h 127.0.0.1 -P 16002 -u "$(curl -s "http://localhost:8084/api/v1/workspaces/$WS" \
   -H "X-API-Key: $KEY" | python3 -c "import sys,json;print(json.load(sys.stdin)['data']['account_name'])")":moi_core_system \
   -p"$KEY" hk_sfc -N -B -e "SELECT COUNT(*) FROM ccass_holdings" 2>/dev/null || echo "0")
@@ -214,11 +207,11 @@ else
   skip_test "V5: CCASS变动>30%" "ccass_holdings 无数据（需先爬取）"
 fi
 
-# --- V6: 营收同期对比（验数问题6）---
+# --- V6: 营收同期对比 ---
 log "V6: 营收同期对比..."
 query "v6" '"３６０鲁大师控股有限公司"从2023到2025年的营收增长情况'
 extract_result "v6"
-# 正确答案：5行，含同期对比数据（Final vs Final, Interim vs Interim）
+# 5行，Final vs Final + Interim vs Interim
 assert_result "V6: 营收同期对比" "v6" 4 6
 
 # ============================================================
@@ -226,40 +219,37 @@ log ""
 log "========== 基础能力测试 =========="
 # ============================================================
 
-# --- B1: HSI 跌幅 + 成交量（基础查询 + 跨表 JOIN）---
+# --- B1: 跨表 JOIN ---
 log "B1: HSI跌幅+成交量 TOP20..."
 query "b1" "2025年4月恒指跌幅超过2%时，成交量最大的20只股票是哪些？"
 extract_result "b1"
 assert_result "B1: HSI跌幅+TOP20成交量" "b1" 1 20
 
-# --- B2: 行业市值对比（跨表 + 行业分类 carry-forward）---
+# --- B2: 行业分类 carry-forward ---
 log "B2: H1行业市值..."
 query "b2" "2025年上半年哪三个行业的总市值下降幅度最大？"
 extract_result "b2"
 assert_result "B2: H1行业市值下降TOP3" "b2" 1 6
 
-# --- B3: 均线连续（预计算列 + 筛选）---
+# --- B3: 预计算列筛选 ---
 log "B3: MA50连续10天..."
 query "b3" "2025年一季度有哪些股票连续10天收盘价高于50日均线？"
 extract_result "b3"
-# 正确答案：约 2469 只（数据特征，大部分股票在 Q1 都满足）
 assert_result "B3: MA50连续10天" "b3" 100 -1
 
-# --- B4: 新闻放量（去重 + avg_vol_30d）---
+# --- B4: 新闻去重 + 放量检测 ---
 log "B4: Q1新闻放量..."
 query "b4" "检测2025年1月至3月期间，在重大新闻公告发布当天，成交量超过前30日平均成交量3倍的股票。重大新闻定义为sehknews表中typeid in (0,3,7,8,10,14,18,21,25,26,28,32)的记录。"
 extract_result "b4"
-# 正确答案：约 1326 条
 assert_result "B4: Q1新闻放量" "b4" 1000 1500
 
-# --- B5: 营收查询（stock_code 格式 + 基础查询）---
+# --- B5: stock_code 格式 + 营收查询 ---
 log "B5: 股票88营收..."
 query "b5" "展示股票88从2023年到2025年的营收增长情况"
 extract_result "b5"
-# stock_code = '88'，应有年度+中期共约 6 行 YoY 对比
 assert_result "B5: 股票88营收YoY" "b5" 3 8
 
-# --- B6: 简单指标查询（单表 + 日期过滤）---
+# --- B6: 单表聚合 ---
 log "B6: 恒指单日最大跌幅..."
 query "b6" "2025年恒生指数单日最大跌幅是多少？发生在哪一天？"
 extract_result "b6"
