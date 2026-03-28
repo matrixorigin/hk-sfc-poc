@@ -190,7 +190,7 @@ export function ChatPanel({
       </div>
 
       {/* Input area */}
-      <div style={{ borderTop: '1px solid #e4e7ec', background: '#fff' }}>
+      <div className="input-section">
         <TableSelector selected={selectedTables} onChange={setSelectedTables} />
         <div className="input-area">
           <button onClick={onNewChat} className="btn-new-chat">
