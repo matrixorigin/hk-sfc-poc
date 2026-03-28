@@ -11,6 +11,18 @@ type Config struct {
 	Server  ServerConfig  `yaml:"server"`
 	Catalog CatalogConfig `yaml:"catalog"`
 	Explore ExploreConfig `yaml:"explore"`
+	Jobs    JobsConfig    `yaml:"jobs"`
+}
+
+type JobsConfig struct {
+	CCASS CCASSSyncConfig `yaml:"ccass"`
+}
+
+type CCASSSyncConfig struct {
+	Enabled  bool   `yaml:"enabled"`           // 是否启用定时爬取
+	Schedule string `yaml:"schedule"`           // 每天执行时间，如 "20:00"
+	Top      int    `yaml:"top"`                // 爬取前 N 只股票，0 = 全量
+	Script   string `yaml:"script"`             // 脚本路径，默认 scripts/cron_ccass.sh
 }
 
 type ServerConfig struct {

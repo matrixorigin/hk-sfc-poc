@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -25,6 +26,19 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/chat", chatHandler.ServeHTTP)
+	mux.HandleFunc("/api/tables", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		tables := []map[string]string{
+			{"name": "ms_v_stk_hsi_daily", "label": "恒生指数日线 / HSI Daily"},
+			{"name": "ms_t_stk_sis", "label": "个股行情 / Stock Trading"},
+			{"name": "ms_v_stock_capital", "label": "市值数据 / Market Cap"},
+			{"name": "ds_t_int_hsicl_dtl", "label": "行业分类 / Industry Classification"},
+			{"name": "sehknews", "label": "新闻公告 / News"},
+			{"name": "profit_loss", "label": "财务报表 / Financial Statements"},
+			{"name": "ccass_holdings", "label": "CCASS持仓 / CCASS Holdings"},
+		}
+		json.NewEncoder(w).Encode(tables)
+	})
 
 	knowledgeHandler := NewKnowledgeHandler(cfg)
 	mux.Handle("/api/knowledge/", knowledgeHandler)
@@ -43,6 +57,8 @@ func main() {
 			fs.ServeHTTP(w, r)
 		})
 	}
+
+	StartScheduler(cfg)
 
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	log.Printf("starting server on %s", addr)
