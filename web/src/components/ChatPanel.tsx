@@ -4,6 +4,7 @@ import type { Message, Conversation } from '../types'
 import { useT } from '../i18n'
 import { useExploreSSE } from '../hooks/useExploreSSE'
 import { MessageBubble } from './MessageBubble'
+import { TableSelector } from './TableSelector'
 
 interface ChatPanelProps {
   conversation: Conversation | null
@@ -22,6 +23,7 @@ export function ChatPanel({
   const [messages, setMessages] = useState<Message[]>(conversation?.messages || [])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [selectedTables, setSelectedTables] = useState<string[]>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const streamingMsgIdRef = useRef<string | null>(null)
@@ -140,7 +142,7 @@ export function ChatPanel({
     setInput('')
     setIsLoading(true)
 
-    send(question, sessionIdRef.current)
+    send(question, sessionIdRef.current, selectedTables.length > 0 ? selectedTables : undefined)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -189,6 +191,7 @@ export function ChatPanel({
 
       {/* Input area */}
       <div style={{ borderTop: '1px solid #e4e7ec', background: '#fff' }}>
+        <TableSelector selected={selectedTables} onChange={setSelectedTables} />
         <div className="input-area">
           <button onClick={onNewChat} className="btn-new-chat">
             ✦ {t('newChat')}

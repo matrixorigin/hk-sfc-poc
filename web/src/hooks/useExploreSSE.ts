@@ -51,7 +51,7 @@ export function useExploreSSE({ onUpdate, onDone, onError }: UseExploreSSEOption
   const abortControllerRef = useRef<AbortController | null>(null)
 
   const send = useCallback(
-    async (question: string, sessionId: string) => {
+    async (question: string, sessionId: string, tables?: string[]) => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort()
       }
@@ -62,7 +62,7 @@ export function useExploreSSE({ onUpdate, onDone, onError }: UseExploreSSEOption
         const response = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ question, session_id: sessionId }),
+          body: JSON.stringify({ question, session_id: sessionId, ...(tables?.length ? { tables } : {}) }),
           signal: controller.signal,
         })
 

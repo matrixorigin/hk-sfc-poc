@@ -13,8 +13,9 @@ import (
 
 // ChatRequest 是前端发来的请求体。
 type ChatRequest struct {
-	Question  string `json:"question"`
-	SessionID string `json:"session_id,omitempty"`
+	Question  string   `json:"question"`
+	SessionID string   `json:"session_id,omitempty"`
+	Tables    []string `json:"tables,omitempty"` // 前端选中的表，空则使用 config 全量表
 }
 
 // ChatHandler 持有 Explore 客户端、Clarifier 和配置。
@@ -100,8 +101,13 @@ func (h *ChatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		},
 		DataSources: DataSourceDomain{
 			Tables: &TableSource{
-				DBName:    h.cfg.Explore.DBName,
-				TableList: h.cfg.Explore.Tables,
+				DBName: h.cfg.Explore.DBName,
+				TableList: func() []string {
+					if len(chatReq.Tables) > 0 {
+						return chatReq.Tables
+					}
+					return h.cfg.Explore.Tables
+				}(),
 			},
 			KnowledgeBases: func() []KnowledgeBaseRef {
 				if h.cfg.Explore.KnowledgeBaseID > 0 {
