@@ -153,6 +153,7 @@ export function useExploreSSE({ onUpdate, onDone, onError }: UseExploreSSEOption
           rows: event.data?.rows ?? [],
           sql: event.data?.sql,
           total_count: event.data?.total_count,
+          round_index: event.data?.round_index,
         }
         // Keep only the result with the most columns (most detailed).
         // If a new result has more columns, replace; if same or fewer, skip.
@@ -176,6 +177,22 @@ export function useExploreSSE({ onUpdate, onDone, onError }: UseExploreSSEOption
 
           return { ...msg, sqlResults: [...filtered, result] }
         })
+        break
+      }
+      case 'chart.recommendation': {
+        const spec = event.data
+        if (spec) {
+          onUpdate((msg) => ({
+            ...msg,
+            chartSpec: {
+              chart_type: spec.chart_type ?? 'auto',
+              x: spec.x,
+              y: spec.y,
+              display_mode: spec.display_mode ?? 'both',
+              round_index: spec.round_index,
+            },
+          }))
+        }
         break
       }
       case 'synthesis.delta': {
