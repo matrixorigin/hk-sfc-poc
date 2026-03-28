@@ -101,8 +101,8 @@ add "logic" "material_news_typeid" "Material news typeid definition" \
   '"Material news in sehknews is defined as typeid IN (0, 3, 7, 8, 10, 14, 18, 21, 25, 26, 28, 32)."' \
   '"sehknews"'
 
-add "logic" "derivative_filter" "SISTKC >= 10000 are derivatives" \
-  '"In ms_t_stk_sis, SISTKC >= 10000 are derivatives (warrants, CBBCs). For stock analysis (moving averages, volume ranking, screening), add WHERE SISTKC < '\''10000'\'' to exclude derivatives unless the user explicitly asks about them."' \
+add "logic" "derivative_info" "SISTKC >= 10000 are derivatives (informational)" \
+  '"In ms_t_stk_sis, SISTKC >= 10000 are derivatives (warrants, CBBCs). Do NOT automatically exclude them. Only add WHERE SISTKC < '\''10000'\'' when the user explicitly asks about stocks only (e.g. 股票/stocks) and the context clearly excludes derivatives."' \
   '"ms_t_stk_sis"'
 
 add "logic" "ccass_participant_granularity" "CCASS inter-broker movement must compare at participant level" \
