@@ -44,6 +44,15 @@ func main() {
 	mux.Handle("/api/knowledge/", knowledgeHandler)
 	mux.Handle("/api/knowledge", knowledgeHandler)
 
+	feedbackDB, err := NewFeedbackDB("data")
+	if err != nil {
+		log.Fatalf("init feedback db: %v", err)
+	}
+	analyzer := NewFeedbackAnalyzer(cfg, feedbackDB, clarifier)
+	feedbackHandler := NewFeedbackHandler(feedbackDB, analyzer)
+	mux.Handle("/api/feedback/", feedbackHandler)
+	mux.Handle("/api/feedback", feedbackHandler)
+
 	if cfg.Server.StaticDir != "" {
 		absDir, _ := filepath.Abs(cfg.Server.StaticDir)
 		log.Printf("serving frontend from %s", absDir)
