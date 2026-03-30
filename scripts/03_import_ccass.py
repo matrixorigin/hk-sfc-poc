@@ -243,12 +243,20 @@ def crawl_date(date: str, stocks: list, cache_dir: str = None, concurrency: int 
         s, vs, vs_gn = sessions[sess_idx]
         tasks.append((s, vs, vs_gn, code, name, date, db_date, i, len(stocks)))
 
-    # 并发执行
+    # 分批并发执行，每批之间随机休息防反爬
+    BATCH_SIZE = 50  # 每50只股票休息一次
     with ThreadPoolExecutor(max_workers=actual_concurrency) as executor:
-        futures = {executor.submit(_crawl_one_stock, t): t for t in tasks}
-        for future in as_completed(futures):
-            rows = future.result()
-            all_rows.extend(rows)
+        for batch_start in range(0, len(tasks), BATCH_SIZE):
+            batch = tasks[batch_start:batch_start + BATCH_SIZE]
+            futures = {executor.submit(_crawl_one_stock, t): t for t in batch}
+            for future in as_completed(futures):
+                rows = future.result()
+                all_rows.extend(rows)
+            # 每批之间随机休息 3-8 秒
+            if batch_start + BATCH_SIZE < len(tasks):
+                pause = random.uniform(3, 8)
+                print(f"  --- 已完成 {min(batch_start + BATCH_SIZE, len(stocks))}/{len(stocks)}, 休息 {pause:.1f}s ---", flush=True)
+                time.sleep(pause)
 
     # 写缓存
     if cache_dir and all_rows:
