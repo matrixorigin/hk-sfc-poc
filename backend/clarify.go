@@ -242,6 +242,54 @@ func (c *Clarifier) callLLM(ctx context.Context, systemPrompt, userContent strin
 	return llmResp.Choices[0].Message.Content, nil
 }
 
+// callLLMRaw 调用 Catalog LLM chat completions API，接受完整的请求体（支持 enable_thinking 等参数）。
+func (c *Clarifier) callLLMRaw(ctx context.Context, reqBody map[string]any) (string, error) {
+	bodyBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("marshal: %w", err)
+	}
+
+	endpoint := fmt.Sprintf("%s/api/v1/workspaces/%s/llm/chat/completions", c.catalogURL, c.workspaceID)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return "", fmt.Errorf("create request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("X-API-Key", c.apiKey)
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return "", fmt.Errorf("do request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("LLM returned %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var llmResp struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(respBody, &llmResp); err != nil {
+		return "", fmt.Errorf("parse response: %w", err)
+	}
+
+	if len(llmResp.Choices) == 0 {
+		return "", fmt.Errorf("empty choices")
+	}
+
+	return llmResp.Choices[0].Message.Content, nil
+}
+
 // extractJSON 从可能包含 <think>...</think> 的文本中提取最后一个 JSON 对象。
 func extractJSON(s string) string {
 	start := -1
