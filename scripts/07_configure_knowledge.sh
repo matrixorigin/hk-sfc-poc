@@ -171,7 +171,18 @@ add "glossary" "hk_stock_terminology" "HK stock market terminology" \
   '"ms_v_stk_hsi_daily","ms_t_stk_sis","ms_v_stock_capital","ds_t_int_hsicl_dtl","sehknews","profit_loss","ccass_holdings"'
 
 # ============================================================
-# Step 3c: Fewshot 示例（case_library — 可复用的 SQL 模式）
+# Step 3c: 展示规则（presentation — 控制 synthesis 输出格式）
+# ============================================================
+log ""
+log "配置展示规则..."
+
+add "presentation" "profit_loss_show_all_periods" \
+  "Show all fiscal year periods in profit_loss results" \
+  '"When presenting profit_loss query results, you MUST describe EVERY row returned by the SQL. This includes both Final (full-year annual report / 年报) and Interim (half-year report / 半年报 / 中期报告) periods. Do not skip or summarize away any fiscal year period. Present them in chronological order by fin_yr."' \
+  '"profit_loss"'
+
+# ============================================================
+# Step 3d: Fewshot 示例（case_library — 可复用的 SQL 模式）
 # ============================================================
 log ""
 log "配置 fewshot 示例..."
