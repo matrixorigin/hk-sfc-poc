@@ -36,6 +36,7 @@ export interface Message {
   phase?: Phase
   error?: string
   chartSpec?: ChartSpec
+  feedbackQuestion?: string
 }
 
 export type Language = 'en' | 'zh'

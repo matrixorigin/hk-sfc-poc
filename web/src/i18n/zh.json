@@ -32,5 +32,20 @@
   "knowledgeConfirmDelete": "确认删除此条目？",
   "knowledgeTypeLogic": "业务逻辑",
   "knowledgeTypeGlossary": "术语表",
-  "knowledgeTypeCaseLibrary": "案例库"
+  "knowledgeTypeCaseLibrary": "案例库",
+  "feedbackBtn": "结果不准确？",
+  "feedbackPlaceholder": "请描述哪里不对（可选）",
+  "feedbackSubmitBtn": "提交反馈",
+  "feedbackSubmitted": "已提交分析任务，可在分析中心查看",
+  "analysisCenter": "分析中心",
+  "analysisEmpty": "暂无分析任务",
+  "analysisStatus_pending": "等待中",
+  "analysisStatus_analyzing": "分析中",
+  "analysisStatus_done": "已完成",
+  "analysisStatus_error": "失败",
+  "analysisProblem": "发现的问题",
+  "analysisSuggestion": "优化建议",
+  "analysisCorrectedSQL": "修正 SQL",
+  "analysisUserNote": "用户备注",
+  "analysisOriginalSQL": "生成的 SQL"
 }

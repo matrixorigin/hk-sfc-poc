@@ -32,5 +32,20 @@
   "knowledgeConfirmDelete": "Confirm delete this entry?",
   "knowledgeTypeLogic": "Business Logic",
   "knowledgeTypeGlossary": "Glossary",
-  "knowledgeTypeCaseLibrary": "Case Library"
+  "knowledgeTypeCaseLibrary": "Case Library",
+  "feedbackBtn": "Inaccurate result?",
+  "feedbackPlaceholder": "Describe what's wrong (optional)",
+  "feedbackSubmitBtn": "Submit Feedback",
+  "feedbackSubmitted": "Analysis task submitted, check Analysis Center",
+  "analysisCenter": "Analysis Center",
+  "analysisEmpty": "No analysis tasks yet",
+  "analysisStatus_pending": "Pending",
+  "analysisStatus_analyzing": "Analyzing",
+  "analysisStatus_done": "Done",
+  "analysisStatus_error": "Error",
+  "analysisProblem": "Problems Found",
+  "analysisSuggestion": "Suggestions",
+  "analysisCorrectedSQL": "Corrected SQL",
+  "analysisUserNote": "User Note",
+  "analysisOriginalSQL": "Generated SQL"
 }

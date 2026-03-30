@@ -135,6 +135,7 @@ export function ChatPanel({
       sqlStatements: [],
       isStreaming: true,
       phase: 'thinking',
+      feedbackQuestion: question,
     }
 
     setMessages((prev) => [...prev, userMsg, assistantMsg])

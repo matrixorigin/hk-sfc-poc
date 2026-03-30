@@ -6,6 +6,7 @@ import { LangSwitch } from './components/LangSwitch'
 import { ChatPanel } from './components/ChatPanel'
 import { Sidebar } from './components/Sidebar'
 import { KnowledgePanel } from './components/KnowledgePanel'
+import { AnalysisPanel } from './components/AnalysisPanel'
 import './App.css'
 
 const STORAGE_KEY = 'hk-poc-conversations'
@@ -42,6 +43,7 @@ function App() {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [knowledgeOpen, setKnowledgeOpen] = useState(false)
+  const [analysisOpen, setAnalysisOpen] = useState(false)
 
   // Persist conversations on change
   useEffect(() => {
@@ -113,6 +115,12 @@ function App() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <button
               className="lang-switch"
+              onClick={() => setAnalysisOpen(true)}
+            >
+              {t('analysisCenter' as any)}
+            </button>
+            <button
+              className="lang-switch"
               onClick={() => setKnowledgeOpen(true)}
             >
               {t('knowledge')}
@@ -141,6 +149,7 @@ function App() {
         </div>
       </div>
       <KnowledgePanel open={knowledgeOpen} onClose={() => setKnowledgeOpen(false)} />
+      <AnalysisPanel open={analysisOpen} onClose={() => setAnalysisOpen(false)} />
     </LangContext.Provider>
   )
 }

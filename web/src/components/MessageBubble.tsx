@@ -7,6 +7,7 @@ import 'katex/dist/katex.min.css'
 import type { Message } from '../types'
 import { useT } from '../i18n'
 import { Chart } from './Chart'
+import { FeedbackButton } from './FeedbackButton'
 
 interface MessageBubbleProps {
   message: Message
@@ -113,6 +114,16 @@ export function MessageBubble({ message }: MessageBubbleProps) {
                 </div>
               )}
             </div>
+          )}
+
+          {/* Feedback button — only after done with results */}
+          {!isUser && isDone && message.sqlResults.length > 0 && (
+            <FeedbackButton
+              question={message.feedbackQuestion || ''}
+              sql={message.sqlStatements[message.sqlStatements.length - 1] || ''}
+              sqlResult={message.sqlResults[message.sqlResults.length - 1]}
+              sessionId=""
+            />
           )}
         </div>
       </div>
