@@ -432,16 +432,17 @@ JOIN (
 SET t.consecutive_above_ma50 = calc.consec;
 "
 
-log "计算 avg_vol_30d..."
+log "计算 avg_vol_30d（不足30个交易日写NULL）..."
 run_sql "
 UPDATE ms_t_stk_sis t
 JOIN (
     SELECT SISTKC, trade_date,
-           AVG(SIVOL) OVER (PARTITION BY SISTKC ORDER BY trade_date ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING) AS avg30
+           AVG(SIVOL) OVER (PARTITION BY SISTKC ORDER BY trade_date ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING) AS avg30,
+           COUNT(SIVOL) OVER (PARTITION BY SISTKC ORDER BY trade_date ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING) AS cnt30
     FROM ms_t_stk_sis
     WHERE SISTKC < '10000'
 ) calc ON t.SISTKC = calc.SISTKC AND t.trade_date = calc.trade_date
-SET t.avg_vol_30d = calc.avg30;
+SET t.avg_vol_30d = CASE WHEN calc.cnt30 >= 30 THEN calc.avg30 ELSE NULL END;
 "
 log "预计算列完成"
 

@@ -187,7 +187,7 @@ add "case_library" \
 add "case_library" \
   "Detect abnormal volume on material news days — replace {{date_start}} and {{date_end}} with user-specified range" \
   "News volume anomaly detection with dedup and avg_vol_30d" \
-  '"SELECT n.trade_date AS announcement_date, n.text AS announcement_content, n.securitycode AS stock_code, s.SISTKN AS stock_name FROM (SELECT securitycode, trade_date, MIN(text) AS text FROM sehknews WHERE typeid IN (0,3,7,8,10,14,18,21,25,26,28,32) AND timestamp >= '\''{{date_start}}'\'' AND timestamp < '\''{{date_end}}'\'' GROUP BY securitycode, trade_date) n JOIN ms_t_stk_sis s ON n.securitycode = s.SISTKC AND n.trade_date = s.trade_date WHERE s.SISTKC < '\''10000'\'' AND s.SIVOL > s.avg_vol_30d * 3"' \
+  '"SELECT n.trade_date AS announcement_date, n.text AS announcement_content, n.securitycode AS stock_code, s.SISTKN AS stock_name FROM (SELECT securitycode, trade_date, MIN(text) AS text FROM sehknews WHERE typeid IN (0,3,7,8,10,14,18,21,25,26,28,32) AND timestamp >= '\''{{date_start}}'\'' AND timestamp < '\''{{date_end}}'\'' GROUP BY securitycode, trade_date) n JOIN ms_t_stk_sis s ON n.securitycode = s.SISTKC AND n.trade_date = s.trade_date WHERE s.SISTKC < '\''10000'\'' AND s.avg_vol_30d > 0 AND s.SIVOL > s.avg_vol_30d * 3"' \
   '"sehknews","ms_t_stk_sis"'
 
 add "case_library" \
