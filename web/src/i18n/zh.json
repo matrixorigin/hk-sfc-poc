@@ -33,6 +33,7 @@
   "knowledgeTypeLogic": "业务逻辑",
   "knowledgeTypeGlossary": "术语表",
   "knowledgeTypeCaseLibrary": "案例库",
+  "knowledgeTypePresentation": "展示规则",
   "feedbackBtn": "结果不准确？",
   "feedbackPlaceholder": "请描述哪里不对（可选）",
   "feedbackSubmitBtn": "提交反馈",

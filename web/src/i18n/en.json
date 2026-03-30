@@ -33,6 +33,7 @@
   "knowledgeTypeLogic": "Business Logic",
   "knowledgeTypeGlossary": "Glossary",
   "knowledgeTypeCaseLibrary": "Case Library",
+  "knowledgeTypePresentation": "Presentation",
   "feedbackBtn": "Inaccurate result?",
   "feedbackPlaceholder": "Describe what's wrong (optional)",
   "feedbackSubmitBtn": "Submit Feedback",

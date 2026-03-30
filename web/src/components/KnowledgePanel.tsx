@@ -19,15 +19,16 @@ interface KnowledgePanelProps {
   onClose: () => void
 }
 
-type FilterType = 'all' | 'logic' | 'glossary' | 'case_library'
+type FilterType = 'all' | 'logic' | 'glossary' | 'case_library' | 'presentation'
 
 const TYPE_LABELS: Record<string, string> = {
   logic: 'knowledgeTypeLogic',
   glossary: 'knowledgeTypeGlossary',
   case_library: 'knowledgeTypeCaseLibrary',
+  presentation: 'knowledgeTypePresentation',
 }
 
-const FILTER_TABS: FilterType[] = ['all', 'logic', 'glossary', 'case_library']
+const FILTER_TABS: FilterType[] = ['all', 'logic', 'glossary', 'case_library', 'presentation']
 
 interface FormState {
   knowledge_type: string
@@ -283,6 +284,7 @@ export function KnowledgePanel({ open, onClose }: KnowledgePanelProps) {
                 <option value="logic">{t('knowledgeTypeLogic' as any)}</option>
                 <option value="glossary">{t('knowledgeTypeGlossary' as any)}</option>
                 <option value="case_library">{t('knowledgeTypeCaseLibrary' as any)}</option>
+                <option value="presentation">{t('knowledgeTypePresentation' as any)}</option>
               </select>
             </div>
 
