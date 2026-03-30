@@ -90,7 +90,7 @@ add "logic" "ccass_participant_granularity" "CCASS must compare at participant l
 
 # --- 利润表 ---
 add "logic" "profit_loss_stock_code" "profit_loss stock_code format and company name search" \
-  '"In profit_loss, stock_code is NOT zero-padded (e.g. 88 not 00088). When the user references a company by name, use company_name_sc with LIKE for fuzzy matching — do NOT extract numbers from the name as stock_code (e.g. \"360鲁大师\" → stock_code is 3601, not 360)."' \
+  '"In profit_loss, stock_code is NOT zero-padded (e.g. 88 not 00088). When the user references a company by name, use LIKE on both company_name_sc (simplified) and company_name_tc (traditional) — the user may input either. Example: WHERE company_name_sc LIKE ... OR company_name_tc LIKE ... Do NOT extract numbers from the name as stock_code (e.g. \"360鲁大师\" → stock_code is 3601, not 360)."' \
   '"profit_loss"'
 
 add "logic" "profit_loss_period_comparison" "Revenue/profit analysis must use like-for-like period comparison" \
@@ -137,7 +137,7 @@ add "case_library" \
 add "case_library" \
   "YoY revenue/profit comparison for a company — replace {{company}} and {{start_fin_yr}} with user-specified values" \
   "Year-over-year financial comparison using self-JOIN on profit_loss" \
-  '"SELECT a.fin_yr, a.quarter, a.turnover AS current_turnover, b.turnover AS previous_turnover, a.turnover - b.turnover AS turnover_change, ROUND((a.turnover - b.turnover) / b.turnover * 100, 2) AS change_pct FROM profit_loss a JOIN profit_loss b ON a.stock_code = b.stock_code AND a.quarter = b.quarter AND CAST(SUBSTRING(a.fin_yr, 1, 4) AS UNSIGNED) = CAST(SUBSTRING(b.fin_yr, 1, 4) AS UNSIGNED) + 1 AND SUBSTRING(a.fin_yr, 5, 2) = SUBSTRING(b.fin_yr, 5, 2) WHERE a.company_name_sc LIKE '\''%{{company}}%'\'' AND a.fin_yr >= '\''{{start_fin_yr}}'\'' ORDER BY a.fin_yr, a.quarter"' \
+  '"SELECT a.fin_yr, a.quarter, a.turnover AS current_turnover, b.turnover AS previous_turnover, a.turnover - b.turnover AS turnover_change, ROUND((a.turnover - b.turnover) / b.turnover * 100, 2) AS change_pct FROM profit_loss a JOIN profit_loss b ON a.stock_code = b.stock_code AND a.quarter = b.quarter AND CAST(SUBSTRING(a.fin_yr, 1, 4) AS UNSIGNED) = CAST(SUBSTRING(b.fin_yr, 1, 4) AS UNSIGNED) + 1 AND SUBSTRING(a.fin_yr, 5, 2) = SUBSTRING(b.fin_yr, 5, 2) WHERE (a.company_name_sc LIKE '\''%{{company}}%'\'' OR a.company_name_tc LIKE '\''%{{company}}%'\'') AND a.fin_yr >= '\''{{start_fin_yr}}'\'' ORDER BY a.fin_yr, a.quarter"' \
   '"profit_loss"'
 
 add "case_library" \

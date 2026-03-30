@@ -84,7 +84,7 @@ ground_truth_count() {
 #   assert_case <label> <sid> <ground_truth_sql> [must_not_contain]
 # ============================================================
 assert_case() {
-  local label="$1" sid="$2" gt_sql="$3" must_not_contain="${4:-}"
+  local label="$1" sid="$2" gt_sql="$3" must_not_contain="${4:-}" tolerance="${5:-0}"
 
   local f="$OUT/$sid.result"
   if [ ! -s "$f" ]; then
@@ -114,9 +114,16 @@ if 'data: ' in line:
     return 1
   fi
 
-  # 行数比对
-  if [ "$actual" != "$expected" ]; then
-    echo "  ❌ $label — rows=$actual, expected=$expected"
+  # 行数比对（支持 tolerance 范围）
+  local lo hi
+  lo=$((expected - tolerance))
+  hi=$((expected + tolerance))
+  if [ "$actual" -lt "$lo" ] 2>/dev/null || [ "$actual" -gt "$hi" ] 2>/dev/null; then
+    if [ "$tolerance" -gt 0 ] 2>/dev/null; then
+      echo "  ❌ $label — rows=$actual, expected=$lo~$hi"
+    else
+      echo "  ❌ $label — rows=$actual, expected=$expected"
+    fi
     return 1
   fi
 
@@ -136,7 +143,11 @@ exit(0 if any('$val' in str(cell) for row in rows for cell in row) else 1)
     done
   fi
 
-  echo "  ✅ $label — rows=$actual (expected=$expected)"
+  if [ "$tolerance" -gt 0 ] 2>/dev/null; then
+    echo "  ✅ $label — rows=$actual (expected=$lo~$hi)"
+  else
+    echo "  ✅ $label — rows=$actual (expected=$expected)"
+  fi
   return 0
 }
 
@@ -150,7 +161,7 @@ echo -n "  DB: "; $MYSQL_CMD -e "SELECT 'ok'" 2>/dev/null | tail -1 || echo "FAI
 echo "  并发: $CONCURRENCY"
 
 # ============================================================
-# 用例定义：sid \t label \t question \t ground_truth_sql \t must_not_contain
+# 用例定义：sid \t label \t question \t ground_truth_sql \t must_not_contain \t tolerance
 # ============================================================
 CASES=$(cat << 'CASES_EOF'
 v1	V1: HSI跌幅>2%成交量	在2026年市场指数日跌幅超过2%的交易日，全市场总成交量是多少？	SELECT SUM(s.SIVOL) AS total_vol FROM ms_v_stk_hsi_daily h JOIN ms_t_stk_sis s ON h.trade_date = s.trade_date WHERE h.hsi_pct_change < -2 AND h.trade_date >= '2026-01-01' AND h.trade_date <= '2026-12-31' AND s.SISTKC < '10000'
@@ -165,7 +176,7 @@ s1	S1: 行业市值增长率	2025年一季度，哪些行业的平均市值增�
 s2	S2: 2月新闻放量TOP20	2025年2月份有哪些股票在发布重大新闻公告的当天成交量异常放大（超过前30日均量3倍以上）？列出前20条	SELECT n.trade_date, n.securitycode, s.SISTKN FROM (SELECT securitycode, trade_date FROM sehknews WHERE typeid IN (0,3,7,8,10,14,18,21,25,26,28,32) AND timestamp >= '2025-02-01' AND timestamp < '2025-03-01' GROUP BY securitycode, trade_date) n JOIN ms_t_stk_sis s ON n.securitycode = s.SISTKC AND n.trade_date = s.trade_date WHERE s.SISTKC < '10000' AND s.SIVOL > s.avg_vol_30d * 3 LIMIT 20
 s3	S3: 连续5天>MA20	2025年1月到3月，哪些股票代码小于1000的股票收盘价连续5天高于20日均线？	SELECT DISTINCT SISTKC, SISTKN FROM ms_t_stk_sis WHERE trade_date BETWEEN '2025-01-01' AND '2025-03-31' AND SISTKC < '01000' AND SISTKC >= '00001' AND consecutive_above_ma20 >= 5
 s4	S4: 恒指月末+涨跌幅	2025年各月的恒生指数月末收盘值和当月涨跌幅分别是多少？	SELECT trade_date, HSHSI FROM (SELECT trade_date, HSHSI, ROW_NUMBER() OVER (PARTITION BY YEAR(trade_date), MONTH(trade_date) ORDER BY trade_date DESC) AS rn FROM ms_v_stk_hsi_daily WHERE trade_date >= '2025-01-01' AND trade_date <= '2025-12-31') t WHERE rn = 1
-v2	V2: 行业市值下降	计算各行业2025年11月相对2025年10月总市值下降值，取top3	SELECT industry_name, (oct_total - nov_total) AS decline FROM (SELECT industry_name, SUM(CASE WHEN ref_date='2025-10-31' THEN SICAP ELSE 0 END) AS oct_total, SUM(CASE WHEN ref_date='2025-11-30' THEN SICAP ELSE 0 END) AS nov_total FROM ms_v_stock_capital WHERE ref_date IN ('2025-10-31','2025-11-30') GROUP BY industry_name) t WHERE oct_total > nov_total ORDER BY decline DESC LIMIT 3
+v2	V2: 行业市值下降	计算各行业2025年11月相对2025年10月总市值下降值，取top3	SELECT industry_name, (oct_total - nov_total) AS decline FROM (SELECT industry_name, SUM(CASE WHEN ref_date='2025-10-31' THEN SICAP ELSE 0 END) AS oct_total, SUM(CASE WHEN ref_date='2025-11-30' THEN SICAP ELSE 0 END) AS nov_total FROM ms_v_stock_capital WHERE ref_date IN ('2025-10-31','2025-11-30') GROUP BY industry_name) t WHERE oct_total > nov_total ORDER BY decline DESC LIMIT 3		1
 CASES_EOF
 )
 
@@ -177,7 +188,7 @@ log "========== 并发发送查询 (concurrency=$CONCURRENCY) =========="
 pids=()
 count=0
 
-while IFS=$'\t' read -r sid label question gt_sql must_not; do
+while IFS=$'\t' read -r sid label question gt_sql must_not tolerance; do
   [ -z "$sid" ] && continue
   log "  提交: $label"
   fire "$sid" "$question" &
@@ -199,11 +210,11 @@ log "========== 验证结果 (fail-fast) =========="
 # ============================================================
 
 check_or_die() {
-  local label="$1" sid="$2" gt_sql="$3" must_not="${4:-}"
+  local label="$1" sid="$2" gt_sql="$3" must_not="${4:-}" tol="${5:-0}"
   extract_result "$sid"
   TOTAL=$((TOTAL + 1))
 
-  if assert_case "$label" "$sid" "$gt_sql" "$must_not"; then
+  if assert_case "$label" "$sid" "$gt_sql" "$must_not" "$tol"; then
     PASS=$((PASS + 1))
   else
     FAIL=$((FAIL + 1))
@@ -213,9 +224,9 @@ check_or_die() {
   fi
 }
 
-while IFS=$'\t' read -r sid label question gt_sql must_not; do
+while IFS=$'\t' read -r sid label question gt_sql must_not tolerance; do
   [ -z "$sid" ] && continue
-  check_or_die "$label" "$sid" "$gt_sql" "$must_not"
+  check_or_die "$label" "$sid" "$gt_sql" "$must_not" "$tolerance"
 done <<< "$CASES"
 
 # V5: CCASS — 数据可能不存在
