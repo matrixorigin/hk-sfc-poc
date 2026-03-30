@@ -13,14 +13,16 @@ interface FeedbackTask {
   analysis?: {
     problems?: Array<{
       description: string
-      severity?: 'high' | 'medium' | 'low'
-    }>
-    suggestions?: Array<{
-      type?: string
-      description: string
-      detail?: string
+      severity?: 'error' | 'warning' | 'info'
     }>
     corrected_sql?: string
+    system_actions?: Array<{
+      category: string
+      title: string
+      detail: string
+      priority?: 'high' | 'medium' | 'low'
+      reason?: string
+    }>
   }
   error_msg?: string
   created_at: string
@@ -30,6 +32,16 @@ interface FeedbackTask {
 interface AnalysisPanelProps {
   open: boolean
   onClose: () => void
+}
+
+const categoryLabels: Record<string, string> = {
+  knowledge_rule: 'Knowledge Rule',
+  case_library: 'Fewshot Example',
+  glossary: 'Glossary',
+  schema_comment: 'Schema Comment',
+  data_preprocessing: 'Data Preprocessing',
+  param_validation: 'Param Validation',
+  other: 'Other',
 }
 
 function formatTime(ts: string): string {
@@ -226,23 +238,6 @@ export function AnalysisPanel({ open, onClose }: AnalysisPanelProps) {
                   </div>
                 )}
 
-                {/* Suggestions */}
-                {selectedTask.analysis?.suggestions && selectedTask.analysis.suggestions.length > 0 && (
-                  <div className="analysis-detail-section">
-                    <h3>{t('analysisSuggestion' as any)}</h3>
-                    <div className="analysis-suggestions-list">
-                      {selectedTask.analysis.suggestions.map((s, i) => (
-                        <div key={i} className="analysis-suggestion-card">
-                          {s.type && (
-                            <span className="analysis-suggestion-type">{s.type}</span>
-                          )}
-                          {s.description}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
                 {/* Corrected SQL */}
                 {selectedTask.analysis?.corrected_sql && (
                   <div className="analysis-detail-section">
@@ -255,6 +250,30 @@ export function AnalysisPanel({ open, onClose }: AnalysisPanelProps) {
                         Copy
                       </button>
                       <pre>{selectedTask.analysis.corrected_sql}</pre>
+                    </div>
+                  </div>
+                )}
+
+                {/* System Actions */}
+                {selectedTask.analysis?.system_actions && selectedTask.analysis.system_actions.length > 0 && (
+                  <div className="analysis-detail-section">
+                    <h3>System Optimization Suggestions</h3>
+                    <div className="analysis-actions-list">
+                      {selectedTask.analysis.system_actions.map((a, i) => (
+                        <div key={i} className={`analysis-action-card priority-${a.priority || 'medium'}`}>
+                          <div className="analysis-action-header">
+                            <span className="analysis-action-category">{categoryLabels[a.category] || a.category}</span>
+                            {a.priority && (
+                              <span className={`analysis-action-priority ${a.priority}`}>{a.priority}</span>
+                            )}
+                          </div>
+                          <div className="analysis-action-title">{a.title}</div>
+                          <div className="analysis-action-detail">{a.detail}</div>
+                          {a.reason && (
+                            <div className="analysis-action-reason">Why: {a.reason}</div>
+                          )}
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
