@@ -36,13 +36,15 @@ add() {
 # ============================================================
 # Step 1: 清理旧条目
 # ============================================================
-log "清理旧条目..."
+log "清理旧条目（保留 data_coverage_* 由数据导入脚本管理）..."
 existing=$(curl -s -X POST "$CATALOG/api/v1/workspaces/$WS/nl2sql-knowledge/list" \
   -H "X-API-Key: $KEY" -H "Content-Type: application/json" \
   -d '{"page_size":100}' | python3 -c "
 import sys,json
 items=json.load(sys.stdin).get('data',{}).get('items',[])
-for i in items: print(i['id'])
+for i in items:
+    if not i['knowledge_key'].startswith('data_coverage_'):
+        print(i['id'])
 " 2>/dev/null)
 
 count=0
