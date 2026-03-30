@@ -3,7 +3,7 @@ import { useT } from '../i18n'
 import './AnalysisPanel.css'
 
 interface FeedbackTask {
-  id: number
+  id: string
   question: string
   sql: string
   sql_result: any
@@ -18,12 +18,13 @@ interface FeedbackTask {
     suggestions?: Array<{
       type?: string
       description: string
+      detail?: string
     }>
     corrected_sql?: string
-    summary?: string
   }
-  created_at: number
-  updated_at: number
+  error_msg?: string
+  created_at: string
+  finished_at?: string
 }
 
 interface AnalysisPanelProps {
@@ -31,9 +32,9 @@ interface AnalysisPanelProps {
   onClose: () => void
 }
 
-function formatTime(ts: number): string {
+function formatTime(ts: string): string {
   if (!ts) return ''
-  const d = new Date(ts * 1000)
+  const d = new Date(ts)
   return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
 }
 
@@ -41,14 +42,14 @@ export function AnalysisPanel({ open, onClose }: AnalysisPanelProps) {
   const { t } = useT()
   const [tasks, setTasks] = useState<FeedbackTask[]>([])
   const [loading, setLoading] = useState(false)
-  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const fetchTasks = useCallback(async () => {
     try {
       const resp = await fetch('/api/feedback')
       const data = await resp.json()
-      const items: FeedbackTask[] = data.data?.items || []
+      const items: FeedbackTask[] = data.tasks || []
       setTasks(items)
       return items
     } catch (err) {

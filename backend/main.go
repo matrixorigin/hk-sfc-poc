@@ -4,9 +4,12 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
+
+	"github.com/go-sql-driver/mysql"
 	"path/filepath"
 	"time"
 )
@@ -44,7 +47,9 @@ func main() {
 	mux.Handle("/api/knowledge/", knowledgeHandler)
 	mux.Handle("/api/knowledge", knowledgeHandler)
 
-	feedbackDB, err := NewFeedbackDB("data")
+	// Feedback DB: connect to MatrixOne via workspace account
+	moCfg := buildMOConfig(cfg)
+	feedbackDB, err := NewFeedbackDB(moCfg)
 	if err != nil {
 		log.Fatalf("init feedback db: %v", err)
 	}
@@ -81,4 +86,51 @@ func main() {
 	if err := srv.ListenAndServe(); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
+}
+
+// buildMOConfig gets workspace account from Catalog API and builds a mysql.Config for MatrixOne.
+func buildMOConfig(cfg *Config) *mysql.Config {
+	moHost := os.Getenv("MO_HOST")
+	if moHost == "" {
+		moHost = "mo" // docker-compose service name
+	}
+	moPort := os.Getenv("MO_PORT")
+	if moPort == "" {
+		moPort = "6001"
+	}
+
+	// Get account_name from Catalog workspace API
+	url := fmt.Sprintf("%s/api/v1/workspaces/%s", cfg.Catalog.URL, cfg.Catalog.WorkspaceID)
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Set("X-API-Key", cfg.Catalog.APIKey)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		log.Fatalf("get workspace account: %v", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	var wsResp struct {
+		Data struct {
+			AccountName string `json:"account_name"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &wsResp); err != nil || wsResp.Data.AccountName == "" {
+		log.Fatalf("parse workspace account: %v, body: %s", err, body)
+	}
+
+	acct := wsResp.Data.AccountName
+	user := acct + ":moi_core_system"
+	pass := cfg.Catalog.APIKey
+	dbName := cfg.Explore.DBName
+
+	mysqlCfg := mysql.NewConfig()
+	mysqlCfg.User = user
+	mysqlCfg.Passwd = pass
+	mysqlCfg.Net = "tcp"
+	mysqlCfg.Addr = fmt.Sprintf("%s:%s", moHost, moPort)
+	mysqlCfg.DBName = dbName
+	mysqlCfg.AllowNativePasswords = true
+	log.Printf("feedback db: connecting to MO as %s@%s:%s/%s", user, moHost, moPort, dbName)
+	return mysqlCfg
 }

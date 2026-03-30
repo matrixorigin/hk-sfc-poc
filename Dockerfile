@@ -23,7 +23,6 @@ FROM debian:bookworm-slim
 RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources && \
     apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-RUN mkdir -p /app/data
 COPY --from=backend /build/hk-poc-backend .
 COPY --from=frontend /build/dist ./web/dist
 COPY backend/config.yaml .

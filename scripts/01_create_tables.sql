@@ -135,3 +135,20 @@ CREATE TABLE ccass_holdings (
     participant_id  VARCHAR(20)    NOT NULL COMMENT 'CCASS participant (broker) ID, starts with B.',
     shareholding    BIGINT         NOT NULL COMMENT 'Number of shares held by this broker.'
 );
+
+-- ============================================================
+-- 8. 反馈分析任务（系统表，不参与 NL2SQL）
+-- ============================================================
+CREATE TABLE IF NOT EXISTS feedback_tasks (
+    id          VARCHAR(64)  PRIMARY KEY,
+    status      VARCHAR(20)  NOT NULL,
+    created_at  VARCHAR(30)  NOT NULL,
+    question    TEXT         NOT NULL,
+    user_note   TEXT,
+    sql_text    TEXT,
+    sql_result  TEXT,
+    session_id  VARCHAR(100),
+    analysis    TEXT,
+    error_msg   TEXT,
+    finished_at VARCHAR(30)
+);
