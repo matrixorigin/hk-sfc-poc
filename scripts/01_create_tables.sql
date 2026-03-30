@@ -46,6 +46,7 @@ CREATE TABLE ms_t_stk_sis (
     ma_100  DECIMAL(16,4)  NULL     COMMENT '100-day moving average of closing price. Pre-computed.',
     ma_3    DECIMAL(16,4)  NULL     COMMENT '3-day moving average of closing price. Pre-computed.',
     consecutive_above_ma3 INT NULL  COMMENT 'Number of consecutive trading days closing price is strictly above ma_3. Pre-computed using gap-and-islands method.',
+    consecutive_above_ma20 INT NULL  COMMENT 'Number of consecutive trading days closing price is strictly above ma_20. Pre-computed.',
     consecutive_above_ma50 INT NULL  COMMENT 'Number of consecutive trading days the closing price has been above the 50-day moving average (ma_50), as of this date. Pre-computed.',
     avg_vol_30d BIGINT     NULL     COMMENT '30-day average trading volume. Pre-computed. Use this column to detect volume anomalies (e.g. SIVOL > avg_vol_30d * 3) instead of correlated subqueries.'
 );

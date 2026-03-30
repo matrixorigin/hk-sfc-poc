@@ -140,45 +140,7 @@ exit(0 if any('$val' in str(cell) for row in rows for cell in row) else 1)
   return 0
 }
 
-# ============================================================
-# 批量执行 + 并发控制
-# ============================================================
 PASS=0; FAIL=0; SKIP=0; TOTAL=0
-
-run_case() {
-  local sid="$1" label="$2" question="$3" gt_sql="$4" must_not="${5:-}"
-  TOTAL=$((TOTAL + 1))
-  fire "$sid" "$question"
-  extract_result "$sid"
-  if assert_case "$label" "$sid" "$gt_sql" "$must_not"; then
-    PASS=$((PASS + 1))
-  else
-    FAIL=$((FAIL + 1))
-  fi
-}
-
-run_batch() {
-  # 从 stdin 读取用例，按 CONCURRENCY 并发执行
-  local pids=() count=0
-
-  while IFS=$'\t' read -r sid label question gt_sql must_not; do
-    (
-      fire "$sid" "$question"
-      extract_result "$sid"
-    ) &
-    pids+=($!)
-    count=$((count + 1))
-
-    if [ "$count" -ge "$CONCURRENCY" ]; then
-      for pid in "${pids[@]}"; do wait "$pid"; done
-      pids=()
-      count=0
-    fi
-  done
-
-  # 等待剩余
-  for pid in "${pids[@]}"; do wait "$pid"; done
-}
 
 # ============================================================
 log "========== 环境检查 =========="
@@ -199,18 +161,19 @@ b1	B1: HSI跌幅+TOP20	2025年4月恒指跌幅超过2%时，成交量最大的20
 b4	B4: Q1新闻放量	检测2025年1月至3月期间，在重大新闻公告发布当天，成交量超过前30日平均成交量3倍的股票。重大新闻定义为sehknews表中typeid in (0,3,7,8,10,14,18,21,25,26,28,32)的记录。	SELECT n.trade_date, n.securitycode, s.SISTKN FROM (SELECT securitycode, trade_date FROM sehknews WHERE typeid IN (0,3,7,8,10,14,18,21,25,26,28,32) AND timestamp >= '2025-01-01' AND timestamp < '2025-04-01' GROUP BY securitycode, trade_date) n JOIN ms_t_stk_sis s ON n.securitycode = s.SISTKC AND n.trade_date = s.trade_date WHERE s.SISTKC < '10000' AND s.SIVOL > s.avg_vol_30d * 3
 b5	B5: 股票88营收YoY	展示股票88从2023年到2025年的营收增长情况	SELECT a.fin_yr, a.quarter, a.turnover, b.turnover AS prev FROM profit_loss a JOIN profit_loss b ON a.stock_code = b.stock_code AND a.quarter = b.quarter AND CAST(SUBSTRING(a.fin_yr,1,4) AS UNSIGNED) = CAST(SUBSTRING(b.fin_yr,1,4) AS UNSIGNED) + 1 AND SUBSTRING(a.fin_yr,5,2) = SUBSTRING(b.fin_yr,5,2) WHERE a.stock_code = '88' AND a.fin_yr >= '202301'
 b6	B6: 恒指最大跌幅	2025年恒生指数单日最大跌幅是多少？发生在哪一天？	SELECT trade_date, hsi_pct_change FROM ms_v_stk_hsi_daily WHERE trade_date >= '2025-01-01' AND trade_date <= '2025-12-31' ORDER BY hsi_pct_change ASC LIMIT 1
+s1	S1: 行业市值增长率	2025年一季度，哪些行业的平均市值增长率最高？	SELECT industry_name, (AVG(CASE WHEN ref_date='2025-03-31' THEN SICAP END) - AVG(CASE WHEN ref_date='2025-01-31' THEN SICAP END)) / AVG(CASE WHEN ref_date='2025-01-31' THEN SICAP END) AS growth FROM ms_v_stock_capital WHERE ref_date IN ('2025-01-31','2025-03-31') AND industry_name IS NOT NULL GROUP BY industry_name HAVING AVG(CASE WHEN ref_date='2025-01-31' THEN SICAP END) IS NOT NULL ORDER BY growth DESC LIMIT 5
+s2	S2: 2月新闻放量TOP20	2025年2月份有哪些股票在发布重大新闻公告的当天成交量异常放大（超过前30日均量3倍以上）？列出前20条	SELECT n.trade_date, n.securitycode, s.SISTKN FROM (SELECT securitycode, trade_date FROM sehknews WHERE typeid IN (0,3,7,8,10,14,18,21,25,26,28,32) AND timestamp >= '2025-02-01' AND timestamp < '2025-03-01' GROUP BY securitycode, trade_date) n JOIN ms_t_stk_sis s ON n.securitycode = s.SISTKC AND n.trade_date = s.trade_date WHERE s.SISTKC < '10000' AND s.SIVOL > s.avg_vol_30d * 3 LIMIT 20
+s3	S3: 连续5天>MA20	2025年1月到3月，哪些股票代码小于1000的股票收盘价连续5天高于20日均线？	SELECT DISTINCT SISTKC, SISTKN FROM ms_t_stk_sis WHERE trade_date BETWEEN '2025-01-01' AND '2025-03-31' AND SISTKC < '01000' AND SISTKC >= '00001' AND consecutive_above_ma20 >= 5
+s4	S4: 恒指月末+涨跌幅	2025年各月的恒生指数月末收盘值和当月涨跌幅分别是多少？	SELECT trade_date, HSHSI FROM (SELECT trade_date, HSHSI, ROW_NUMBER() OVER (PARTITION BY YEAR(trade_date), MONTH(trade_date) ORDER BY trade_date DESC) AS rn FROM ms_v_stk_hsi_daily WHERE trade_date >= '2025-01-01' AND trade_date <= '2025-12-31') t WHERE rn = 1
+v2	V2: 行业市值下降	计算各行业2025年11月相对2025年10月总市值下降值，取top3	SELECT industry_name, (oct_total - nov_total) AS decline FROM (SELECT industry_name, SUM(CASE WHEN ref_date='2025-10-31' THEN SICAP ELSE 0 END) AS oct_total, SUM(CASE WHEN ref_date='2025-11-30' THEN SICAP ELSE 0 END) AS nov_total FROM ms_v_stock_capital WHERE ref_date IN ('2025-10-31','2025-11-30') GROUP BY industry_name) t WHERE oct_total > nov_total ORDER BY decline DESC LIMIT 3
 CASES_EOF
 )
 
-# V2: 行业市值下降 — 使用预计算的 industry_name
-V2_GT="SELECT oct.industry_name, (oct.cap - nov.cap) AS decline FROM (SELECT industry_name, SUM(SICAP) AS cap FROM ms_v_stock_capital WHERE ref_date = '2025-10-31' AND industry_name IS NOT NULL GROUP BY industry_name) oct JOIN (SELECT industry_name, SUM(SICAP) AS cap FROM ms_v_stock_capital WHERE ref_date = '2025-11-30' AND industry_name IS NOT NULL GROUP BY industry_name) nov ON oct.industry_name = nov.industry_name WHERE oct.cap > nov.cap ORDER BY decline DESC LIMIT 3"
-
 # ============================================================
 log ""
-log "========== 发送查询 (concurrency=$CONCURRENCY) =========="
+log "========== 并发发送查询 (concurrency=$CONCURRENCY) =========="
 # ============================================================
 
-# 先并发发送所有查询
 pids=()
 count=0
 
@@ -227,56 +190,41 @@ while IFS=$'\t' read -r sid label question gt_sql must_not; do
   fi
 done <<< "$CASES"
 
-# V2 单独提交
-log "  提交: V2: 行业市值下降"
-fire "v2" "计算各行业2025年11月相对2025年10月总市值下降值，取top3" &
-pids+=($!)
-
 for pid in "${pids[@]}"; do wait "$pid"; done
 log "全部查询完成"
 
 # ============================================================
 log ""
-log "========== 验证结果 =========="
+log "========== 验证结果 (fail-fast) =========="
 # ============================================================
 
-while IFS=$'\t' read -r sid label question gt_sql must_not; do
-  [ -z "$sid" ] && continue
+check_or_die() {
+  local label="$1" sid="$2" gt_sql="$3" must_not="${4:-}"
   extract_result "$sid"
   TOTAL=$((TOTAL + 1))
+
   if assert_case "$label" "$sid" "$gt_sql" "$must_not"; then
     PASS=$((PASS + 1))
   else
     FAIL=$((FAIL + 1))
+    log "❌ 测试失败，终止执行。详情: $OUT/"
+    log "准确性测试: $PASS 通过 / $FAIL 失败 / $SKIP 跳过 (共 $TOTAL)"
+    exit 1
   fi
-done <<< "$CASES"
+}
 
-# V2: 特殊处理 — LLM 可能返回 2 或 3 行（只有2个行业真正下降，但 top3 可能含最小上涨）
-extract_result "v2"
-TOTAL=$((TOTAL + 1))
-v2_actual=$(python3 -c "import json;print(json.load(open('$OUT/v2.result')).get('total_count',0))" 2>/dev/null || echo "0")
-v2_expected=$(ground_truth_count "$V2_GT")
-if [ "$v2_actual" -ge 2 ] 2>/dev/null && [ "$v2_actual" -le "${v2_expected:-3}" ] 2>/dev/null; then
-  echo "  ✅ V2: 行业市值下降 — rows=$v2_actual (ground_truth=$v2_expected)"
-  PASS=$((PASS + 1))
-else
-  echo "  ❌ V2: 行业市值下降 — rows=$v2_actual, expected 2~$v2_expected"
-  FAIL=$((FAIL + 1))
-fi
+while IFS=$'\t' read -r sid label question gt_sql must_not; do
+  [ -z "$sid" ] && continue
+  check_or_die "$label" "$sid" "$gt_sql" "$must_not"
+done <<< "$CASES"
 
 # V5: CCASS — 数据可能不存在
 TOTAL=$((TOTAL + 1))
 HAS_CCASS=$($MYSQL_CMD -e "SELECT COUNT(*) FROM ccass_holdings" 2>/dev/null | tail -1 || echo "0")
 if [ "${HAS_CCASS:-0}" -gt 0 ]; then
-  log "V5: CCASS 持仓变动..."
+  log "  [v5] V5: CCASS 持仓变动..."
   fire "v5" "2026年3月18日相比3月17日，CCASS跨券商持仓变动超过30%的股票有哪些？"
-  extract_result "v5"
-  V5_GT="SELECT DISTINCT a.stock_code FROM ccass_holdings a JOIN ccass_holdings b ON a.stock_code = b.stock_code AND a.participant_id = b.participant_id WHERE a.holding_date = '2026-03-18' AND b.holding_date = '2026-03-17' AND b.shareholding > 0 AND ABS(a.shareholding - b.shareholding) / b.shareholding > 0.3"
-  if assert_case "V5: CCASS变动>30%" "v5" "$V5_GT"; then
-    PASS=$((PASS + 1))
-  else
-    FAIL=$((FAIL + 1))
-  fi
+  check_or_die "V5: CCASS变动>30%" "v5" "SELECT DISTINCT a.stock_code FROM ccass_holdings a JOIN ccass_holdings b ON a.stock_code = b.stock_code AND a.participant_id = b.participant_id WHERE a.holding_date = '2026-03-18' AND b.holding_date = '2026-03-17' AND b.shareholding > 0 AND ABS(a.shareholding - b.shareholding) / b.shareholding > 0.3"
 else
   SKIP=$((SKIP + 1))
   echo "  ⏭️  V5: CCASS变动>30% — SKIP: ccass_holdings 无数据"
@@ -287,8 +235,3 @@ log ""
 log "=========================================="
 log "准确性测试: $PASS 通过 / $FAIL 失败 / $SKIP 跳过 (共 $TOTAL)"
 log "=========================================="
-
-if [ "$FAIL" -gt 0 ]; then
-  log "失败详情: $OUT/"
-  exit 1
-fi

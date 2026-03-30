@@ -55,8 +55,8 @@ def parse_args():
     p.add_argument("--all", action="store_true", help="爬全量股票 (覆盖 --top)")
     p.add_argument("--mo-host", default=os.getenv("MO_HOST", "127.0.0.1"))
     p.add_argument("--mo-port", default=os.getenv("MO_PORT", "16002"))
-    p.add_argument("--mo-user", default=os.getenv("MO_USER", "dump"))
-    p.add_argument("--mo-pass", default=os.getenv("MO_PASS", "111"))
+    p.add_argument("--mo-user", default=os.getenv("MO_USER", ""))
+    p.add_argument("--mo-pass", default=os.getenv("MO_PASS", ""))
     p.add_argument("--mo-db", default="hk_sfc")
     p.add_argument("--dry-run", action="store_true", help="只爬不入库，保存本地 CSV")
     p.add_argument("--from-cache", action="store_true", help="跳过爬取，从本地缓存入库")
@@ -257,9 +257,43 @@ def load_rows_to_mo(rows, args):
         os.unlink(tmp.name)
 
 
+def resolve_mo_credentials(args):
+    """如果未指定 MO 账号，自动从 Catalog API 获取 workspace 账号"""
+    if args.mo_user and args.mo_pass:
+        return
+    # 从 .env 读取
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_dir = os.path.dirname(script_dir)
+    env_file = os.path.join(project_dir, ".env")
+    env = {}
+    if os.path.exists(env_file):
+        with open(env_file) as f:
+            for line in f:
+                line = line.strip()
+                if "=" in line and not line.startswith("#"):
+                    k, v = line.split("=", 1)
+                    env[k] = v
+    api_key = env.get("MOI_SYSTEM_API_KEY", "")
+    ws_id = env.get("POC_WORKSPACE_ID", "")
+    catalog_url = os.getenv("CATALOG_URL", "http://localhost:8084")
+    if not api_key or not ws_id:
+        print("ERROR: 未指定 MO_USER/MO_PASS，且 .env 中缺少 MOI_SYSTEM_API_KEY 或 POC_WORKSPACE_ID")
+        sys.exit(1)
+    import json
+    resp = requests.get(f"{catalog_url}/api/v1/workspaces/{ws_id}",
+                        headers={"X-API-Key": api_key}, timeout=10)
+    acct = json.loads(resp.text)["data"]["account_name"]
+    args.mo_user = f"{acct}:moi_core_system"
+    args.mo_pass = api_key
+    print(f"使用 workspace 账号: {args.mo_user}")
+
+
 def main():
     args = parse_args()
     top_n = None if args.all else args.top
+
+    if not args.dry_run:
+        resolve_mo_credentials(args)
 
     print("=" * 60)
     print("CCASS Holdings Crawler → MatrixOne")

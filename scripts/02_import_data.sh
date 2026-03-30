@@ -9,13 +9,29 @@ set -euo pipefail
 # ---- 配置 ----
 MO_HOST="${MO_HOST:-127.0.0.1}"
 MO_PORT="${MO_PORT:-16002}"
-MO_USER="${MO_USER:-dump}"
-MO_PASS="${MO_PASS:-111}"
 MO_DB="hk_sfc"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 DATA_DIR="$PROJECT_DIR/POC DATA_01/数据"
+
+# 从 .env 获取 Catalog 凭据，自动推导 workspace 账号
+source "$PROJECT_DIR/.env"
+CATALOG_URL="${CATALOG_URL:-http://localhost:8084}"
+
+if [ -n "${MO_USER:-}" ] && [ -n "${MO_PASS:-}" ]; then
+  log "使用指定账号: $MO_USER"
+else
+  ACCT=$(curl -s "$CATALOG_URL/api/v1/workspaces/$POC_WORKSPACE_ID" \
+    -H "X-API-Key: $MOI_SYSTEM_API_KEY" | python3 -c "import sys,json;print(json.load(sys.stdin)['data']['account_name'])" 2>/dev/null)
+  if [ -z "$ACCT" ]; then
+    log "ERROR: 无法获取 workspace 账号，请确认 Catalog 已启动且 .env 配置正确"
+    exit 1
+  fi
+  MO_USER="${ACCT}:moi_core_system"
+  MO_PASS="$MOI_SYSTEM_API_KEY"
+  log "使用 workspace 账号: $MO_USER"
+fi
 
 MYSQL_CMD="mysql -h $MO_HOST -P $MO_PORT -u $MO_USER -p$MO_PASS --local-infile=1"
 
@@ -366,6 +382,41 @@ SET t.consecutive_above_ma3 = c.streak;
 run_sql "DROP TABLE IF EXISTS _tmp_consec_ma3;"
 rm -f /tmp/_consecutive_ma3.csv
 
+log "计算 consecutive_above_ma20 (Python + temp table)..."
+$MYSQL_CMD "$MO_DB" -N -B -e "
+SELECT SISTKC, trade_date, CASE WHEN SICLSE > ma_20 THEN 1 ELSE 0 END
+FROM ms_t_stk_sis
+WHERE SISTKC < '10000' AND ma_20 IS NOT NULL
+ORDER BY SISTKC, trade_date;
+" 2>/dev/null | python3 -c "
+import sys
+prev, streak = None, 0
+for line in sys.stdin:
+    code, date, above = line.strip().split('\t')
+    if code != prev: streak = 0; prev = code
+    streak = streak + 1 if above == '1' else 0
+    print(f'{code},{date},{streak}')
+" > /tmp/_consecutive_ma20.csv
+
+row_count=$(wc -l < /tmp/_consecutive_ma20.csv)
+log "  Python 计算完成: $row_count 行"
+
+run_sql "DROP TABLE IF EXISTS _tmp_consec_ma20;"
+run_sql "CREATE TABLE _tmp_consec_ma20 (SISTKC VARCHAR(10), trade_date DATE, streak INT);"
+$MYSQL_CMD "$MO_DB" --local-infile=1 -e "
+LOAD DATA LOCAL INFILE '/tmp/_consecutive_ma20.csv'
+INTO TABLE _tmp_consec_ma20
+FIELDS TERMINATED BY ','
+LINES TERMINATED BY '\n';
+" 2>&1 | { grep -v "Warning.*password" || true; }
+run_sql "
+UPDATE ms_t_stk_sis t
+JOIN _tmp_consec_ma20 c ON t.SISTKC = c.SISTKC AND t.trade_date = c.trade_date
+SET t.consecutive_above_ma20 = c.streak;
+"
+run_sql "DROP TABLE IF EXISTS _tmp_consec_ma20;"
+rm -f /tmp/_consecutive_ma20.csv
+
 log "计算 consecutive_above_ma50..."
 run_sql "
 UPDATE ms_t_stk_sis t
@@ -456,6 +507,35 @@ UNION ALL SELECT 'profit_loss', COUNT(*) FROM profit_loss;
 log ""
 log "关键字段验证:"
 run_sql "SELECT 'trade_date NULL' AS chk, COUNT(*) AS cnt FROM ms_t_stk_sis WHERE trade_date IS NULL UNION ALL SELECT 'ma_50 NULL', COUNT(*) FROM ms_t_stk_sis WHERE ma_50 IS NULL AND SISTKC < '10000' UNION ALL SELECT 'ref_date NULL', COUNT(*) FROM ms_v_stock_capital WHERE ref_date IS NULL;"
+
+# ---- Step 10: 自动更新日期列注释（写入实际数据范围）----
+log ""
+log "========== Step 10: 更新日期列注释 =========="
+
+update_date_comment() {
+  local table="$1" col="$2" base_comment="$3"
+  local range
+  range=$($MYSQL_CMD "$MO_DB" -N -B -e "SELECT CONCAT(MIN($col), ' to ', MAX($col)) FROM $table WHERE $col IS NOT NULL;" 2>/dev/null)
+  if [ -n "$range" ]; then
+    local full_comment="${base_comment} Data range: ${range}."
+    local coltype
+    coltype=$($MYSQL_CMD "$MO_DB" -N -B -e "
+      SELECT CONCAT(COLUMN_TYPE, IF(IS_NULLABLE='YES',' NULL',' NOT NULL'))
+      FROM information_schema.columns
+      WHERE table_schema='$MO_DB' AND table_name='$table' AND column_name='$col';
+    " 2>/dev/null | sed 's/DATE(0)/DATE/g')
+    run_sql "ALTER TABLE $table MODIFY COLUMN $col $coltype COMMENT '${full_comment}';"
+    log "  $table.$col → $range"
+  fi
+}
+
+update_date_comment "ms_t_stk_hsi" "trade_date" "Trading date (standardized from HSTXDT)."
+update_date_comment "ms_t_stk_sis" "trade_date" "Trading date (standardized from SITXDT). Use this column for date filtering, JOIN, and window functions."
+update_date_comment "ms_v_stock_capital" "ref_date" "Month-end reference date (standardized from SIRXDT). Use this column for date filtering and comparison."
+update_date_comment "ds_t_int_hsicl_dtl" "MODIFIED_DATE" "Effective date of this classification (YYYY-MM-DD)."
+update_date_comment "sehknews" "trade_date" "Nearest trading day on or after the news timestamp. Use for JOIN with ms_t_stk_sis."
+update_date_comment "profit_loss" "fin_yr" "Fiscal year in YYYYMM format (e.g. 202312 = Dec 2023). Quarter is Final or Interim."
+update_date_comment "ccass_holdings" "holding_date" "CCASS shareholding date."
 
 log ""
 log "========== 全部导入完成 =========="

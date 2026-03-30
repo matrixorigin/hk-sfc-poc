@@ -54,41 +54,8 @@ done
 log "已删除 $count 条旧条目"
 
 # ============================================================
-# Step 2: 数据范围（引擎无法从 schema 推断）
-# ============================================================
-log ""
-log "配置数据范围..."
-
-add "logic" "data_coverage_hsi" "ms_t_stk_hsi date range" \
-  '"ms_t_stk_hsi has trade_date from 2025-01-02 to 2026-03-03."' \
-  '"ms_t_stk_hsi"'
-
-add "logic" "data_coverage_sis" "ms_t_stk_sis date range" \
-  '"ms_t_stk_sis has trade_date from 2025-01-02 to 2026-03-03."' \
-  '"ms_t_stk_sis"'
-
-add "logic" "data_coverage_capital" "ms_v_stock_capital date range" \
-  '"ms_v_stock_capital has ref_date monthly from 2025-01-31 to 2025-12-31 (12 months, no 2024 data). H1 2025 market cap comparison should use ref_date 2025-01-31 vs 2025-06-30."' \
-  '"ms_v_stock_capital"'
-
-add "logic" "data_coverage_industry" "ds_t_int_hsicl_dtl date range" \
-  '"ds_t_int_hsicl_dtl has MODIFIED_DATE from 2025-01-01 to 2025-12-31."' \
-  '"ds_t_int_hsicl_dtl"'
-
-add "logic" "data_coverage_news" "sehknews date range" \
-  '"sehknews has timestamp from 2025-01-01 to 2025-12-31."' \
-  '"sehknews"'
-
-add "logic" "data_coverage_profit" "profit_loss date range" \
-  '"profit_loss has fin_yr from 202003 to 202509."' \
-  '"profit_loss"'
-
-add "logic" "data_coverage_ccass" "ccass_holdings date range" \
-  '"ccass_holdings has holding_date 2026-03-17 and 2026-03-18 only (limited crawl)."' \
-  '"ccass_holdings"'
-
-# ============================================================
-# Step 3: 业务约束（logic — 描述"是什么"和"为什么"，不给 SQL）
+# Step 2: 业务约束（logic — 描述"是什么"和"为什么"，不给 SQL）
+# （数据范围已通过 02_import_data.sh 自动写入列注释，无需在知识库维护）
 # ============================================================
 log ""
 log "配置业务约束..."
@@ -142,7 +109,7 @@ add "logic" "chart_friendly_output" "Generate chart-friendly SQL when visualizat
 
 # --- SQL 方言 ---
 add "logic" "sql_dialect_matrixone" "MatrixOne SQL dialect constraints" \
-  '"MatrixOne limitations: (1) RIGHT() not supported — use SUBSTRING(col, LENGTH(col)-N+1, N). (2) CHANGE, RANK are reserved words — use aliases like turnover_change, rnk. (3) LAG/LEAD cannot wrap CASE WHEN expressions — pre-compute flag columns in a subquery first. (4) REGEXP works but CAST(VARCHAR AS UNSIGNED) may panic when combined with window functions — filter string conditions in an inner subquery."' \
+  '"MatrixOne limitations: (1) RIGHT() not supported — use SUBSTRING(col, LENGTH(col)-N+1, N). (2) CHANGE, RANK are reserved words — use aliases like turnover_change, rnk. (3) LAG/LEAD on simple columns works fine (e.g. LAG(SICLSE) OVER ...) — only LAG/LEAD wrapping CASE WHEN expressions will panic, pre-compute flag columns first in that case. (4) Correlated subqueries in SELECT may return NULL unexpectedly — prefer LAG/LEAD or self-JOIN instead. (5) REGEXP works but CAST(VARCHAR AS UNSIGNED) may panic when combined with window functions — filter string conditions in an inner subquery."' \
   '"ms_t_stk_sis","profit_loss","ms_v_stock_capital","sehknews","ds_t_int_hsicl_dtl"'
 
 # ============================================================
@@ -162,22 +129,28 @@ log ""
 log "配置 fewshot 示例..."
 
 add "case_library" \
-  "Find stocks where a specific broker increased holdings by more than 50% between two dates" \
+  "CCASS broker holding change: compare date_T vs date_T_minus_1 at participant level, replace date placeholders with user-specified dates" \
   "CCASS broker-level holding change between two dates" \
-  '"SELECT a.stock_code, a.participant_id, a.shareholding AS shares_day2, b.shareholding AS shares_day1, (a.shareholding - b.shareholding) / b.shareholding AS change_ratio FROM ccass_holdings a JOIN ccass_holdings b ON a.stock_code = b.stock_code AND a.participant_id = b.participant_id WHERE a.holding_date = '\''2026-03-18'\'' AND b.holding_date = '\''2026-03-17'\'' AND b.shareholding > 0 AND ABS(a.shareholding - b.shareholding) / b.shareholding > 0.5"' \
+  '"SELECT a.stock_code, a.participant_id, a.shareholding AS shares_day2, b.shareholding AS shares_day1, (a.shareholding - b.shareholding) / b.shareholding AS change_ratio FROM ccass_holdings a JOIN ccass_holdings b ON a.stock_code = b.stock_code AND a.participant_id = b.participant_id WHERE a.holding_date = '\''{{date_T}}'\'' AND b.holding_date = '\''{{date_T_minus_1}}'\'' AND b.shareholding > 0 AND ABS(a.shareholding - b.shareholding) / b.shareholding > 0.5"' \
   '"ccass_holdings"'
 
 add "case_library" \
-  "Compare revenue or profit year-over-year for a company" \
+  "YoY revenue/profit comparison for a company — replace {{company}} and {{start_fin_yr}} with user-specified values" \
   "Year-over-year financial comparison using self-JOIN on profit_loss" \
-  '"SELECT a.fin_yr, a.quarter, a.turnover AS current_turnover, b.turnover AS previous_turnover, a.turnover - b.turnover AS turnover_change, ROUND((a.turnover - b.turnover) / b.turnover * 100, 2) AS change_pct FROM profit_loss a JOIN profit_loss b ON a.stock_code = b.stock_code AND a.quarter = b.quarter AND CAST(SUBSTRING(a.fin_yr, 1, 4) AS UNSIGNED) = CAST(SUBSTRING(b.fin_yr, 1, 4) AS UNSIGNED) + 1 AND SUBSTRING(a.fin_yr, 5, 2) = SUBSTRING(b.fin_yr, 5, 2) WHERE a.company_name_sc LIKE '\''%公司名%'\'' AND a.fin_yr >= '\''202301'\'' ORDER BY a.fin_yr, a.quarter"' \
+  '"SELECT a.fin_yr, a.quarter, a.turnover AS current_turnover, b.turnover AS previous_turnover, a.turnover - b.turnover AS turnover_change, ROUND((a.turnover - b.turnover) / b.turnover * 100, 2) AS change_pct FROM profit_loss a JOIN profit_loss b ON a.stock_code = b.stock_code AND a.quarter = b.quarter AND CAST(SUBSTRING(a.fin_yr, 1, 4) AS UNSIGNED) = CAST(SUBSTRING(b.fin_yr, 1, 4) AS UNSIGNED) + 1 AND SUBSTRING(a.fin_yr, 5, 2) = SUBSTRING(b.fin_yr, 5, 2) WHERE a.company_name_sc LIKE '\''%{{company}}%'\'' AND a.fin_yr >= '\''{{start_fin_yr}}'\'' ORDER BY a.fin_yr, a.quarter"' \
   '"profit_loss"'
 
 add "case_library" \
-  "Find stocks with abnormal volume around news announcements" \
+  "Detect abnormal volume on material news days — replace {{date_start}} and {{date_end}} with user-specified range" \
   "News volume anomaly detection with dedup and avg_vol_30d" \
-  '"SELECT n.trade_date AS announcement_date, n.text AS announcement_content, n.securitycode AS stock_code, s.SISTKN AS stock_name FROM (SELECT securitycode, trade_date, MIN(text) AS text FROM sehknews WHERE typeid IN (0,3,7,8,10,14,18,21,25,26,28,32) AND timestamp >= '\''2025-01-01'\'' AND timestamp < '\''2025-05-01'\'' GROUP BY securitycode, trade_date) n JOIN ms_t_stk_sis s ON n.securitycode = s.SISTKC AND n.trade_date = s.trade_date WHERE s.SISTKC < '\''10000'\'' AND s.SIVOL > s.avg_vol_30d * 3"' \
+  '"SELECT n.trade_date AS announcement_date, n.text AS announcement_content, n.securitycode AS stock_code, s.SISTKN AS stock_name FROM (SELECT securitycode, trade_date, MIN(text) AS text FROM sehknews WHERE typeid IN (0,3,7,8,10,14,18,21,25,26,28,32) AND timestamp >= '\''{{date_start}}'\'' AND timestamp < '\''{{date_end}}'\'' GROUP BY securitycode, trade_date) n JOIN ms_t_stk_sis s ON n.securitycode = s.SISTKC AND n.trade_date = s.trade_date WHERE s.SISTKC < '\''10000'\'' AND s.SIVOL > s.avg_vol_30d * 3"' \
   '"sehknews","ms_t_stk_sis"'
+
+add "case_library" \
+  "Monthly closing value and MoM change for an index — replace {{year_start}} and {{year_end}} with user-specified year range" \
+  "HSI monthly summary using ROW_NUMBER + LAG" \
+  '"SELECT month_end, month_end_close, LAG(month_end_close) OVER (ORDER BY month_end) AS prev_month_close, ROUND((month_end_close - LAG(month_end_close) OVER (ORDER BY month_end)) / LAG(month_end_close) OVER (ORDER BY month_end) * 100, 2) AS monthly_pct_change FROM (SELECT trade_date AS month_end, HSHSI AS month_end_close, ROW_NUMBER() OVER (PARTITION BY YEAR(trade_date), MONTH(trade_date) ORDER BY trade_date DESC) AS rn FROM ms_v_stk_hsi_daily WHERE trade_date >= '\''{{year_start}}-01-01'\'' AND trade_date <= '\''{{year_end}}-12-31'\'') t WHERE rn = 1 ORDER BY month_end"' \
+  '"ms_v_stk_hsi_daily"'
 
 # ============================================================
 # Step 4: 验证
