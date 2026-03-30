@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -97,6 +98,7 @@ func (fa *FeedbackAnalyzer) RunAsync(task *FeedbackTask) {
 func (fa *FeedbackAnalyzer) analyze(ctx context.Context, task *FeedbackTask) (json.RawMessage, error) {
 	tables := extractTableNames(task.SQL)
 	schema := fa.fetchSchema(ctx, tables)
+	sampleData := fa.fetchSampleData(ctx, tables)
 	rules := fa.fetchKnowledgeRules(ctx)
 	truncated := truncateResult(task.SQLResult, 20)
 
@@ -105,9 +107,11 @@ func (fa *FeedbackAnalyzer) analyze(ctx context.Context, task *FeedbackTask) (js
 	sb.WriteString(task.Question)
 	sb.WriteString("\n\n")
 
-	sb.WriteString("## 用户反馈\n")
-	sb.WriteString(task.UserNote)
-	sb.WriteString("\n\n")
+	if task.UserNote != "" {
+		sb.WriteString("## 用户反馈\n")
+		sb.WriteString(task.UserNote)
+		sb.WriteString("\n\n")
+	}
 
 	sb.WriteString("## 生成的 SQL\n```sql\n")
 	sb.WriteString(task.SQL)
@@ -118,9 +122,15 @@ func (fa *FeedbackAnalyzer) analyze(ctx context.Context, task *FeedbackTask) (js
 	sb.WriteString("\n\n")
 
 	if schema != "" {
-		sb.WriteString("## 表 Schema\n")
+		sb.WriteString("## 涉及表的 Schema（含列注释）\n")
 		sb.WriteString(schema)
-		sb.WriteString("\n\n")
+		sb.WriteString("\n")
+	}
+
+	if sampleData != "" {
+		sb.WriteString("## 示例数据（每表前5行）\n")
+		sb.WriteString(sampleData)
+		sb.WriteString("\n")
 	}
 
 	if rules != "" {
@@ -167,43 +177,91 @@ func (fa *FeedbackAnalyzer) callLLMWithThinking(ctx context.Context, systemPromp
 	return fa.clarifier.callLLMRaw(ctx, reqBody)
 }
 
-// fetchSchema 查询指定表的 schema 信息，返回格式化字符串。
-func (fa *FeedbackAnalyzer) fetchSchema(ctx context.Context, tables []string) string {
+// fetchSchema 通过 MO 直接查询 SHOW FULL COLUMNS 获取表 schema。
+func (fa *FeedbackAnalyzer) fetchSchema(_ context.Context, tables []string) string {
 	if len(tables) == 0 {
 		return ""
 	}
 
 	var sb strings.Builder
 	for _, table := range tables {
-		url := fmt.Sprintf("%s/api/v1/workspaces/%s/sql-databases/hk_sfc/tables/%s/schema",
-			fa.catalogURL, fa.workspaceID, table)
-
-		data, err := httpGetWithKey(ctx, url, fa.apiKey)
+		rows, err := fa.db.db.Query("SHOW FULL COLUMNS FROM " + table)
 		if err != nil {
-			log.Printf("feedback: fetch schema for table %s: %v", table, err)
+			log.Printf("feedback: show columns for %s: %v", table, err)
 			continue
 		}
-
-		var resp struct {
-			Columns []struct {
-				Name    string `json:"name"`
-				Type    string `json:"type"`
-				Comment string `json:"comment"`
-			} `json:"columns"`
-		}
-		if err := json.Unmarshal(data, &resp); err != nil {
-			log.Printf("feedback: parse schema for table %s: %v", table, err)
-			continue
-		}
-
 		fmt.Fprintf(&sb, "### %s\n", table)
-		for _, col := range resp.Columns {
-			line := fmt.Sprintf("- %s %s", col.Name, col.Type)
-			if col.Comment != "" {
-				line += fmt.Sprintf(" -- %s", col.Comment)
+		cols, _ := rows.Columns()
+		for rows.Next() {
+			vals := make([]sql.NullString, len(cols))
+			ptrs := make([]any, len(cols))
+			for i := range vals {
+				ptrs[i] = &vals[i]
 			}
-			sb.WriteString(line + "\n")
+			if err := rows.Scan(ptrs...); err != nil {
+				continue
+			}
+			// cols: Field, Type, Collation, Null, Key, Default, Extra, Privileges, Comment
+			field := vals[0].String
+			colType := vals[1].String
+			comment := ""
+			if len(vals) > 8 {
+				comment = vals[8].String
+			}
+			if comment != "" {
+				fmt.Fprintf(&sb, "- %s %s -- %s\n", field, colType, comment)
+			} else {
+				fmt.Fprintf(&sb, "- %s %s\n", field, colType)
+			}
 		}
+		rows.Close()
+		sb.WriteString("\n")
+	}
+
+	return sb.String()
+}
+
+// fetchSampleData 通过 MO 直接查每张表前5行作为示例数据。
+func (fa *FeedbackAnalyzer) fetchSampleData(_ context.Context, tables []string) string {
+	if len(tables) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	for _, table := range tables {
+		rows, err := fa.db.db.Query("SELECT * FROM " + table + " LIMIT 5")
+		if err != nil {
+			log.Printf("feedback: sample data for %s: %v", table, err)
+			continue
+		}
+		cols, _ := rows.Columns()
+		fmt.Fprintf(&sb, "### %s\n", table)
+		sb.WriteString("| " + strings.Join(cols, " | ") + " |\n")
+		sb.WriteString("|" + strings.Repeat("---|", len(cols)) + "\n")
+
+		for rows.Next() {
+			vals := make([]sql.NullString, len(cols))
+			ptrs := make([]any, len(cols))
+			for i := range vals {
+				ptrs[i] = &vals[i]
+			}
+			if err := rows.Scan(ptrs...); err != nil {
+				continue
+			}
+			sb.WriteString("| ")
+			for i, v := range vals {
+				s := v.String
+				if len(s) > 50 {
+					s = s[:50] + "..."
+				}
+				sb.WriteString(s)
+				if i < len(vals)-1 {
+					sb.WriteString(" | ")
+				}
+			}
+			sb.WriteString(" |\n")
+		}
+		rows.Close()
 		sb.WriteString("\n")
 	}
 
