@@ -187,7 +187,11 @@ func (h *ChatHandler) getOrCreateSession(ctx context.Context, frontendID string)
 	}
 	h.sessionMu.Unlock()
 
-	catalogID, err := h.client.CreateSession(ctx, h.cfg.Catalog.WorkspaceID, "poc-"+frontendID[:8])
+	shortID := frontendID
+	if len(shortID) > 8 {
+		shortID = shortID[:8]
+	}
+	catalogID, err := h.client.CreateSession(ctx, h.cfg.Catalog.WorkspaceID, "poc-"+shortID)
 	if err != nil {
 		log.Printf("session: create failed for %s: %v, falling back to frontend ID", frontendID, err)
 		return frontendID

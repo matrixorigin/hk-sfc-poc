@@ -11,6 +11,29 @@ import (
 	"sync"
 )
 
+// followUpCheckPrompt 用于判断新问题是否是对历史问题的追问/修改。
+// 只做一个判断，不检查参数。
+const followUpCheckPrompt = `你是一个对话意图分类器。判断用户的"当前提问"是否是对前一个问题的追问或修改。
+
+判断标准（必须严格遵守）：
+
+只有满足以下任一条件才算追问：
+1. 使用了指代词引用上文（"那"、"这些"、"其中"、"它们"）
+2. 省略了关键信息，脱离上文无法独立理解（如"超过3%的呢"、"占比多少"、"用柱状图"）
+3. 明确修改前一个查询的条件（"换成月度"、"加上行业筛选"、"去掉XX"）
+
+以下情况绝对不是追问：
+- 问题是一个语法完整的句子，包含自己的主语、谓语、条件
+- 即使话题与历史相似（都是关于指数、都是关于成交量），只要问题本身是完整独立的，就不是追问
+- 问题自身能被任何人独立理解，不需要看历史
+
+核心原则：如果把"当前提问"单独拿出来给一个没看过历史的人，他能理解这个问题在问什么，那它就不是追问。
+
+仅返回 JSON：
+- 是追问：{"is_follow_up": true}
+- 不是追问：{"is_follow_up": false}`
+
+// classifySystemPrompt 用于检查独立问题的参数完整性（不传历史）。
 const classifySystemPrompt = `你是香港证券市场数据分析平台的参数完整性检查器。
 
 系统背景：
@@ -19,9 +42,7 @@ const classifySystemPrompt = `你是香港证券市场数据分析平台的参�
 - 默认分析对象为恒生指数和港股主板股票
 
 你的职责：
-判断用户**当前这句话本身**是否包含执行查询所需的关键参数。一次只问一个最关键的缺失参数。
-
-重要：只看当前问题本身的文字，不要从对话历史中继承参数。对话历史仅用于判断当前问题是否为追问/修改条件。
+判断用户的提问是否包含执行查询所需的关键参数。仅在确实缺少必要参数时才反问，一次只问一个最关键的缺失参数。
 
 需要的关键参数：
 - 时间范围：指数分析、成交量统计、均线筛选、新闻异常检测、行业市值对比等场景需要
@@ -34,9 +55,8 @@ const classifySystemPrompt = `你是香港证券市场数据分析平台的参�
 - "市场指数"、"指数"默认指恒生指数（HSI），不需要追问具体是哪个指数
 - "全市场"、"市场总成交量"默认包含所有港股，不需要追问范围
 - "重大新闻"、"重大公告"已有明确定义（按新闻类型筛选），不需要追问如何定义
-- 追问/修改条件类问题（如"那超过3%的呢"、"换成月度数据"、"占比多少"）：这类短句明显依赖上一轮查询上下文，视为参数齐全（后续由 Explore 引擎补全上下文）
 - 闲聊或无法归类的问题视为参数齐全
-- 除追问类短句外，完整的新问题必须自身包含所需参数，不能从历史继承
+- 宁可放行让 Explore 引擎处理，也不要过度反问。只在关键参数明显缺失时才反问
 
 仅返回 JSON，不要其他内容：
 - 参数齐全：{"complete": true}
@@ -94,20 +114,29 @@ func (c *Clarifier) Process(ctx context.Context, sessionID, question string) (fi
 	copy(hist, c.history[sessionID])
 	c.mu.Unlock()
 
-	// Step 1: 用户回答反问 → merge 后直接放行，不再二次检查
+	// Step 1: 用户回答反问 → merge 后直接放行
 	if hasPending {
 		merged := c.merge(ctx, pendingQ, question)
 		log.Printf("clarify: merged pending=%q + input=%q → %q", pendingQ, question, merged)
 		return merged, "", nil
 	}
 
-	// Step 2: 带对话历史检查参数完整性
-	result := c.check(ctx, question, hist)
+	// Step 2: 有历史时先判断是否追问（一次 LLM 调用）
+	if len(hist) > 0 {
+		if c.isFollowUp(ctx, question, hist) {
+			log.Printf("clarify: detected follow-up, skipping param check: %q", question)
+			return question, "", nil
+		}
+		log.Printf("clarify: not a follow-up, checking params independently: %q", question)
+	}
+
+	// Step 3: 无状态参数检查（不传历史）
+	result := c.checkParams(ctx, question)
 	if result == nil {
 		return question, "", nil
 	}
 
-	// Step 3: 参数不完整，缓存当前问题，返回反问
+	// Step 4: 参数不完整，缓存当前问题，返回反问
 	c.mu.Lock()
 	c.pending[sessionID] = question
 	c.mu.Unlock()
@@ -146,30 +175,48 @@ func (c *Clarifier) merge(ctx context.Context, original, supplement string) stri
 	return content
 }
 
-// check 调用 LLM 判断参数完整性，传入对话历史供 LLM 综合判断。
-func (c *Clarifier) check(ctx context.Context, question string, history []string) *ClarifyResult {
-	// 构造包含对话历史的用户消息
+// isFollowUp 调用 LLM 判断问题是否是对历史的追问（传历史，只判断追问关系）。
+func (c *Clarifier) isFollowUp(ctx context.Context, question string, history []string) bool {
 	var userContent string
-	if len(history) > 0 {
-		userContent = "本次对话中用户的历史提问（均已获得回答）：\n"
-		for i, q := range history {
-			userContent += fmt.Sprintf("%d. %s\n", i+1, q)
-		}
-		userContent += fmt.Sprintf("\n当前提问：%s", question)
-	} else {
-		userContent = question
+	userContent = "对话历史：\n"
+	for i, q := range history {
+		userContent += fmt.Sprintf("%d. %s\n", i+1, q)
+	}
+	userContent += fmt.Sprintf("\n当前提问：%s", question)
+
+	content, err := c.callLLM(ctx, followUpCheckPrompt, userContent)
+	if err != nil {
+		log.Printf("clarify: follow-up check LLM error: %v", err)
+		return false // 出错时视为非追问，走参数检查
 	}
 
-	content, err := c.callLLM(ctx, classifySystemPrompt, userContent)
+	jsonStr := extractJSON(content)
+	if jsonStr == "" {
+		return false
+	}
+
+	var result struct {
+		IsFollowUp bool `json:"is_follow_up"`
+	}
+	if err := json.Unmarshal([]byte(jsonStr), &result); err != nil {
+		return false
+	}
+
+	log.Printf("clarify: follow-up check result=%v for question=%q", result.IsFollowUp, question)
+	return result.IsFollowUp
+}
+
+// checkParams 调用 LLM 检查参数完整性（不传历史，独立评估）。
+func (c *Clarifier) checkParams(ctx context.Context, question string) *ClarifyResult {
+	content, err := c.callLLM(ctx, classifySystemPrompt, question)
 	if err != nil {
-		log.Printf("clarify: check LLM error: %v", err)
+		log.Printf("clarify: param check LLM error: %v", err)
 		return nil // 出错时放行
 	}
 
-	// 提取 JSON（qwen3 可能有 <think>...</think>）
 	jsonStr := extractJSON(content)
 	if jsonStr == "" {
-		log.Printf("clarify: no JSON found in: %s", content)
+		log.Printf("clarify: no JSON found in param check: %s", content)
 		return nil
 	}
 
