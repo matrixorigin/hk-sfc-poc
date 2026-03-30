@@ -30,6 +30,7 @@ Explore 引擎可直接 SQL 查询计算跨券商持仓变动。
 import argparse
 import csv
 import os
+import random
 import subprocess
 import sys
 import tempfile
@@ -50,7 +51,10 @@ DEFAULT_CACHE_DIR = "data/ccass_cache"
 
 def parse_args():
     p = argparse.ArgumentParser(description="CCASS holdings crawler → MatrixOne")
-    p.add_argument("--dates", nargs="+", required=True, help="日期列表, 格式 yyyy/mm/dd")
+    g = p.add_mutually_exclusive_group(required=True)
+    g.add_argument("--dates", nargs="+", help="日期列表, 格式 yyyy/mm/dd")
+    g.add_argument("--range", nargs=2, metavar=("START", "END"),
+                   help="日期范围, 格式 yyyy/mm/dd yyyy/mm/dd, 自动跳过周末和港股假期")
     p.add_argument("--top", type=int, default=200, help="爬取前 N 只股票 (默认 200)")
     p.add_argument("--all", action="store_true", help="爬全量股票 (覆盖 --top)")
     p.add_argument("--mo-host", default=os.getenv("MO_HOST", "127.0.0.1"))
@@ -58,10 +62,27 @@ def parse_args():
     p.add_argument("--mo-user", default=os.getenv("MO_USER", ""))
     p.add_argument("--mo-pass", default=os.getenv("MO_PASS", ""))
     p.add_argument("--mo-db", default="hk_sfc")
+    p.add_argument("--concurrency", "-c", type=int, default=5, help="并发数 (默认 5)")
+    p.add_argument("--resume", action="store_true", help="续爬模式：跳过已有缓存的日期")
     p.add_argument("--dry-run", action="store_true", help="只爬不入库，保存本地 CSV")
     p.add_argument("--from-cache", action="store_true", help="跳过爬取，从本地缓存入库")
     p.add_argument("--cache-dir", default=DEFAULT_CACHE_DIR, help="缓存目录 (默认 data/ccass_cache)")
     return p.parse_args()
+
+
+def expand_date_range(start_str, end_str):
+    """将日期范围展开为交易日列表（跳过周末），格式 yyyy/mm/dd"""
+    from datetime import datetime, timedelta
+    start = datetime.strptime(start_str, "%Y/%m/%d")
+    end = datetime.strptime(end_str, "%Y/%m/%d")
+    dates = []
+    cur = start
+    while cur <= end:
+        # 跳过周末 (5=Saturday, 6=Sunday)
+        if cur.weekday() < 5:
+            dates.append(cur.strftime("%Y/%m/%d"))
+        cur += timedelta(days=1)
+    return dates
 
 
 def get_session():
@@ -177,45 +198,69 @@ def load_from_cache(cache_dir: str, date: str) -> list:
 
 # ── 爬取 ──
 
-def crawl_date(date: str, stocks: list, cache_dir: str = None) -> list:
-    """爬取一天的所有股票持仓，返回 rows 列表。每只股票爬完立即追加到缓存文件。"""
-    session, vs, vs_gn = get_session()
-    rows = []
-    db_date = date.replace("/", "-")
+def _crawl_one_stock(args_tuple):
+    """爬取单只股票的持仓数据（供并发调用）。"""
+    session, vs, vs_gn, code, name, date, db_date, idx, total = args_tuple
+    time.sleep(random.uniform(0.3, 1.0))  # 随机延迟防反爬
+    try:
+        brokers = fetch_broker_holdings(session, vs, vs_gn, code, date)
+        rows = [(db_date, code, name, pid, sh) for pid, sh in brokers.items()]
+        print(f"  [{idx}/{total}] {code} {name} → {len(brokers)} brokers", flush=True)
+        return rows
+    except Exception as e:
+        print(f"  [{idx}/{total}] {code} {name} → ERROR: {e}", flush=True)
+        return []
 
-    # 准备追加模式的缓存文件
-    cache_file = None
-    cache_writer = None
-    if cache_dir:
+
+def crawl_date(date: str, stocks: list, cache_dir: str = None, concurrency: int = 5) -> list:
+    """爬取一天的所有股票持仓，支持并发，返回 rows 列表。"""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    db_date = date.replace("/", "-")
+    all_rows = []
+
+    # 每个并发 worker 用独立 session 避免冲突
+    sessions = []
+    for _ in range(concurrency):
+        try:
+            s, vs, vs_gn = get_session()
+            sessions.append((s, vs, vs_gn))
+        except Exception as e:
+            print(f"  WARNING: 创建 session 失败: {e}, 降低并发")
+            break
+
+    if not sessions:
+        print("  ERROR: 无法创建任何 session")
+        return []
+
+    actual_concurrency = len(sessions)
+    print(f"  并发数: {actual_concurrency}, 股票数: {len(stocks)}")
+
+    # 构造任务参数
+    tasks = []
+    for i, (code, name) in enumerate(stocks, 1):
+        sess_idx = (i - 1) % actual_concurrency
+        s, vs, vs_gn = sessions[sess_idx]
+        tasks.append((s, vs, vs_gn, code, name, date, db_date, i, len(stocks)))
+
+    # 并发执行
+    with ThreadPoolExecutor(max_workers=actual_concurrency) as executor:
+        futures = {executor.submit(_crawl_one_stock, t): t for t in tasks}
+        for future in as_completed(futures):
+            rows = future.result()
+            all_rows.extend(rows)
+
+    # 写缓存
+    if cache_dir and all_rows:
         os.makedirs(cache_dir, exist_ok=True)
         path = cache_path(cache_dir, date)
-        cache_file = open(path, "w", newline="", encoding="utf-8")
-        cache_writer = csv.writer(cache_file)
-        cache_writer.writerow(["holding_date", "stock_code", "stock_name", "participant_id", "shareholding"])
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(["holding_date", "stock_code", "stock_name", "participant_id", "shareholding"])
+            writer.writerows(all_rows)
+        print(f"  -> 缓存已保存: {path} ({len(all_rows)} 行)")
 
-    try:
-        for i, (code, name) in enumerate(stocks, 1):
-            print(f"  [{i}/{len(stocks)}] {code} {name}", end=" ... ", flush=True)
-            try:
-                brokers = fetch_broker_holdings(session, vs, vs_gn, code, date)
-                print(f"{len(brokers)} brokers")
-                for pid, sh in brokers.items():
-                    row = (db_date, code, name, pid, sh)
-                    rows.append(row)
-                    if cache_writer:
-                        cache_writer.writerow(row)
-                # 每只股票爬完就 flush 缓存
-                if cache_file:
-                    cache_file.flush()
-            except Exception as e:
-                print(f"ERROR: {e}")
-            time.sleep(0.2)
-    finally:
-        if cache_file:
-            cache_file.close()
-            print(f"  -> 缓存已保存: {cache_path(cache_dir, date)} ({len(rows)} 行)")
-
-    return rows
+    return all_rows
 
 
 # ── MO 入库 ──
@@ -290,15 +335,36 @@ def resolve_mo_credentials(args):
 
 def main():
     args = parse_args()
+
+    # 展开日期范围
+    if args.range:
+        args.dates = expand_date_range(args.range[0], args.range[1])
+        if not args.dates:
+            print("ERROR: 日期范围内没有交易日")
+            sys.exit(1)
+        print(f"日期范围展开: {args.range[0]} ~ {args.range[1]} → {len(args.dates)} 个交易日")
+
     top_n = None if args.all else args.top
 
     if not args.dry_run:
         resolve_mo_credentials(args)
 
+    # 续爬：过滤掉已有缓存的日期
+    if args.resume and not args.from_cache:
+        original = len(args.dates)
+        args.dates = [d for d in args.dates if not os.path.exists(cache_path(args.cache_dir, d))]
+        skipped = original - len(args.dates)
+        if skipped:
+            print(f"续爬模式: 跳过 {skipped} 天已有缓存, 剩余 {len(args.dates)} 天")
+        if not args.dates:
+            print("所有日期均已有缓存，无需爬取。如需重新入库请用 --from-cache")
+            sys.exit(0)
+
     print("=" * 60)
     print("CCASS Holdings Crawler → MatrixOne")
-    print(f"日期: {args.dates}")
+    print(f"日期: {len(args.dates)} 天 ({args.dates[0]} ~ {args.dates[-1]})")
     print(f"股票数: {'全部' if args.all else f'前 {top_n}'}")
+    print(f"并发: {args.concurrency}")
     print(f"缓存目录: {args.cache_dir}")
     if args.from_cache:
         print("模式: 从缓存入库（跳过爬取）")
@@ -320,36 +386,30 @@ def main():
         )
         subprocess.run(mysql_args_list(args) + ["-e", create_sql], capture_output=True)
 
-    # 清理目标日期的旧数据
-    if not args.dry_run:
-        db_dates = ",".join(f"'{d.replace('/', '-')}'" for d in args.dates)
-        subprocess.run(
-            mysql_args_list(args) + ["-e", f"DELETE FROM ccass_holdings WHERE holding_date IN ({db_dates});"],
-            capture_output=True
-        )
-        print(f"已清理旧数据: {args.dates}")
-
-    all_rows = []
-    for date in args.dates:
-        print(f"\n[{date}]")
+    total_rows = 0
+    for di, date in enumerate(args.dates, 1):
+        print(f"\n[{di}/{len(args.dates)}] {date}")
 
         if args.from_cache:
-            # 从缓存加载
             rows = load_from_cache(args.cache_dir, date)
         else:
-            # 爬取（同时写缓存）
             stocks = fetch_stock_list(date, top_n=top_n)
             print(f"  股票列表: {len(stocks)} 只")
-            rows = crawl_date(date, stocks, cache_dir=args.cache_dir)
+            rows = crawl_date(date, stocks, cache_dir=args.cache_dir, concurrency=args.concurrency)
 
-        all_rows.extend(rows)
+        total_rows += len(rows)
         print(f"  本日合计: {len(rows)} 条持仓记录")
 
-        # 每天爬完就入库（不等全部日期完成）
+        # 每天爬完就入库（先删旧数据再导入）
         if not args.dry_run and rows:
+            db_date = date.replace("/", "-")
+            subprocess.run(
+                mysql_args_list(args) + ["-e", f"DELETE FROM ccass_holdings WHERE holding_date = '{db_date}';"],
+                capture_output=True
+            )
             load_rows_to_mo(rows, args)
 
-    print(f"\n总计 {len(all_rows)} 条记录")
+    print(f"\n总计 {total_rows} 条记录")
     print("完成!")
 
 
