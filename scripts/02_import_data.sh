@@ -15,6 +15,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 DATA_DIR="$PROJECT_DIR/POC DATA_01/数据"
 
+# ---- 辅助函数 ----
+log() { echo "[$(date '+%H:%M:%S')] $*"; }
+
 # 从 .env 获取 Catalog 凭据，自动推导 workspace 账号
 source "$PROJECT_DIR/.env"
 CATALOG_URL="${CATALOG_URL:-http://localhost:8084}"
@@ -34,9 +37,6 @@ else
 fi
 
 MYSQL_CMD="mysql -h $MO_HOST -P $MO_PORT -u $MO_USER -p$MO_PASS --local-infile=1"
-
-# ---- 辅助函数 ----
-log() { echo "[$(date '+%H:%M:%S')] $*"; }
 
 run_sql() {
     $MYSQL_CMD "$MO_DB" -e "$1" 2>&1 | { grep -v "Warning.*password" || true; }

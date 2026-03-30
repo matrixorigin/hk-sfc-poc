@@ -16,11 +16,13 @@ TABLES='["ms_t_stk_hsi","ms_v_stk_hsi_daily","ms_t_stk_sis","ms_v_stock_capital"
 OUT=/tmp/poc_accuracy_test
 TIMEOUT=180
 CONCURRENCY=1
+FILTER=""
 
-while getopts "c:" opt; do
+while getopts "c:t:" opt; do
   case $opt in
     c) CONCURRENCY="$OPTARG" ;;
-    *) echo "用法: $0 [-c concurrency]"; exit 1 ;;
+    t) FILTER="$OPTARG" ;;
+    *) echo "用法: $0 [-c concurrency] [-t case_id]"; exit 1 ;;
   esac
 done
 
@@ -128,7 +130,7 @@ if 'data: ' in line:
   fi
 
   # must_not_contain 验证
-  if [ -n "$must_not_contain" ]; then
+  if [ -n "$must_not_contain" ] && [ "$must_not_contain" != "-" ]; then
     local IFS=','
     for val in $must_not_contain; do
       if python3 -c "
@@ -178,7 +180,7 @@ s1	S1: 行业市值增长率	2025年一季度，哪些行业的平均市值增�
 s2	S2: 2月新闻放量TOP20	2025年2月份有哪些股票在发布重大新闻公告的当天成交量异常放大（超过前30日均量3倍以上）？列出前20条	SELECT n.trade_date, n.securitycode, s.SISTKN FROM (SELECT securitycode, trade_date FROM sehknews WHERE typeid IN (0,3,7,8,10,14,18,21,25,26,28,32) AND timestamp >= '2025-02-01' AND timestamp < '2025-03-01' GROUP BY securitycode, trade_date) n JOIN ms_t_stk_sis s ON n.securitycode = s.SISTKC AND n.trade_date = s.trade_date WHERE s.SISTKC < '10000' AND s.SIVOL > s.avg_vol_30d * 3 LIMIT 20
 s3	S3: 连续5天>MA20	2025年1月到3月，哪些股票代码小于1000的股票收盘价连续5天高于20日均线？	SELECT DISTINCT SISTKC, SISTKN FROM ms_t_stk_sis WHERE trade_date BETWEEN '2025-01-01' AND '2025-03-31' AND SISTKC < '01000' AND SISTKC >= '00001' AND consecutive_above_ma20 >= 5
 s4	S4: 恒指月末+涨跌幅	2025年各月的恒生指数月末收盘值和当月涨跌幅分别是多少？	SELECT trade_date, HSHSI FROM (SELECT trade_date, HSHSI, ROW_NUMBER() OVER (PARTITION BY YEAR(trade_date), MONTH(trade_date) ORDER BY trade_date DESC) AS rn FROM ms_v_stk_hsi_daily WHERE trade_date >= '2025-01-01' AND trade_date <= '2025-12-31') t WHERE rn = 1
-v2	V2: 行业市值下降	计算各行业2025年11月相对2025年10月总市值下降值，取top3	SELECT industry_name, (oct_total - nov_total) AS decline FROM (SELECT industry_name, SUM(CASE WHEN ref_date='2025-10-31' THEN SICAP ELSE 0 END) AS oct_total, SUM(CASE WHEN ref_date='2025-11-30' THEN SICAP ELSE 0 END) AS nov_total FROM ms_v_stock_capital WHERE ref_date IN ('2025-10-31','2025-11-30') GROUP BY industry_name) t WHERE oct_total > nov_total ORDER BY decline DESC LIMIT 3		1
+v2	V2: 行业市值下降	计算各行业2025年11月相对2025年10月总市值下降值，取top3	SELECT industry_name, (oct_total - nov_total) AS decline FROM (SELECT industry_name, SUM(CASE WHEN ref_date='2025-10-31' THEN SICAP ELSE 0 END) AS oct_total, SUM(CASE WHEN ref_date='2025-11-30' THEN SICAP ELSE 0 END) AS nov_total FROM ms_v_stock_capital WHERE ref_date IN ('2025-10-31','2025-11-30') GROUP BY industry_name) t WHERE oct_total > nov_total ORDER BY decline DESC LIMIT 3	-	1
 CASES_EOF
 )
 
@@ -192,18 +194,19 @@ count=0
 
 while IFS=$'\t' read -r sid label question gt_sql must_not tolerance; do
   [ -z "$sid" ] && continue
+  [ -n "$FILTER" ] && [ "$sid" != "$FILTER" ] && continue
   log "  提交: $label"
   fire "$sid" "$question" &
   pids+=($!)
   count=$((count + 1))
   if [ "$count" -ge "$CONCURRENCY" ]; then
-    for pid in "${pids[@]}"; do wait "$pid"; done
+    for pid in "${pids[@]+"${pids[@]}"}"; do wait "$pid"; done
     pids=()
     count=0
   fi
 done <<< "$CASES"
 
-for pid in "${pids[@]}"; do wait "$pid"; done
+for pid in "${pids[@]+"${pids[@]}"}"; do wait "$pid"; done
 log "全部查询完成"
 
 # ============================================================
@@ -228,19 +231,22 @@ check_or_die() {
 
 while IFS=$'\t' read -r sid label question gt_sql must_not tolerance; do
   [ -z "$sid" ] && continue
+  [ -n "$FILTER" ] && [ "$sid" != "$FILTER" ] && continue
   check_or_die "$label" "$sid" "$gt_sql" "$must_not" "$tolerance"
 done <<< "$CASES"
 
 # V5: CCASS — 数据可能不存在
+if [ -z "$FILTER" ] || [ "$FILTER" = "v5" ]; then
 TOTAL=$((TOTAL + 1))
 HAS_CCASS=$($MYSQL_CMD -e "SELECT COUNT(*) FROM ccass_holdings" 2>/dev/null | tail -1 || echo "0")
 if [ "${HAS_CCASS:-0}" -gt 0 ]; then
   log "  [v5] V5: CCASS 持仓变动..."
-  fire "v5" "2026年3月18日相比3月17日，CCASS跨券商持仓变动超过30%的股票有哪些？"
-  check_or_die "V5: CCASS变动>30%" "v5" "SELECT DISTINCT a.stock_code FROM ccass_holdings a JOIN ccass_holdings b ON a.stock_code = b.stock_code AND a.participant_id = b.participant_id WHERE a.holding_date = '2026-03-18' AND b.holding_date = '2026-03-17' AND b.shareholding > 0 AND ABS(a.shareholding - b.shareholding) / b.shareholding > 0.3"
+  fire "v5" "2026年3月27日相比3月26日，CCASS跨券商持仓变动超过30%的股票有哪些？"
+  check_or_die "V5: CCASS变动>30%" "v5" "SELECT DISTINCT a.stock_code FROM ccass_holdings a JOIN ccass_holdings b ON a.stock_code = b.stock_code AND a.participant_id = b.participant_id WHERE a.holding_date = '2026-03-27' AND b.holding_date = '2026-03-26' AND b.shareholding > 0 AND ABS(a.shareholding - b.shareholding) / b.shareholding > 0.3"
 else
   SKIP=$((SKIP + 1))
   echo "  ⏭️  V5: CCASS变动>30% — SKIP: ccass_holdings 无数据"
+fi
 fi
 
 # ============================================================
