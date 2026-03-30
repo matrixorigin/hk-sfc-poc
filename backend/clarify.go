@@ -290,17 +290,32 @@ func (c *Clarifier) callLLMRaw(ctx context.Context, reqBody map[string]any) (str
 	return llmResp.Choices[0].Message.Content, nil
 }
 
-// extractJSON 从可能包含 <think>...</think> 的文本中提取最后一个 JSON 对象。
+// extractJSON 从可能包含 <think>...</think> 的文本中提取最后一个完整的 JSON 对象。
+// 正确处理嵌套的 {} 括号。
 func extractJSON(s string) string {
-	start := -1
+	// 从后往前找最后一个 }，然后往前匹配到对应的 {
 	end := -1
 	for i := len(s) - 1; i >= 0; i-- {
-		if s[i] == '}' && end == -1 {
+		if s[i] == '}' {
 			end = i
-		}
-		if s[i] == '{' && end != -1 {
-			start = i
 			break
+		}
+	}
+	if end < 0 {
+		return ""
+	}
+	// 从 end 往前扫描，跟踪嵌套深度
+	depth := 0
+	start := -1
+	for i := end; i >= 0; i-- {
+		if s[i] == '}' {
+			depth++
+		} else if s[i] == '{' {
+			depth--
+			if depth == 0 {
+				start = i
+				break
+			}
 		}
 	}
 	if start >= 0 && end > start {

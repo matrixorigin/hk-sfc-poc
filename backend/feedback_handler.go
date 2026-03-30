@@ -33,12 +33,9 @@ func (h *FeedbackHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// 判断是否带有 ID（路径形如 /api/feedback/{id}）
 	path := r.URL.Path
 	prefix := "/api/feedback/"
-	if strings.HasPrefix(path, prefix) {
-		id := strings.TrimPrefix(path, prefix)
-		if id != "" {
-			h.get(w, r, id)
-			return
-		}
+	if id, found := strings.CutPrefix(path, prefix); found && id != "" {
+		h.get(w, id)
+		return
 	}
 
 	switch r.Method {
@@ -98,7 +95,7 @@ func (h *FeedbackHandler) create(w http.ResponseWriter, r *http.Request) {
 }
 
 // list 返回所有反馈任务列表。
-func (h *FeedbackHandler) list(w http.ResponseWriter, r *http.Request) {
+func (h *FeedbackHandler) list(w http.ResponseWriter, _ *http.Request) {
 	tasks, err := h.db.List()
 	if err != nil {
 		http.Error(w, "failed to list tasks", http.StatusInternalServerError)
@@ -116,7 +113,7 @@ func (h *FeedbackHandler) list(w http.ResponseWriter, r *http.Request) {
 }
 
 // get 根据 ID 返回单个反馈任务。
-func (h *FeedbackHandler) get(w http.ResponseWriter, r *http.Request, id string) {
+func (h *FeedbackHandler) get(w http.ResponseWriter, id string) {
 	task, err := h.db.Get(id)
 	if err != nil {
 		http.Error(w, "failed to get task", http.StatusInternalServerError)

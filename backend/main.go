@@ -50,8 +50,8 @@ func main() {
 	}
 	analyzer := NewFeedbackAnalyzer(cfg, feedbackDB, clarifier)
 	feedbackHandler := NewFeedbackHandler(feedbackDB, analyzer)
-	mux.Handle("/api/feedback/", feedbackHandler)
-	mux.Handle("/api/feedback", feedbackHandler)
+	mux.HandleFunc("/api/feedback/", feedbackHandler.ServeHTTP)
+	mux.HandleFunc("/api/feedback", feedbackHandler.ServeHTTP)
 
 	if cfg.Server.StaticDir != "" {
 		absDir, _ := filepath.Abs(cfg.Server.StaticDir)

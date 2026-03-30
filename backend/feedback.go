@@ -135,15 +135,19 @@ func (fa *FeedbackAnalyzer) analyze(ctx context.Context, task *FeedbackTask) (js
 		return nil, fmt.Errorf("LLM call failed: %w", err)
 	}
 
+	log.Printf("feedback: LLM response received (%d bytes)", len(rawContent))
+
 	jsonStr := extractJSON(rawContent)
 	if jsonStr == "" {
-		return nil, fmt.Errorf("no JSON found in LLM response: %s", rawContent)
+		return nil, fmt.Errorf("no JSON found in LLM response")
 	}
+
+	log.Printf("feedback: extracted JSON (first 300 chars): %s", jsonStr[:min(len(jsonStr), 300)])
 
 	// 验证是合法 JSON
 	var check json.RawMessage
 	if err := json.Unmarshal([]byte(jsonStr), &check); err != nil {
-		return nil, fmt.Errorf("invalid JSON from LLM: %w", err)
+		return nil, fmt.Errorf("invalid JSON from LLM: %w\njsonStr=%s", err, jsonStr[:min(len(jsonStr), 500)])
 	}
 
 	return json.RawMessage(jsonStr), nil
@@ -192,7 +196,7 @@ func (fa *FeedbackAnalyzer) fetchSchema(ctx context.Context, tables []string) st
 			continue
 		}
 
-		sb.WriteString(fmt.Sprintf("### %s\n", table))
+		fmt.Fprintf(&sb, "### %s\n", table)
 		for _, col := range resp.Columns {
 			line := fmt.Sprintf("- %s %s", col.Name, col.Type)
 			if col.Comment != "" {
@@ -242,7 +246,7 @@ func (fa *FeedbackAnalyzer) fetchKnowledgeRules(ctx context.Context) string {
 	var sb strings.Builder
 	for _, item := range resp.Items {
 		valBytes, _ := json.Marshal(item.Values)
-		sb.WriteString(fmt.Sprintf("- [%s] %s: %s\n", item.Type, item.Key, string(valBytes)))
+		fmt.Fprintf(&sb, "- [%s] %s: %s\n", item.Type, item.Key, string(valBytes))
 	}
 	return sb.String()
 }
