@@ -508,72 +508,10 @@ log ""
 log "关键字段验证:"
 run_sql "SELECT 'trade_date NULL' AS chk, COUNT(*) AS cnt FROM ms_t_stk_sis WHERE trade_date IS NULL UNION ALL SELECT 'ma_50 NULL', COUNT(*) FROM ms_t_stk_sis WHERE ma_50 IS NULL AND SISTKC < '10000' UNION ALL SELECT 'ref_date NULL', COUNT(*) FROM ms_v_stock_capital WHERE ref_date IS NULL;"
 
-# ---- Step 10: 自动更新数据范围到知识库 ----
+# ---- Step 10: 提示运行知识库配置 ----
 log ""
-log "========== Step 10: 更新数据范围（写入知识库） =========="
-
-CATALOG_URL="${CATALOG_URL:-http://localhost:8084}"
-KB_ID=10001
-
-# 获取 workspace 信息（复用前面的 MO_USER 推导逻辑）
-WS_ID=$(grep 'POC_WORKSPACE_ID=' "$PROJECT_DIR/.env" | cut -d= -f2)
-API_KEY=$(grep 'MOI_SYSTEM_API_KEY=' "$PROJECT_DIR/.env" | cut -d= -f2)
-
-add_data_coverage() {
-  local key="$1" name="$2" value="$3" tables="$4"
-  # 先尝试删除旧条目（按 key 查找）
-  local old_id
-  old_id=$(curl -s -X POST "$CATALOG_URL/api/v1/workspaces/$WS_ID/nl2sql-knowledge/list" \
-    -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
-    -d '{"page_size":100}' | python3 -c "
-import sys,json
-items=json.load(sys.stdin).get('data',{}).get('items',[])
-for i in items:
-    if i['knowledge_key']=='$key': print(i['id']); break
-" 2>/dev/null)
-  if [ -n "$old_id" ]; then
-    curl -s -X DELETE "$CATALOG_URL/api/v1/workspaces/$WS_ID/nl2sql-knowledge/$old_id" \
-      -H "X-API-Key: $API_KEY" > /dev/null
-  fi
-  # 写入新条目
-  curl -s -X POST "$CATALOG_URL/api/v1/workspaces/$WS_ID/nl2sql-knowledge" \
-    -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
-    -d "{
-      \"knowledge_base_id\": $KB_ID,
-      \"knowledge_type\": \"logic\",
-      \"knowledge_key\": \"$key\",
-      \"name\": \"$name\",
-      \"knowledge_value\": [\"$value\"],
-      \"associate_tables\": [$tables]
-    }" > /dev/null 2>&1
-  log "  + $key: $value"
-}
-
-get_range() {
-  local table="$1" col="$2"
-  $MYSQL_CMD "$MO_DB" -N -B -e "SELECT CONCAT(MIN($col), ' to ', MAX($col)) FROM $table WHERE $col IS NOT NULL;" 2>/dev/null
-}
-
-R=$(get_range "ms_t_stk_hsi" "trade_date")
-[ -n "$R" ] && add_data_coverage "data_coverage_hsi" "ms_t_stk_hsi date range" "ms_t_stk_hsi has trade_date from $R." '"ms_t_stk_hsi"'
-
-R=$(get_range "ms_t_stk_sis" "trade_date")
-[ -n "$R" ] && add_data_coverage "data_coverage_sis" "ms_t_stk_sis date range" "ms_t_stk_sis has trade_date from $R." '"ms_t_stk_sis"'
-
-R=$(get_range "ms_v_stock_capital" "ref_date")
-[ -n "$R" ] && add_data_coverage "data_coverage_capital" "ms_v_stock_capital date range" "ms_v_stock_capital has ref_date monthly from $R." '"ms_v_stock_capital"'
-
-R=$(get_range "ds_t_int_hsicl_dtl" "MODIFIED_DATE")
-[ -n "$R" ] && add_data_coverage "data_coverage_industry" "ds_t_int_hsicl_dtl date range" "ds_t_int_hsicl_dtl has MODIFIED_DATE from $R." '"ds_t_int_hsicl_dtl"'
-
-R=$(get_range "sehknews" "trade_date")
-[ -n "$R" ] && add_data_coverage "data_coverage_news" "sehknews date range" "sehknews has trade_date from $R." '"sehknews"'
-
-R=$($MYSQL_CMD "$MO_DB" -N -B -e "SELECT CONCAT(MIN(fin_yr), ' to ', MAX(fin_yr)) FROM profit_loss WHERE fin_yr IS NOT NULL;" 2>/dev/null)
-[ -n "$R" ] && add_data_coverage "data_coverage_profit" "profit_loss date range" "profit_loss has fin_yr from $R." '"profit_loss"'
-
-R=$(get_range "ccass_holdings" "holding_date")
-[ -n "$R" ] && add_data_coverage "data_coverage_ccass" "ccass_holdings date range" "ccass_holdings has holding_date from $R." '"ccass_holdings"'
+log "========== 数据导入完成，请运行知识库配置脚本更新数据范围 =========="
+log "  bash scripts/07_configure_knowledge.sh"
 
 log ""
 log "========== 全部导入完成 =========="

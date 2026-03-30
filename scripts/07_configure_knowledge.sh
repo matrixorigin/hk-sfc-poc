@@ -16,6 +16,19 @@ WS="$POC_WORKSPACE_ID"
 KEY="$MOI_SYSTEM_API_KEY"
 KB_ID=10001
 
+# DB 连接（自动获取 workspace 账号）
+MO_HOST="${MO_HOST:-127.0.0.1}"
+MO_PORT="${MO_PORT:-16002}"
+if [ -n "${MO_USER:-}" ] && [ -n "${MO_PASS:-}" ]; then
+  :
+else
+  ACCT=$(curl -s "$CATALOG/api/v1/workspaces/$WS" \
+    -H "X-API-Key: $KEY" | python3 -c "import sys,json;print(json.load(sys.stdin)['data']['account_name'])" 2>/dev/null)
+  MO_USER="${ACCT}:moi_core_system"
+  MO_PASS="$KEY"
+fi
+MYSQL_CMD="mysql -h $MO_HOST -P $MO_PORT -u $MO_USER -p$MO_PASS hk_sfc -N -B"
+
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
 
 add() {
@@ -36,15 +49,13 @@ add() {
 # ============================================================
 # Step 1: 清理旧条目
 # ============================================================
-log "清理旧条目（保留 data_coverage_* 由数据导入脚本管理）..."
+log "清理旧条目..."
 existing=$(curl -s -X POST "$CATALOG/api/v1/workspaces/$WS/nl2sql-knowledge/list" \
   -H "X-API-Key: $KEY" -H "Content-Type: application/json" \
   -d '{"page_size":100}' | python3 -c "
 import sys,json
 items=json.load(sys.stdin).get('data',{}).get('items',[])
-for i in items:
-    if not i['knowledge_key'].startswith('data_coverage_'):
-        print(i['id'])
+for i in items: print(i['id'])
 " 2>/dev/null)
 
 count=0
@@ -56,8 +67,39 @@ done
 log "已删除 $count 条旧条目"
 
 # ============================================================
-# Step 2: 业务约束（logic — 描述"是什么"和"为什么"，不给 SQL）
-# （数据范围已通过 02_import_data.sh 自动写入列注释，无需在知识库维护）
+# Step 2: 数据范围（从数据库实时查询）
+# ============================================================
+log ""
+log "配置数据范围..."
+
+get_range() {
+  local result
+  result=$($MYSQL_CMD -e "SELECT CASE WHEN MIN($2) IS NOT NULL THEN CONCAT(MIN($2), ' to ', MAX($2)) ELSE '' END FROM $1 WHERE $2 IS NOT NULL;" 2>/dev/null || true)
+  echo "$result"
+}
+
+add_coverage() {
+  local key="$1" table="$2" col="$3" desc="${4:-}"
+  [ -z "$desc" ] && desc="$table has $col"
+  local R
+  R=$(get_range "$table" "$col")
+  if [ -n "$R" ]; then
+    add "logic" "$key" "$table date range" "\"$desc from $R.\"" "\"$table\""
+  else
+    log "  ⚠ $table.$col 无数据，跳过"
+  fi
+}
+
+add_coverage "data_coverage_hsi"      "ms_t_stk_hsi"       "trade_date"
+add_coverage "data_coverage_sis"      "ms_t_stk_sis"       "trade_date"
+add_coverage "data_coverage_capital"  "ms_v_stock_capital"  "ref_date"    "ms_v_stock_capital has ref_date monthly"
+add_coverage "data_coverage_industry" "ds_t_int_hsicl_dtl"  "MODIFIED_DATE"
+add_coverage "data_coverage_news"     "sehknews"            "trade_date"
+add_coverage "data_coverage_profit"   "profit_loss"         "fin_yr"
+add_coverage "data_coverage_ccass"    "ccass_holdings"      "holding_date"
+
+# ============================================================
+# Step 3: 业务约束（logic — 描述"是什么"和"为什么"，不给 SQL）
 # ============================================================
 log ""
 log "配置业务约束..."
