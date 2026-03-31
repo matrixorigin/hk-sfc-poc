@@ -210,6 +210,9 @@ def _crawl_one_stock(args_tuple):
         try:
             brokers = fetch_broker_holdings(session, vs, vs_gn, code, date)
             rows = [(db_date, code, name, pid, sh) for pid, sh in brokers.items()]
+            if not rows:
+                # 0 brokers — 写占位行标记已爬过，入库时过滤掉
+                rows = [(db_date, code, name, "__NO_DATA__", 0)]
             print(f"  [{idx}/{total}] {code} {name} → {len(brokers)} brokers", flush=True)
             return rows
         except Exception as e:
@@ -359,6 +362,8 @@ def mysql_args_list(args):
 
 def load_rows_to_mo(rows, args):
     """将 rows 通过临时 CSV + LOAD DATA 写入 MO"""
+    # 过滤掉 0 brokers 占位行
+    rows = [r for r in rows if len(r) < 4 or r[3] != "__NO_DATA__"]
     if not rows:
         print("  没有数据需要导入")
         return
