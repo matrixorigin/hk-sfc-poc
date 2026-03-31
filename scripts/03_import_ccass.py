@@ -62,7 +62,7 @@ def parse_args():
     p.add_argument("--mo-user", default=os.getenv("MO_USER", ""))
     p.add_argument("--mo-pass", default=os.getenv("MO_PASS", ""))
     p.add_argument("--mo-db", default="hk_sfc")
-    p.add_argument("--concurrency", "-c", type=int, default=5, help="并发数 (默认 5)")
+    p.add_argument("--concurrency", "-c", type=int, default=10, help="并发数 (默认 10)")
     p.add_argument("--resume", action="store_true", help="续爬模式：跳过已有缓存的日期")
     p.add_argument("--dry-run", action="store_true", help="只爬不入库，保存本地 CSV")
     p.add_argument("--from-cache", action="store_true", help="跳过爬取，从本地缓存入库")
@@ -198,28 +198,43 @@ def load_from_cache(cache_dir: str, date: str) -> list:
 
 # ── 爬取 ──
 
+MAX_RETRIES = 3
+
+
 def _crawl_one_stock(args_tuple):
-    """爬取单只股票的持仓数据（供并发调用）。"""
+    """爬取单只股票的持仓数据，失败自动重试。"""
     session, vs, vs_gn, code, name, date, db_date, idx, total = args_tuple
-    time.sleep(random.uniform(0.3, 1.0))  # 随机延迟防反爬
-    try:
-        brokers = fetch_broker_holdings(session, vs, vs_gn, code, date)
-        rows = [(db_date, code, name, pid, sh) for pid, sh in brokers.items()]
-        print(f"  [{idx}/{total}] {code} {name} → {len(brokers)} brokers", flush=True)
-        return rows
-    except Exception as e:
-        print(f"  [{idx}/{total}] {code} {name} → ERROR: {e}", flush=True)
-        return []
+    time.sleep(random.uniform(0.1, 0.3))  # 轻微随机延迟
+
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            brokers = fetch_broker_holdings(session, vs, vs_gn, code, date)
+            rows = [(db_date, code, name, pid, sh) for pid, sh in brokers.items()]
+            print(f"  [{idx}/{total}] {code} {name} → {len(brokers)} brokers", flush=True)
+            return rows
+        except Exception as e:
+            if attempt < MAX_RETRIES:
+                wait = random.uniform(1, 3) * attempt  # 退避递增
+                print(f"  [{idx}/{total}] {code} retry {attempt}/{MAX_RETRIES} ({e}), wait {wait:.1f}s", flush=True)
+                time.sleep(wait)
+                # 重试时刷新 session
+                try:
+                    session, vs, vs_gn = get_session()
+                except Exception:
+                    pass
+            else:
+                print(f"  [{idx}/{total}] {code} {name} → FAILED after {MAX_RETRIES} retries: {e}", flush=True)
+                return []
 
 
-def crawl_date(date: str, stocks: list, cache_dir: str = None, concurrency: int = 5) -> list:
-    """爬取一天的所有股票持仓，支持并发，返回 rows 列表。"""
+def crawl_date(date: str, stocks: list, cache_dir: str = None, concurrency: int = 10) -> list:
+    """爬取一天的所有股票持仓，支持并发+重试，返回 rows 列表。"""
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
     db_date = date.replace("/", "-")
     all_rows = []
 
-    # 每个并发 worker 用独立 session 避免冲突
+    # 每个并发 worker 用独立 session
     sessions = []
     for _ in range(concurrency):
         try:
@@ -243,8 +258,8 @@ def crawl_date(date: str, stocks: list, cache_dir: str = None, concurrency: int 
         s, vs, vs_gn = sessions[sess_idx]
         tasks.append((s, vs, vs_gn, code, name, date, db_date, i, len(stocks)))
 
-    # 分批并发执行，每批之间随机休息防反爬
-    BATCH_SIZE = 50  # 每50只股票休息一次
+    # 分批并发执行，每批之间短暂休息
+    BATCH_SIZE = 100
     with ThreadPoolExecutor(max_workers=actual_concurrency) as executor:
         for batch_start in range(0, len(tasks), BATCH_SIZE):
             batch = tasks[batch_start:batch_start + BATCH_SIZE]
@@ -252,10 +267,11 @@ def crawl_date(date: str, stocks: list, cache_dir: str = None, concurrency: int 
             for future in as_completed(futures):
                 rows = future.result()
                 all_rows.extend(rows)
-            # 每批之间随机休息 3-8 秒
+            # 每批之间休息 1-3 秒
             if batch_start + BATCH_SIZE < len(tasks):
-                pause = random.uniform(3, 8)
-                print(f"  --- 已完成 {min(batch_start + BATCH_SIZE, len(stocks))}/{len(stocks)}, 休息 {pause:.1f}s ---", flush=True)
+                pause = random.uniform(1, 3)
+                done = min(batch_start + BATCH_SIZE, len(stocks))
+                print(f"  --- {done}/{len(stocks)} done, pause {pause:.1f}s ---", flush=True)
                 time.sleep(pause)
 
     # 写缓存
