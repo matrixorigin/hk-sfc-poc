@@ -285,15 +285,18 @@ def crawl_date(date: str, stocks: list, cache_dir: str = None, concurrency: int 
                 return load_from_cache(cache_dir, date)
 
     def create_sessions(n):
-        """创建 n 个独立 session。"""
+        """并发创建 n 个独立 session。"""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
         sessions = []
-        for _ in range(n):
-            try:
-                s, vs, vs_gn = get_session()
-                sessions.append((s, vs, vs_gn))
-            except Exception as e:
-                print(f"  WARNING: 创建 session 失败: {e}, 降低并发")
-                break
+        def _make():
+            return get_session()
+        with ThreadPoolExecutor(max_workers=n) as ex:
+            futs = [ex.submit(_make) for _ in range(n)]
+            for f in as_completed(futs):
+                try:
+                    sessions.append(f.result())
+                except Exception as e:
+                    print(f"  WARNING: 创建 session 失败: {e}")
         return sessions
 
     sessions = create_sessions(concurrency)
