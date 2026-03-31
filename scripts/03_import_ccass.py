@@ -475,10 +475,17 @@ def main():
             print(f"  股票列表: {len(stocks)} 只")
             rows = crawl_date(date, stocks, cache_dir=args.cache_dir, concurrency=args.concurrency, resume=args.resume)
 
+        # 入库用缓存的完整数据（旧+新合并），而不是只用本次新爬的
+        # 这样 --resume 补爬后入库的数据是完整的
+        if not args.from_cache and args.resume and args.cache_dir:
+            all_cached = load_from_cache(args.cache_dir, date)
+            if all_cached:
+                rows = all_cached
+
         total_rows += len(rows)
         print(f"  本日合计: {len(rows)} 条持仓记录")
 
-        # 每天爬完就入库（先删旧数据再导入）
+        # 每天爬完就入库（先删旧数据再用完整缓存导入）
         if not args.dry_run and rows:
             db_date = date.replace("/", "-")
             subprocess.run(
