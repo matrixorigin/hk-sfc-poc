@@ -39,6 +39,11 @@ import time
 import requests
 from bs4 import BeautifulSoup
 
+# ── 带时间戳的 print ──
+_builtin_print = print
+def print(*args, **kwargs):
+    _builtin_print(f"[{time.strftime('%H:%M:%S')}]", *args, **kwargs)
+
 # ── 常量 ──
 SEARCH_URL = "https://www3.hkexnews.hk/sdw/search/searchsdw.aspx"
 STOCKLIST_URL = "https://www3.hkexnews.hk/sdw/search/stocklist.aspx"
