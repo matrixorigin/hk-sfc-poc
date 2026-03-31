@@ -475,11 +475,11 @@ def main():
             print(f"  股票列表: {len(stocks)} 只")
             rows = crawl_date(date, stocks, cache_dir=args.cache_dir, concurrency=args.concurrency, resume=args.resume)
 
-        # 入库用缓存的完整数据（旧+新合并），而不是只用本次新爬的
-        # 这样 --resume 补爬后入库的数据是完整的
-        if not args.from_cache and args.resume and args.cache_dir:
+        # 入库用缓存的完整数据（含之前续爬的+本次新爬的）
+        # 确保即使部分股票失败，已有数据也不丢
+        if not args.from_cache and args.cache_dir:
             all_cached = load_from_cache(args.cache_dir, date)
-            if all_cached:
+            if len(all_cached) > len(rows):
                 rows = all_cached
 
         total_rows += len(rows)
