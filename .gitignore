@@ -7,3 +7,4 @@ POC DATA_01/
 .env
 backend/hk-poc-backend
 images/
+data/ccass_cache/
