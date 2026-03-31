@@ -160,6 +160,11 @@ add "logic" "date_boundary_constraint" "All SQL date literals must fall within a
   '"CRITICAL: Every date literal in SQL must fall within the table'\''s actual data range (see data coverage entries). Dates outside the range will match zero rows. For period comparisons (H1/H2/Q1/YoY), always use the earliest and latest EXISTING dates within that period — never extrapolate to dates before or after the data range. Example: if ms_v_stock_capital covers 2025-01-31 to 2025-12-31, then H1 2025 = compare 2025-01-31 vs 2025-06-30, NOT 2024-12-31 vs 2025-06-30."' \
   '"ms_t_stk_hsi","ms_t_stk_sis","ms_v_stock_capital","ds_t_int_hsicl_dtl","sehknews","profit_loss","ccass_holdings","ms_v_stk_hsi_daily"'
 
+# --- 方向性语义约束 ---
+add "logic" "directional_filter_constraint" "Decline/increase queries must include sign filter" \
+  '"When the user asks about decline/decrease/drop (下降/下跌/减少/缩水/亏损), the SQL MUST include a < 0 filter on the computed change column. When the user asks about increase/growth/rise (上升/上涨/增长/增加), the SQL MUST include a > 0 filter. Without this filter, ORDER BY ASC/DESC LIMIT N may return results that do not match the directional intent (e.g. returning the smallest gain instead of an actual decline)."' \
+  '"ms_t_stk_sis","ms_v_stock_capital","profit_loss","ms_v_stk_hsi_daily","ccass_holdings"'
+
 # --- SQL 方言 ---
 add "logic" "sql_dialect_matrixone" "MatrixOne SQL dialect constraints" \
   '"MatrixOne limitations: (1) RIGHT() not supported — use SUBSTRING(col, LENGTH(col)-N+1, N). (2) CHANGE, RANK are reserved words — use aliases like turnover_change, rnk. (3) LAG/LEAD on simple columns works fine (e.g. LAG(SICLSE) OVER ...) — only LAG/LEAD wrapping CASE WHEN expressions will panic, pre-compute flag columns first in that case. (4) Correlated subqueries in SELECT may return NULL unexpectedly — prefer LAG/LEAD or self-JOIN instead. (5) REGEXP works but CAST(VARCHAR AS UNSIGNED) may panic when combined with window functions — filter string conditions in an inner subquery."' \
