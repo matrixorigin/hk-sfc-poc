@@ -338,7 +338,7 @@ def crawl_date(date: str, stocks: list, cache_dir: str = None, concurrency: int 
             print(f"  --- {done}/{total} done, {len(all_rows)} rows saved ---", flush=True)
 
             # 批间短暂休息
-            if batch_start + BATCH_SIZE < len(tasks):
+            if batch_start + BATCH_SIZE < len(stocks):
                 time.sleep(random.uniform(1, 3))
 
     print(f"  -> 缓存: {cache_path(cache_dir, date)} ({len(all_rows)} 新增行)")
