@@ -44,6 +44,13 @@ if [ -z "$DASHSCOPE_API_KEY" ]; then
     fi
 fi
 
+# 检查 SILICONFLOW_API_KEY（用于 embedding）
+SILICONFLOW_API_KEY="${SILICONFLOW_API_KEY:-}"
+if [ -z "$SILICONFLOW_API_KEY" ]; then
+    echo -n "请输入 SiliconFlow API Key (用于 embedding，回车跳过): "
+    read -r SILICONFLOW_API_KEY
+fi
+
 # ============================================================
 # Step 1: 检查前置条件
 # ============================================================
@@ -219,6 +226,52 @@ else
     else
         log "WARNING: 创建 LLM Backend 失败"
         echo "$BACKEND_RESP"
+    fi
+fi
+
+# ============================================================
+# Step 6b: 配置 Embedding Backend（BAAI/bge-m3 via SiliconFlow）
+# ============================================================
+log ""
+log "========== Step 6b: 配置 Embedding Backend =========="
+
+if [ -z "$SILICONFLOW_API_KEY" ]; then
+    log "未提供 SiliconFlow API Key，跳过 Embedding 配置（fewshot 语义匹配将不可用）"
+else
+    EMBED_COUNT=$(curl -s "$CATALOG_URL/api/v1/workspaces/$WS_ID/embeddings/backends" \
+        -H "X-API-Key: $API_KEY" | \
+        python3 -c "import sys,json; print(json.load(sys.stdin).get('data',{}).get('total',0))" 2>/dev/null || echo "0")
+
+    if [ "$EMBED_COUNT" -gt 0 ]; then
+        log "Embedding Backend 已配置，跳过"
+    else
+        log "创建 Embedding Backend (BAAI/bge-m3)..."
+
+        EMBED_RESP=$(curl -s -X POST "$CATALOG_URL/api/v1/workspaces/$WS_ID/embeddings/backends" \
+            -H "X-API-Key: $API_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{
+                "name": "siliconflow-bge-m3",
+                "api_key_encrypted": "'${SILICONFLOW_API_KEY}'",
+                "timeout_seconds": 30,
+                "models": ["BAAI/bge-m3"]
+            }')
+
+        EMBED_ID=$(echo "$EMBED_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('data',{}).get('id',''))" 2>/dev/null || true)
+
+        if [ -n "$EMBED_ID" ]; then
+            log "Embedding Backend ID: $EMBED_ID"
+
+            curl -s -X POST "$CATALOG_URL/api/v1/workspaces/$WS_ID/embeddings/backends/$EMBED_ID/endpoints" \
+                -H "X-API-Key: $API_KEY" \
+                -H "Content-Type: application/json" \
+                -d '{"address": "https://api.siliconflow.cn/v1"}' > /dev/null
+
+            log "Embedding Endpoint 已配置 (siliconflow)"
+        else
+            log "WARNING: 创建 Embedding Backend 失败"
+            echo "$EMBED_RESP"
+        fi
     fi
 fi
 

@@ -157,7 +157,7 @@ add "logic" "chart_friendly_output" "Generate chart-friendly SQL when visualizat
 
 # --- 日期边界约束 ---
 add "logic" "date_boundary_constraint" "All SQL date literals must fall within actual data coverage" \
-  '"CRITICAL: Every date literal in SQL must fall within the table'\''s actual data range (see data coverage entries). Dates outside the range will match zero rows. For period comparisons (H1/H2/Q1/YoY), always use the earliest and latest EXISTING dates within that period — never extrapolate to dates before or after the data range. Example: if ms_v_stock_capital covers 2025-01-31 to 2025-12-31, then H1 2025 = compare 2025-01-31 vs 2025-06-30, NOT 2024-12-31 vs 2025-06-30."' \
+  '"ABSOLUTE RULE — NEVER VIOLATE: Every date literal in SQL MUST exist in the table'\''s actual data. Dates outside the data range return ZERO rows and produce WRONG answers. Period comparison date mapping (ms_v_stock_capital ref_date): H1 {year} → start={year}-01-31 end={year}-06-30. H2 {year} → start={year}-07-31 end={year}-12-31. Full year {year} → start={year}-01-31 end={year}-12-31. WRONG examples: 2024-12-31 (does not exist), {year}-01-01 (not month-end), {year}-06-01 (not month-end). The start date is ALWAYS the first month-end WITHIN the period, NEVER the last day of the previous period."' \
   '"ms_t_stk_hsi","ms_t_stk_sis","ms_v_stock_capital","ds_t_int_hsicl_dtl","sehknews","profit_loss","ccass_holdings","ms_v_stk_hsi_daily"'
 
 # --- 方向性语义约束 ---
@@ -196,6 +196,12 @@ add "presentation" "profit_loss_show_all_periods" \
 # ============================================================
 log ""
 log "配置 fewshot 示例..."
+
+add "case_library" \
+  "Which N industries had the largest market cap decline/increase in H1/H2/full-year — date mapping: H1 {{year}}={{year}}-01-31 to {{year}}-06-30, H2 {{year}}={{year}}-07-31 to {{year}}-12-31, full year={{year}}-01-31 to {{year}}-12-31. For decline use ORDER BY ASC + change<0; for increase use ORDER BY DESC + change>0" \
+  "Industry market cap period comparison on ms_v_stock_capital" \
+  '"SELECT industry_name, market_cap_start, market_cap_end, market_cap_change, ROUND(market_cap_change / market_cap_start * 100, 2) AS change_pct FROM (SELECT industry_name, SUM(CASE WHEN ref_date = '\''{{period_start}}'\'' THEN SICAP ELSE 0 END) AS market_cap_start, SUM(CASE WHEN ref_date = '\''{{period_end}}'\'' THEN SICAP ELSE 0 END) AS market_cap_end, SUM(CASE WHEN ref_date = '\''{{period_end}}'\'' THEN SICAP ELSE 0 END) - SUM(CASE WHEN ref_date = '\''{{period_start}}'\'' THEN SICAP ELSE 0 END) AS market_cap_change FROM ms_v_stock_capital WHERE ref_date IN ('\''{{period_start}}'\'', '\''{{period_end}}'\'') AND industry_name IS NOT NULL GROUP BY industry_name HAVING market_cap_start > 0 AND market_cap_end > 0) t WHERE market_cap_change < 0 ORDER BY market_cap_change ASC LIMIT {{N}}"' \
+  '"ms_v_stock_capital"'
 
 add "case_library" \
   "CCASS broker holding change: compare date_T vs date_T_minus_1 at participant level, replace date placeholders with user-specified dates" \
