@@ -276,42 +276,57 @@ def crawl_date(date: str, stocks: list, cache_dir: str = None, concurrency: int 
                 print(f"  当天全部股票已爬完")
                 return load_from_cache(cache_dir, date)
 
-    # 每个并发 worker 用独立 session
-    sessions = []
-    for _ in range(concurrency):
-        try:
-            s, vs, vs_gn = get_session()
-            sessions.append((s, vs, vs_gn))
-        except Exception as e:
-            print(f"  WARNING: 创建 session 失败: {e}, 降低并发")
-            break
+    def create_sessions(n):
+        """创建 n 个独立 session。"""
+        sessions = []
+        for _ in range(n):
+            try:
+                s, vs, vs_gn = get_session()
+                sessions.append((s, vs, vs_gn))
+            except Exception as e:
+                print(f"  WARNING: 创建 session 失败: {e}, 降低并发")
+                break
+        return sessions
 
+    sessions = create_sessions(concurrency)
     if not sessions:
         print("  ERROR: 无法创建任何 session")
         return []
 
     actual_concurrency = len(sessions)
+    total_display = len(stocks) + skipped
     print(f"  并发数: {actual_concurrency}, 股票数: {len(stocks)}")
 
-    # 构造任务参数
-    tasks = []
-    for i, (code, name) in enumerate(stocks, 1):
-        sess_idx = (i - 1) % actual_concurrency
-        s, vs, vs_gn = sessions[sess_idx]
-        tasks.append((s, vs, vs_gn, code, name, date, db_date, i + skipped, len(stocks) + skipped))
-
-    # 分批并发执行，每批完成立即写入缓存
+    # 分批并发执行，每批完成立即写入缓存，每 SESSION_REFRESH_INTERVAL 只刷新 session
     BATCH_SIZE = 100
+    SESSION_REFRESH_INTERVAL = 500  # 每 500 只刷新 session 防止 token 过期
+    stocks_since_refresh = 0
     need_header = not os.path.exists(cache_path(cache_dir, date)) if cache_dir else False
+
     with ThreadPoolExecutor(max_workers=actual_concurrency) as executor:
-        for batch_start in range(0, len(tasks), BATCH_SIZE):
-            batch = tasks[batch_start:batch_start + BATCH_SIZE]
+        for batch_start in range(0, len(stocks), BATCH_SIZE):
+            # 检查是否需要刷新 session
+            if stocks_since_refresh >= SESSION_REFRESH_INTERVAL:
+                print(f"  --- 刷新 session (已爬 {stocks_since_refresh} 只) ---", flush=True)
+                sessions = create_sessions(actual_concurrency)
+                stocks_since_refresh = 0
+
+            batch_stocks = stocks[batch_start:batch_start + BATCH_SIZE]
+            batch_tasks = []
+            for j, (code, name) in enumerate(batch_stocks):
+                idx = batch_start + j
+                sess_idx = j % len(sessions)
+                s, vs, vs_gn = sessions[sess_idx]
+                batch_tasks.append((s, vs, vs_gn, code, name, date, db_date, idx + 1 + skipped, total_display))
+
             batch_rows = []
-            futures = {executor.submit(_crawl_one_stock, t): t for t in batch}
+            futures = {executor.submit(_crawl_one_stock, t): t for t in batch_tasks}
             for future in as_completed(futures):
                 rows = future.result()
                 batch_rows.extend(rows)
                 all_rows.extend(rows)
+
+            stocks_since_refresh += len(batch_stocks)
 
             # 每批完成立即追加写入缓存
             if cache_dir and batch_rows:
