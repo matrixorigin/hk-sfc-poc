@@ -227,12 +227,54 @@ def _crawl_one_stock(args_tuple):
                 return []
 
 
-def crawl_date(date: str, stocks: list, cache_dir: str = None, concurrency: int = 10) -> list:
-    """爬取一天的所有股票持仓，支持并发+重试，返回 rows 列表。"""
+def _load_crawled_codes(cache_dir: str, date: str) -> set:
+    """从缓存文件中读取已爬取的股票代码集合（用于续爬）。"""
+    path = cache_path(cache_dir, date)
+    codes = set()
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            reader = csv.reader(f)
+            next(reader, None)  # skip header
+            for r in reader:
+                if len(r) >= 2:
+                    codes.add(r[1])  # stock_code
+    return codes
+
+
+def _append_to_cache(cache_dir: str, date: str, rows: list, write_header: bool = False):
+    """将行数据追加写入缓存文件。"""
+    if not rows:
+        return
+    os.makedirs(cache_dir, exist_ok=True)
+    path = cache_path(cache_dir, date)
+    mode = "a" if os.path.exists(path) and not write_header else "w"
+    with open(path, mode, newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        if mode == "w":
+            writer.writerow(["holding_date", "stock_code", "stock_name", "participant_id", "shareholding"])
+        writer.writerows(rows)
+
+
+def crawl_date(date: str, stocks: list, cache_dir: str = None, concurrency: int = 10, resume: bool = False) -> list:
+    """爬取一天的所有股票持仓，支持并发+重试+断点续爬，每批写入缓存。"""
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
     db_date = date.replace("/", "-")
     all_rows = []
+
+    # 续爬：跳过已爬的股票
+    skipped = 0
+    if resume and cache_dir:
+        crawled_codes = _load_crawled_codes(cache_dir, date)
+        if crawled_codes:
+            original = len(stocks)
+            stocks = [(c, n) for c, n in stocks if c not in crawled_codes]
+            skipped = original - len(stocks)
+            if skipped:
+                print(f"  续爬: 跳过 {skipped} 只已爬股票, 剩余 {len(stocks)} 只")
+            if not stocks:
+                print(f"  当天全部股票已爬完")
+                return load_from_cache(cache_dir, date)
 
     # 每个并发 worker 用独立 session
     sessions = []
@@ -256,33 +298,35 @@ def crawl_date(date: str, stocks: list, cache_dir: str = None, concurrency: int 
     for i, (code, name) in enumerate(stocks, 1):
         sess_idx = (i - 1) % actual_concurrency
         s, vs, vs_gn = sessions[sess_idx]
-        tasks.append((s, vs, vs_gn, code, name, date, db_date, i, len(stocks)))
+        tasks.append((s, vs, vs_gn, code, name, date, db_date, i + skipped, len(stocks) + skipped))
 
-    # 分批并发执行，每批之间短暂休息
+    # 分批并发执行，每批完成立即写入缓存
     BATCH_SIZE = 100
+    need_header = not os.path.exists(cache_path(cache_dir, date)) if cache_dir else False
     with ThreadPoolExecutor(max_workers=actual_concurrency) as executor:
         for batch_start in range(0, len(tasks), BATCH_SIZE):
             batch = tasks[batch_start:batch_start + BATCH_SIZE]
+            batch_rows = []
             futures = {executor.submit(_crawl_one_stock, t): t for t in batch}
             for future in as_completed(futures):
                 rows = future.result()
+                batch_rows.extend(rows)
                 all_rows.extend(rows)
-            # 每批之间休息 1-3 秒
-            if batch_start + BATCH_SIZE < len(tasks):
-                pause = random.uniform(1, 3)
-                done = min(batch_start + BATCH_SIZE, len(stocks))
-                print(f"  --- {done}/{len(stocks)} done, pause {pause:.1f}s ---", flush=True)
-                time.sleep(pause)
 
-    # 写缓存
-    if cache_dir and all_rows:
-        os.makedirs(cache_dir, exist_ok=True)
-        path = cache_path(cache_dir, date)
-        with open(path, "w", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
-            writer.writerow(["holding_date", "stock_code", "stock_name", "participant_id", "shareholding"])
-            writer.writerows(all_rows)
-        print(f"  -> 缓存已保存: {path} ({len(all_rows)} 行)")
+            # 每批完成立即追加写入缓存
+            if cache_dir and batch_rows:
+                _append_to_cache(cache_dir, date, batch_rows, write_header=need_header)
+                need_header = False  # 后续批次不再写 header
+
+            done = min(batch_start + BATCH_SIZE, len(stocks)) + skipped
+            total = len(stocks) + skipped
+            print(f"  --- {done}/{total} done, {len(all_rows)} rows saved ---", flush=True)
+
+            # 批间短暂休息
+            if batch_start + BATCH_SIZE < len(tasks):
+                time.sleep(random.uniform(1, 3))
+
+    print(f"  -> 缓存: {cache_path(cache_dir, date)} ({len(all_rows)} 新增行)")
 
     return all_rows
 
@@ -373,16 +417,11 @@ def main():
     if not args.dry_run:
         resolve_mo_credentials(args)
 
-    # 续爬：过滤掉已有缓存的日期
+    # 续爬提示
     if args.resume and not args.from_cache:
-        original = len(args.dates)
-        args.dates = [d for d in args.dates if not os.path.exists(cache_path(args.cache_dir, d))]
-        skipped = original - len(args.dates)
-        if skipped:
-            print(f"续爬模式: 跳过 {skipped} 天已有缓存, 剩余 {len(args.dates)} 天")
-        if not args.dates:
-            print("所有日期均已有缓存，无需爬取。如需重新入库请用 --from-cache")
-            sys.exit(0)
+        cached = sum(1 for d in args.dates if os.path.exists(cache_path(args.cache_dir, d)))
+        if cached:
+            print(f"续爬模式: {cached} 天有部分缓存，将跳过已爬股票继续")
 
     print("=" * 60)
     print("CCASS Holdings Crawler → MatrixOne")
@@ -419,7 +458,7 @@ def main():
         else:
             stocks = fetch_stock_list(date, top_n=top_n)
             print(f"  股票列表: {len(stocks)} 只")
-            rows = crawl_date(date, stocks, cache_dir=args.cache_dir, concurrency=args.concurrency)
+            rows = crawl_date(date, stocks, cache_dir=args.cache_dir, concurrency=args.concurrency, resume=args.resume)
 
         total_rows += len(rows)
         print(f"  本日合计: {len(rows)} 条持仓记录")
