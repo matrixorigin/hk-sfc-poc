@@ -7,7 +7,9 @@ import 'katex/dist/katex.min.css'
 import type { Message } from '../types'
 import { useT } from '../i18n'
 import { Chart } from './Chart'
+import { DataTable } from './DataTable'
 import { FeedbackButton } from './FeedbackButton'
+import { selectPrimaryResult } from '../utils/selectPrimaryResult'
 
 interface MessageBubbleProps {
   message: Message
@@ -29,6 +31,8 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   const phaseLabel = message.phase && phaseLabels[message.phase]
     ? phaseLabels[message.phase][lang]
     : null
+
+  const primaryResult = !isUser ? selectPrimaryResult(message) : undefined
 
   return (
     <div className={`message-row ${isUser ? 'user' : ''}`}>
@@ -66,21 +70,17 @@ export function MessageBubble({ message }: MessageBubbleProps) {
             </div>
           )}
 
-          {/* Chart — driven by chartSpec when available */}
-          {!isUser && isDone && message.sqlResults.length > 0 && (() => {
+          {/* Chart */}
+          {!isUser && isDone && primaryResult && (() => {
             const { chartSpec } = message
             if (chartSpec?.chart_type === 'none') return null
-
-            let chartResult = chartSpec?.round_index !== undefined
-              ? message.sqlResults.find((r) => r.round_index === chartSpec.round_index)
-              : undefined
-            if (!chartResult) {
-              chartResult = message.sqlResults.reduce((best, r) =>
-                r.columns.length > best.columns.length ? r : best
-              )
-            }
-            return <Chart result={chartResult} spec={chartSpec} />
+            return <Chart result={primaryResult} spec={chartSpec} />
           })()}
+
+          {/* Data Table */}
+          {!isUser && isDone && primaryResult && primaryResult.rows.length > 0 && (
+            <DataTable result={primaryResult} />
+          )}
 
           {/* SQL toggle — only after done */}
           {!isUser && isDone && message.sqlStatements.length > 0 && (
@@ -117,11 +117,11 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           )}
 
           {/* Feedback button — only after done with results */}
-          {!isUser && isDone && message.sqlResults.length > 0 && (
+          {!isUser && isDone && primaryResult && (
             <FeedbackButton
               question={message.feedbackQuestion || ''}
               sql={message.sqlStatements[message.sqlStatements.length - 1] || ''}
-              sqlResult={message.sqlResults[message.sqlResults.length - 1]}
+              sqlResult={primaryResult}
               sessionId=""
             />
           )}

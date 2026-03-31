@@ -48,5 +48,8 @@
   "analysisSuggestion": "优化建议",
   "analysisCorrectedSQL": "修正 SQL",
   "analysisUserNote": "用户备注",
-  "analysisOriginalSQL": "生成的 SQL"
+  "analysisOriginalSQL": "生成的 SQL",
+  "tableRange": "第 {start}-{end} 行，共 {total} 行",
+  "tablePageIndicator": "第 {page} 页 / 共 {pages} 页",
+  "tableRowsPerPage": "每页行数"
 }

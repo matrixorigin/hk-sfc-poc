@@ -48,5 +48,8 @@
   "analysisSuggestion": "Suggestions",
   "analysisCorrectedSQL": "Corrected SQL",
   "analysisUserNote": "User Note",
-  "analysisOriginalSQL": "Generated SQL"
+  "analysisOriginalSQL": "Generated SQL",
+  "tableRange": "Rows {start}-{end} of {total}",
+  "tablePageIndicator": "Page {page} of {pages}",
+  "tableRowsPerPage": "Rows per page"
 }
