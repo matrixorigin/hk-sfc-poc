@@ -181,6 +181,7 @@ s2	S2: 2月新闻放量TOP20	2025年2月份有哪些股票在发布重大新闻�
 s3	S3: 连续5天>MA20	2025年1月到3月，哪些股票代码小于1000的股票收盘价连续5天高于20日均线？	SELECT DISTINCT SISTKC, SISTKN FROM ms_t_stk_sis WHERE trade_date BETWEEN '2025-01-01' AND '2025-03-31' AND SISTKC < '01000' AND SISTKC >= '00001' AND consecutive_above_ma20 >= 5
 s4	S4: 恒指月末+涨跌幅	2025年各月的恒生指数月末收盘值和当月涨跌幅分别是多少？	SELECT trade_date, HSHSI FROM (SELECT trade_date, HSHSI, ROW_NUMBER() OVER (PARTITION BY YEAR(trade_date), MONTH(trade_date) ORDER BY trade_date DESC) AS rn FROM ms_v_stk_hsi_daily WHERE trade_date >= '2025-01-01' AND trade_date <= '2025-12-31') t WHERE rn = 1
 v2	V2: 行业市值下降	计算各行业2025年11月相对2025年10月总市值下降值，取top3	SELECT industry_name, (oct_total - nov_total) AS decline FROM (SELECT industry_name, SUM(CASE WHEN ref_date='2025-10-31' THEN SICAP ELSE 0 END) AS oct_total, SUM(CASE WHEN ref_date='2025-11-30' THEN SICAP ELSE 0 END) AS nov_total FROM ms_v_stock_capital WHERE ref_date IN ('2025-10-31','2025-11-30') GROUP BY industry_name) t WHERE oct_total > nov_total ORDER BY decline DESC LIMIT 3	-	1
+s5	S5: H2行业市值下降TOP3	2025年下半年哪三个行业的总市值下降幅度最大？	SELECT industry_name FROM (SELECT industry_name, SUM(CASE WHEN ref_date = '2025-07-31' THEN SICAP ELSE 0 END) AS market_cap_start, SUM(CASE WHEN ref_date = '2025-12-31' THEN SICAP ELSE 0 END) AS market_cap_end, SUM(CASE WHEN ref_date = '2025-12-31' THEN SICAP ELSE 0 END) - SUM(CASE WHEN ref_date = '2025-07-31' THEN SICAP ELSE 0 END) AS market_cap_change FROM ms_v_stock_capital WHERE ref_date IN ('2025-07-31', '2025-12-31') AND industry_name IS NOT NULL GROUP BY industry_name HAVING SUM(CASE WHEN ref_date = '2025-07-31' THEN SICAP ELSE 0 END) > 0 AND SUM(CASE WHEN ref_date = '2025-12-31' THEN SICAP ELSE 0 END) > 0) t WHERE market_cap_change < 0 ORDER BY market_cap_change ASC LIMIT 3
 CASES_EOF
 )
 
@@ -242,7 +243,7 @@ HAS_CCASS=$($MYSQL_CMD -e "SELECT COUNT(*) FROM ccass_holdings" 2>/dev/null | ta
 if [ "${HAS_CCASS:-0}" -gt 0 ]; then
   log "  [v5] V5: CCASS 持仓变动..."
   fire "v5" "2026年3月27日相比3月26日，CCASS跨券商持仓变动超过30%的股票有哪些？"
-  check_or_die "V5: CCASS变动>30%" "v5" "SELECT DISTINCT a.stock_code FROM ccass_holdings a JOIN ccass_holdings b ON a.stock_code = b.stock_code AND a.participant_id = b.participant_id WHERE a.holding_date = '2026-03-27' AND b.holding_date = '2026-03-26' AND b.shareholding > 0 AND ABS(a.shareholding - b.shareholding) / b.shareholding > 0.3"
+  check_or_die "V5: CCASS变动>30%" "v5" "SELECT a.stock_code, a.participant_id, a.shareholding AS shares_day2, b.shareholding AS shares_day1, (a.shareholding - b.shareholding) / b.shareholding AS change_ratio FROM ccass_holdings a JOIN ccass_holdings b ON a.stock_code = b.stock_code AND a.participant_id = b.participant_id WHERE a.holding_date = '2026-03-27' AND b.holding_date = '2026-03-26' AND b.shareholding > 0 AND ABS(a.shareholding - b.shareholding) / b.shareholding > 0.3"
 else
   SKIP=$((SKIP + 1))
   echo "  ⏭️  V5: CCASS变动>30% — SKIP: ccass_holdings 无数据"

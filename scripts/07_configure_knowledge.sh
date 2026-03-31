@@ -138,11 +138,11 @@ add "logic" "ccass_participant_granularity" "CCASS must compare at participant l
 
 # --- 利润表 ---
 add "logic" "profit_loss_stock_code" "profit_loss stock_code format and company name search" \
-  '"In profit_loss, stock_code is NOT zero-padded (e.g. 88 not 00088). When the user references a company by name, use LIKE for fuzzy matching on the appropriate column: company_name_sc for simplified Chinese, company_name_tc for traditional Chinese, company_name_en for English. Do NOT extract numbers from the name as stock_code (e.g. \"360鲁大师\" → stock_code is 3601, not 360)."' \
+  '"In profit_loss, stock_code is NOT zero-padded (e.g. 88 not 00088). When the user references a company by name, use LIKE on the column matching the input language — using the wrong column returns 0 rows: company_name_sc for simplified Chinese, company_name_tc for traditional Chinese, company_name_en for English. Identify traditional vs simplified Chinese by character form (e.g. 體/体, 國/国, 東/东). Do NOT extract numbers from the name as stock_code (e.g. \"360鲁大师\" → stock_code is 3601, not 360)."' \
   '"profit_loss"'
 
 add "logic" "profit_loss_period_comparison" "Revenue/profit analysis must use like-for-like period comparison" \
-  '"profit_loss.fin_yr is YYYYMM format (e.g. 202312 = Dec 2023). quarter is Final (annual) or Interim (half-year). When comparing across years, MUST match same quarter type: Final vs Final, Interim vs Interim. Never directly compare Final with Interim. To cover \"2023-2025 growth\", the query should include 2022+ data as baseline for computing 2023 changes."' \
+  '"profit_loss.fin_yr is YYYYMM format (e.g. 202312 = Dec 2023). quarter is Final (annual) or Interim (half-year). CRITICAL: Use self-JOIN (NOT LAG/LEAD) to compare same quarter across years, joining on stock_code + quarter + year offset (CAST(SUBSTRING(a.fin_yr,1,4) AS UNSIGNED) = CAST(SUBSTRING(b.fin_yr,1,4) AS UNSIGNED) + 1 AND SUBSTRING(a.fin_yr,5,2) = SUBSTRING(b.fin_yr,5,2)). LAG/LEAD over fin_yr will incorrectly compare Final with Interim — this is WRONG. Unless the user explicitly asks for only annual or only interim, always include BOTH Final and Interim. \"growth from X to Y\" / \"X到Y年增长\" means YEAR-OVER-YEAR comparison for EVERY year in the range, NOT just start vs end. Include (Y-X+1) baseline year data. Example: \"growth from 2023 to 2025\" → use a.fin_yr >= '\''202301'\'' (not 202306) to include all 2023 periods (both 202303 Final and 202306 Interim), and include 2022 baseline data via the self-JOIN. The YYYYMM filter is a string comparison, so >= '\''202301'\'' correctly matches 202303, 202306, etc."' \
   '"profit_loss"'
 
 # --- 日线汇总 ---
@@ -155,10 +155,15 @@ add "logic" "chart_friendly_output" "Generate chart-friendly SQL when visualizat
   '"When the question asks for charts/plots/trends/visualization (图表/绘制/趋势/走势), return time series data with a date column and numeric columns. Limit to top 5 items if the result set would be too large."' \
   '"ms_t_stk_sis","ms_v_stk_hsi_daily","profit_loss","ms_v_stock_capital"'
 
-# --- 日期边界约束 ---
+# --- 日期边界约束（通用） ---
 add "logic" "date_boundary_constraint" "All SQL date literals must fall within actual data coverage" \
-  '"ABSOLUTE RULE — NEVER VIOLATE: Every date literal in SQL MUST exist in the table'\''s actual data. Dates outside the data range return ZERO rows and produce WRONG answers. Period comparison date mapping (ms_v_stock_capital ref_date): H1 {year} → start={year}-01-31 end={year}-06-30. H2 {year} → start={year}-07-31 end={year}-12-31. Full year {year} → start={year}-01-31 end={year}-12-31. WRONG examples: 2024-12-31 (does not exist), {year}-01-01 (not month-end), {year}-06-01 (not month-end). The start date is ALWAYS the first month-end WITHIN the period, NEVER the last day of the previous period."' \
-  '"ms_t_stk_hsi","ms_t_stk_sis","ms_v_stock_capital","ds_t_int_hsicl_dtl","sehknews","profit_loss","ccass_holdings","ms_v_stk_hsi_daily"'
+  '"Every date literal in SQL MUST fall within the table'\''s actual data range (see data_coverage_* entries). Dates outside the range return ZERO rows and produce WRONG answers. For daily tables (ms_t_stk_sis, ms_t_stk_hsi, ms_v_stk_hsi_daily, sehknews), use normal calendar dates like {year}-01-01 for year start. Do NOT use month-end dates (01-31, 07-31) for daily tables."' \
+  '"ms_t_stk_hsi","ms_t_stk_sis","ds_t_int_hsicl_dtl","sehknews","profit_loss","ccass_holdings","ms_v_stk_hsi_daily"'
+
+# --- 日期边界约束（ms_v_stock_capital 专用） ---
+add "logic" "date_boundary_capital_monthly" "ms_v_stock_capital ref_date is month-end only" \
+  '"ms_v_stock_capital.ref_date contains ONLY month-end dates (01-31, 02-28, ..., 12-31). You MUST use month-end dates when querying this table. Period mapping: H1 {year} → start={year}-01-31 end={year}-06-30. H2 {year} → start={year}-07-31 end={year}-12-31. Full year {year} → start={year}-01-31 end={year}-12-31. WRONG examples: {year}-01-01, {year}-06-01, {year}-07-01 (these are NOT month-end and will match ZERO rows). The start date is ALWAYS the first month-end WITHIN the period, NEVER the last day of the previous period (e.g. 2024-12-31 does not exist in this table)."' \
+  '"ms_v_stock_capital"'
 
 # --- 方向性语义约束 ---
 add "logic" "directional_filter_constraint" "Decline/increase queries must include sign filter" \
