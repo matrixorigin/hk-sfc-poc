@@ -318,217 +318,130 @@ log "  industry_name 填充: $filled 行"
 log ""
 log "========== Step 5: 预计算列 =========="
 
-log "计算 MA3/MA20/MA50/MA100 (Python + temp table)..."
+log "预计算全部列 (Python 一次计算 + 1 次 LOAD + 1 次 UPDATE)..."
 $MYSQL_CMD "$MO_DB" -N -B -e "
-SELECT SISTKC, trade_date, SICLSE FROM ms_t_stk_sis ORDER BY SISTKC, trade_date;
+SELECT SISTKC, trade_date, SICLSE, SIVOL FROM ms_t_stk_sis ORDER BY SISTKC, trade_date;
 " 2>/dev/null | python3 -c "
 import sys
 from collections import deque
 
-prev = None
-buf = deque(maxlen=100)
+class RollingAvg:
+    __slots__ = ('w', 'buf', 's', 'c')
+    def __init__(self, w):
+        self.w = w; self.buf = deque(); self.s = 0.0; self.c = 0
+    def add(self, v):
+        if len(self.buf) >= self.w:
+            old = self.buf.popleft()
+            if old is not None: self.s -= old; self.c -= 1
+        self.buf.append(v)
+        if v is not None: self.s += v; self.c += 1
+    def avg(self):
+        return self.s / self.c if self.c else None
+    def reset(self):
+        self.buf.clear(); self.s = 0.0; self.c = 0
+
+class RollingSum:
+    __slots__ = ('w', 'buf', 's')
+    def __init__(self, w):
+        self.w = w; self.buf = deque(); self.s = 0
+    def add(self, v):
+        if len(self.buf) >= self.w:
+            self.s -= self.buf.popleft()
+        self.buf.append(v); self.s += v
+    def val(self): return self.s
+    def reset(self):
+        self.buf.clear(); self.s = 0
 
 def fmt(v):
     return f'{v:.10f}' if v is not None else r'\N'
+def fmti(v):
+    return str(v)
 
-def avg_w(buf, w):
-    n = len(buf)
-    start = max(0, n - w)
-    s = c = 0
-    for i in range(start, n):
-        if buf[i] is not None:
-            s += buf[i]; c += 1
-    return s / c if c else None
+out = sys.stdout
+prev = None
+# MA rolling averages (O(1) per add)
+r3 = RollingAvg(3); r20 = RollingAvg(20); r50 = RollingAvg(50); r100 = RollingAvg(100)
+# Consecutive streaks
+streak3 = 0; streak20 = 0
+# Consecutive above MA50: rolling count in 50-day window
+above50 = RollingSum(50)
+# Avg vol 30d: rolling avg of preceding 30 days
+vol_buf = deque()
+vol_sum = 0.0
 
 for line in sys.stdin:
     parts = line.rstrip().split('\t')
     code, date = parts[0], parts[1]
-    v = parts[2] if len(parts) > 2 else ''
-    close = float(v) if v and v not in ('NULL', r'\N') else None
-    if code != prev:
-        buf = deque(maxlen=100)
-        prev = code
-    buf.append(close)
-    print(f'{code},{date},{fmt(avg_w(buf,3))},{fmt(avg_w(buf,20))},{fmt(avg_w(buf,50))},{fmt(avg_w(buf,100))}')
-" > /tmp/_ma.csv
+    close_s = parts[2] if len(parts) > 2 else ''
+    vol_s = parts[3] if len(parts) > 3 else ''
+    close = float(close_s) if close_s and close_s != 'NULL' else None
+    vol = float(vol_s) if vol_s and vol_s != 'NULL' else 0.0
 
-row_count=$(wc -l < /tmp/_ma.csv)
+    if code != prev:
+        r3.reset(); r20.reset(); r50.reset(); r100.reset()
+        streak3 = 0; streak20 = 0
+        above50.reset()
+        vol_buf = deque(); vol_sum = 0.0
+        prev = code
+
+    # MA
+    r3.add(close); r20.add(close); r50.add(close); r100.add(close)
+    ma3 = r3.avg(); ma20 = r20.avg(); ma50 = r50.avg(); ma100 = r100.avg()
+
+    # Consecutive above MA3
+    if ma3 is not None and close is not None:
+        streak3 = streak3 + 1 if close > ma3 else 0
+    else:
+        streak3 = 0
+
+    # Consecutive above MA20
+    if ma20 is not None and close is not None:
+        streak20 = streak20 + 1 if close > ma20 else 0
+    else:
+        streak20 = 0
+
+    # Consecutive above MA50 (rolling count in 50-day window)
+    if ma50 is not None and close is not None:
+        above50.add(1 if close > ma50 else 0)
+        consec50 = above50.val()
+    else:
+        consec50 = r'\N'
+
+    # Avg vol 30d (preceding 30 days, NULL if < 30)
+    if len(vol_buf) >= 30:
+        avg_vol = fmt(vol_sum / 30)
+    else:
+        avg_vol = r'\N'
+    # Update vol buffer (after computing, so current day excluded)
+    vol_buf.append(vol); vol_sum += vol
+    if len(vol_buf) > 30:
+        vol_sum -= vol_buf.popleft()
+
+    out.write(f'{code},{date},{fmt(ma3)},{fmt(ma20)},{fmt(ma50)},{fmt(ma100)},{fmti(streak3)},{fmti(streak20)},{consec50},{avg_vol}\n')
+" > /tmp/_precompute.csv
+
+row_count=$(wc -l < /tmp/_precompute.csv)
 log "  Python 计算完成: $row_count 行"
 
-run_sql "DROP TABLE IF EXISTS _tmp_ma;"
-run_sql "CREATE TABLE _tmp_ma (SISTKC VARCHAR(10), trade_date DATE, ma3 DOUBLE, ma20 DOUBLE, ma50 DOUBLE, ma100 DOUBLE);"
+run_sql "DROP TABLE IF EXISTS _tmp_precompute;"
+run_sql "CREATE TABLE _tmp_precompute (
+  SISTKC VARCHAR(10), trade_date DATE,
+  ma3 DOUBLE, ma20 DOUBLE, ma50 DOUBLE, ma100 DOUBLE,
+  consec_ma3 INT, consec_ma20 INT, consec_ma50 INT, avg_vol DOUBLE
+);"
 $MYSQL_CMD "$MO_DB" --local-infile=1 -e "
-LOAD DATA LOCAL INFILE '/tmp/_ma.csv'
-INTO TABLE _tmp_ma
+LOAD DATA LOCAL INFILE '/tmp/_precompute.csv'
+INTO TABLE _tmp_precompute
 FIELDS TERMINATED BY ','
 LINES TERMINATED BY '\n';
 " 2>&1 | { grep -v "Warning.*password" || true; }
-log "  batched updating..."
+log "  LOAD 完成, batched updating..."
 run_sql_batched \
-  "UPDATE ms_t_stk_sis t JOIN _tmp_ma calc ON t.SISTKC = calc.SISTKC AND t.trade_date = calc.trade_date SET t.ma_3 = calc.ma3, t.ma_20 = calc.ma20, t.ma_50 = calc.ma50, t.ma_100 = calc.ma100 WHERE t.ma_3 IS NULL" \
+  "UPDATE ms_t_stk_sis t JOIN _tmp_precompute p ON t.SISTKC = p.SISTKC AND t.trade_date = p.trade_date SET t.ma_3=p.ma3, t.ma_20=p.ma20, t.ma_50=p.ma50, t.ma_100=p.ma100, t.consecutive_above_ma3=p.consec_ma3, t.consecutive_above_ma20=p.consec_ma20, t.consecutive_above_ma50=p.consec_ma50, t.avg_vol_30d=p.avg_vol WHERE t.ma_3 IS NULL" \
   "SELECT COUNT(*) FROM ms_t_stk_sis WHERE ma_3 IS NULL" \
   500000
-run_sql "DROP TABLE IF EXISTS _tmp_ma;"
-rm -f /tmp/_ma.csv
-
-log "计算 consecutive_above_ma3 (Python + temp table)..."
-# 导出 → Python 计算连续天数 → 写 CSV → LOAD DATA LOCAL
-$MYSQL_CMD "$MO_DB" -N -B -e "
-SELECT SISTKC, trade_date, CASE WHEN SICLSE > ma_3 THEN 1 ELSE 0 END
-FROM ms_t_stk_sis
-WHERE ma_3 IS NOT NULL
-ORDER BY SISTKC, trade_date;
-" 2>/dev/null | python3 -c "
-import sys
-prev, streak = None, 0
-for line in sys.stdin:
-    code, date, above = line.strip().split('\t')
-    if code != prev: streak = 0; prev = code
-    streak = streak + 1 if above == '1' else 0
-    print(f'{code},{date},{streak}')
-" > /tmp/_consecutive_ma3.csv
-
-row_count=$(wc -l < /tmp/_consecutive_ma3.csv)
-log "  Python 计算完成: $row_count 行"
-
-run_sql "DROP TABLE IF EXISTS _tmp_consec_ma3;"
-run_sql "CREATE TABLE _tmp_consec_ma3 (SISTKC VARCHAR(10), trade_date DATE, streak INT);"
-$MYSQL_CMD "$MO_DB" --local-infile=1 -e "
-LOAD DATA LOCAL INFILE '/tmp/_consecutive_ma3.csv'
-INTO TABLE _tmp_consec_ma3
-FIELDS TERMINATED BY ','
-LINES TERMINATED BY '\n';
-" 2>&1 | { grep -v "Warning.*password" || true; }
-log "  batched updating..."
-run_sql_batched \
-  "UPDATE ms_t_stk_sis t JOIN _tmp_consec_ma3 c ON t.SISTKC = c.SISTKC AND t.trade_date = c.trade_date SET t.consecutive_above_ma3 = c.streak WHERE t.consecutive_above_ma3 IS NULL" \
-  "SELECT COUNT(*) FROM ms_t_stk_sis WHERE consecutive_above_ma3 IS NULL AND ma_3 IS NOT NULL" \
-  500000
-run_sql "DROP TABLE IF EXISTS _tmp_consec_ma3;"
-rm -f /tmp/_consecutive_ma3.csv
-
-log "计算 consecutive_above_ma20 (Python + temp table)..."
-$MYSQL_CMD "$MO_DB" -N -B -e "
-SELECT SISTKC, trade_date, CASE WHEN SICLSE > ma_20 THEN 1 ELSE 0 END
-FROM ms_t_stk_sis
-WHERE ma_20 IS NOT NULL
-ORDER BY SISTKC, trade_date;
-" 2>/dev/null | python3 -c "
-import sys
-prev, streak = None, 0
-for line in sys.stdin:
-    code, date, above = line.strip().split('\t')
-    if code != prev: streak = 0; prev = code
-    streak = streak + 1 if above == '1' else 0
-    print(f'{code},{date},{streak}')
-" > /tmp/_consecutive_ma20.csv
-
-row_count=$(wc -l < /tmp/_consecutive_ma20.csv)
-log "  Python 计算完成: $row_count 行"
-
-run_sql "DROP TABLE IF EXISTS _tmp_consec_ma20;"
-run_sql "CREATE TABLE _tmp_consec_ma20 (SISTKC VARCHAR(10), trade_date DATE, streak INT);"
-$MYSQL_CMD "$MO_DB" --local-infile=1 -e "
-LOAD DATA LOCAL INFILE '/tmp/_consecutive_ma20.csv'
-INTO TABLE _tmp_consec_ma20
-FIELDS TERMINATED BY ','
-LINES TERMINATED BY '\n';
-" 2>&1 | { grep -v "Warning.*password" || true; }
-log "  batched updating..."
-run_sql_batched \
-  "UPDATE ms_t_stk_sis t JOIN _tmp_consec_ma20 c ON t.SISTKC = c.SISTKC AND t.trade_date = c.trade_date SET t.consecutive_above_ma20 = c.streak WHERE t.consecutive_above_ma20 IS NULL" \
-  "SELECT COUNT(*) FROM ms_t_stk_sis WHERE consecutive_above_ma20 IS NULL AND ma_20 IS NOT NULL" \
-  500000
-run_sql "DROP TABLE IF EXISTS _tmp_consec_ma20;"
-rm -f /tmp/_consecutive_ma20.csv
-
-log "计算 consecutive_above_ma50 (Python + temp table)..."
-$MYSQL_CMD "$MO_DB" -N -B -e "
-SELECT SISTKC, trade_date, SICLSE, ma_50 FROM ms_t_stk_sis
-WHERE ma_50 IS NOT NULL ORDER BY SISTKC, trade_date;
-" 2>/dev/null | python3 -c "
-import sys
-from collections import deque
-
-prev = None
-buf = deque(maxlen=50)
-
-for line in sys.stdin:
-    parts = line.rstrip().split('\t')
-    code, date = parts[0], parts[1]
-    close = float(parts[2]) if parts[2] not in ('NULL', '') else 0
-    ma50 = float(parts[3]) if parts[3] not in ('NULL', '') else 0
-    if code != prev:
-        buf = deque(maxlen=50)
-        prev = code
-    buf.append(1 if close > ma50 else 0)
-    print(f'{code},{date},{sum(buf)}')
-" > /tmp/_consec_ma50.csv
-
-row_count=$(wc -l < /tmp/_consec_ma50.csv)
-log "  Python 计算完成: $row_count 行"
-
-run_sql "DROP TABLE IF EXISTS _tmp_consec_ma50;"
-run_sql "CREATE TABLE _tmp_consec_ma50 (SISTKC VARCHAR(10), trade_date DATE, consec INT);"
-$MYSQL_CMD "$MO_DB" --local-infile=1 -e "
-LOAD DATA LOCAL INFILE '/tmp/_consec_ma50.csv'
-INTO TABLE _tmp_consec_ma50
-FIELDS TERMINATED BY ','
-LINES TERMINATED BY '\n';
-" 2>&1 | { grep -v "Warning.*password" || true; }
-log "  batched updating..."
-run_sql_batched \
-  "UPDATE ms_t_stk_sis t JOIN _tmp_consec_ma50 c ON t.SISTKC = c.SISTKC AND t.trade_date = c.trade_date SET t.consecutive_above_ma50 = c.consec WHERE t.consecutive_above_ma50 IS NULL" \
-  "SELECT COUNT(*) FROM ms_t_stk_sis WHERE consecutive_above_ma50 IS NULL AND ma_50 IS NOT NULL" \
-  500000
-run_sql "DROP TABLE IF EXISTS _tmp_consec_ma50;"
-rm -f /tmp/_consec_ma50.csv
-
-log "计算 avg_vol_30d (Python + temp table)..."
-$MYSQL_CMD "$MO_DB" -N -B -e "
-SELECT SISTKC, trade_date, SIVOL FROM ms_t_stk_sis ORDER BY SISTKC, trade_date;
-" 2>/dev/null | python3 -c "
-import sys
-from collections import deque
-
-prev = None
-vols = deque(maxlen=30)
-
-for line in sys.stdin:
-    parts = line.rstrip().split('\t')
-    code, date = parts[0], parts[1]
-    vol = float(parts[2]) if len(parts) > 2 and parts[2] not in ('NULL', '') else 0
-    if code != prev:
-        vols = deque(maxlen=30)
-        prev = code
-    # avg of preceding 30 days (before current), NULL if < 30
-    if len(vols) >= 30:
-        print(f'{code},{date},{sum(vols)/30:.4f}')
-    else:
-        print(f'{code},{date},\\\N')
-    vols.append(vol)
-" > /tmp/_avgvol.csv
-
-row_count=$(wc -l < /tmp/_avgvol.csv)
-log "  Python 计算完成: $row_count 行"
-
-run_sql "DROP TABLE IF EXISTS _tmp_avgvol;"
-run_sql "CREATE TABLE _tmp_avgvol (SISTKC VARCHAR(10), trade_date DATE, avg_vol DOUBLE);"
-$MYSQL_CMD "$MO_DB" --local-infile=1 -e "
-LOAD DATA LOCAL INFILE '/tmp/_avgvol.csv'
-INTO TABLE _tmp_avgvol
-FIELDS TERMINATED BY ','
-LINES TERMINATED BY '\n';
-" 2>&1 | { grep -v "Warning.*password" || true; }
-log "  batched updating by stock code prefix..."
-for prefix in 0 1 2 3 4 5 6 7 8 9; do
-  cnt=$($MYSQL_CMD "$MO_DB" -N -B -e "SELECT COUNT(*) FROM _tmp_avgvol WHERE SISTKC LIKE '${prefix}%';" 2>/dev/null)
-  [ "${cnt:-0}" -eq 0 ] && continue
-  log "    prefix $prefix: $cnt rows"
-  run_sql "UPDATE ms_t_stk_sis t JOIN _tmp_avgvol calc ON t.SISTKC = calc.SISTKC AND t.trade_date = calc.trade_date SET t.avg_vol_30d = calc.avg_vol WHERE t.SISTKC LIKE '${prefix}%';"
-done
-run_sql "DROP TABLE IF EXISTS _tmp_avgvol;"
-rm -f /tmp/_avgvol.csv
+run_sql "DROP TABLE IF EXISTS _tmp_precompute;"
+rm -f /tmp/_precompute.csv
 log "预计算列完成"
 
 # 验证预计算列
