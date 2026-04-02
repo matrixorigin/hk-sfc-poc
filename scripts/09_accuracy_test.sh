@@ -116,8 +116,8 @@ if 'data: ' in line:
   llm_full=$($MYSQL_CMD -e "$llm_sql" 2>/dev/null)
   gt_full=$($MYSQL_CMD -e "$gt_sql" 2>/dev/null)
   local llm_count gt_count
-  llm_count=$(echo "$llm_full" | tail -n +2 | grep -c .)  # 跳过 header 行
-  gt_count=$(echo "$gt_full" | tail -n +2 | grep -c .)
+  llm_count=$(echo "$llm_full" | grep -c . || true)
+  gt_count=$(echo "$gt_full" | grep -c . || true)
 
   # 默认无 checks 时：行数 ±20%
   if [ -z "$checks" ] || [ "$checks" = "-" ]; then
