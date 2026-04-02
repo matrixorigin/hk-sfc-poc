@@ -111,17 +111,13 @@ if 'data: ' in line:
     return 1
   fi
 
-  # 获取 LLM 行数和 GT 行数
+  # 直接执行 SQL，数输出行数（不包装子查询，避免分号/CTE 等兼容问题）
+  local llm_full gt_full
+  llm_full=$($MYSQL_CMD -e "$llm_sql" 2>/dev/null)
+  gt_full=$($MYSQL_CMD -e "$gt_sql" 2>/dev/null)
   local llm_count gt_count
-  llm_count=$($MYSQL_CMD -e "SELECT COUNT(*) FROM ($llm_sql) _t;" 2>/dev/null | tail -1)
-  gt_count=$($MYSQL_CMD -e "SELECT COUNT(*) FROM ($gt_sql) _t;" 2>/dev/null | tail -1)
-  llm_count=${llm_count:-0}; gt_count=${gt_count:-0}
-
-  # 获取 LLM 全量结果（用于 contains/excludes 检查）
-  local llm_full=""
-  if echo "$checks" | grep -qE "contains=|excludes="; then
-    llm_full=$($MYSQL_CMD -e "$llm_sql" 2>/dev/null)
-  fi
+  llm_count=$(echo "$llm_full" | tail -n +2 | grep -c .)  # 跳过 header 行
+  gt_count=$(echo "$gt_full" | tail -n +2 | grep -c .)
 
   # 默认无 checks 时：行数 ±20%
   if [ -z "$checks" ] || [ "$checks" = "-" ]; then
