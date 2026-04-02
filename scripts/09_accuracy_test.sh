@@ -74,19 +74,11 @@ if last:
 }
 
 # ============================================================
-# 跑 ground truth SQL，得到期望行数
-# ============================================================
-ground_truth_count() {
-  local sql="$1"
-  $MYSQL_CMD -e "SELECT COUNT(*) FROM ($sql) _gt;" 2>/dev/null | tail -1
-}
-
-# ============================================================
-# 验证：比对 LLM 结果行数与 ground truth 行数
+# 验证：比较 ground truth 与 LLM 结果集的关键列覆盖率（recall）
 #   assert_case <label> <sid> <ground_truth_sql> [must_not_contain]
 # ============================================================
 assert_case() {
-  local label="$1" sid="$2" gt_sql="$3" must_not_contain="${4:-}" tolerance="${5:-0}"
+  local label="$1" sid="$2" gt_sql="$3" must_not_contain="${4:-}" must_contain="${5:-}"
 
   local f="$OUT/$sid.result"
   if [ ! -s "$f" ]; then
@@ -106,50 +98,74 @@ if 'data: ' in line:
     return 1
   fi
 
-  local actual
-  actual=$(python3 -c "import json;print(json.load(open('$f')).get('total_count',0))" 2>/dev/null)
-
-  local expected
-  expected=$(ground_truth_count "$gt_sql")
-  if [ -z "$expected" ]; then
-    echo "  ❌ $label — ground truth SQL failed"
+  # 提取 LLM 生成的 SQL，直接在 MO 执行，和 ground truth 比较第1列值集合的 recall
+  local llm_sql
+  llm_sql=$(python3 -c "import json;print(json.load(open('$f')).get('sql',''))" 2>/dev/null)
+  if [ -z "$llm_sql" ]; then
+    echo "  ❌ $label — no SQL in result"
     return 1
   fi
 
-  # 行数比对（支持 tolerance 范围）
-  local lo hi
-  lo=$((expected - tolerance))
-  hi=$((expected + tolerance))
-  if [ "$actual" -lt "$lo" ] 2>/dev/null || [ "$actual" -gt "$hi" ] 2>/dev/null; then
-    if [ "$tolerance" -gt 0 ] 2>/dev/null; then
-      echo "  ❌ $label — rows=$actual, expected=$lo~$hi"
-    else
-      echo "  ❌ $label — rows=$actual, expected=$expected"
-    fi
+  local result
+  result=$(python3 -c "
+import subprocess, sys
+
+def run_sql(sql):
+    out = subprocess.run(
+        ['mysql', '-h', '127.0.0.1', '-P', '16002',
+         '-u', '${ACCT}:moi_core_system', '-p$KEY',
+         'hk_sfc', '-N', '-B', '-e', sql],
+        capture_output=True, text=True, timeout=120
+    )
+    keys = set()
+    for line in out.stdout.strip().split('\n'):
+        if not line: continue
+        keys.add(line.split('\t')[0].strip())
+    return keys
+
+gt_keys = run_sql('''$gt_sql''')
+llm_keys = run_sql('''$llm_sql''')
+
+if not gt_keys:
+    print('ERROR:ground truth returned 0 rows')
+    sys.exit(0)
+
+matched = len(gt_keys & llm_keys)
+recall = matched / len(gt_keys)
+print(f'OK:{matched}/{len(gt_keys)}:{recall:.2f}:{len(llm_keys)}')
+" 2>/dev/null)
+
+  if [[ "$result" == ERROR:* ]]; then
+    echo "  ❌ $label — ${result#ERROR:}"
     return 1
   fi
 
-  # must_not_contain 验证
+  local matched gt_count recall_str llm_count
+  IFS=':' read -r _ matched_gt recall_str llm_count <<< "$result"
+  matched=$(echo "$matched_gt" | cut -d/ -f1)
+  gt_count=$(echo "$matched_gt" | cut -d/ -f2)
+  local recall_pct=$(python3 -c "print(int(float('$recall_str')*100))" 2>/dev/null)
+
+  # recall >= 80% 算通过
+  if [ "${recall_pct:-0}" -lt 80 ]; then
+    echo "  ❌ $label — recall=${recall_pct}% ($matched/$gt_count), llm_rows=$llm_count"
+    return 1
+  fi
+
+  # must_not_contain 验证（基于直接执行 LLM SQL 的完整结果）
   if [ -n "$must_not_contain" ] && [ "$must_not_contain" != "-" ]; then
+    local llm_full
+    llm_full=$($MYSQL_CMD -e "$llm_sql" 2>/dev/null)
     local IFS=','
     for val in $must_not_contain; do
-      if python3 -c "
-import json
-d=json.load(open('$f'))
-rows=d.get('rows') or []
-exit(0 if any('$val' in str(cell) for row in rows for cell in row) else 1)
-" 2>/dev/null; then
-        echo "  ❌ $label — rows=$actual, unexpected value '$val' found"
+      if echo "$llm_full" | grep -q "$val"; then
+        echo "  ❌ $label — unexpected value '$val' found"
         return 1
       fi
     done
   fi
 
-  if [ "$tolerance" -gt 0 ] 2>/dev/null; then
-    echo "  ✅ $label — rows=$actual (expected=$lo~$hi)"
-  else
-    echo "  ✅ $label — rows=$actual (expected=$expected)"
-  fi
+  echo "  ✅ $label — recall=${recall_pct}% ($matched/$gt_count), llm_rows=$llm_count"
   return 0
 }
 
@@ -163,7 +179,7 @@ echo -n "  DB: "; $MYSQL_CMD -e "SELECT 'ok'" 2>/dev/null | tail -1 || echo "FAI
 echo "  并发: $CONCURRENCY"
 
 # ============================================================
-# 用例定义：sid \t label \t question \t ground_truth_sql \t must_not_contain \t tolerance
+# 用例定义：sid \t label \t question \t ground_truth_sql \t must_not_contain \t must_contain
 # ============================================================
 CASES=$(cat << 'CASES_EOF'
 v1	V1: HSI跌幅>2%成交量	在2026年市场指数日跌幅超过2%的交易日，全市场总成交量是多少？	SELECT SUM(s.SIVOL) AS total_vol FROM ms_v_stk_hsi_daily h JOIN ms_t_stk_sis s ON h.trade_date = s.trade_date WHERE h.hsi_pct_change < -2 AND h.trade_date >= '2026-01-01' AND h.trade_date <= '2026-12-31'
@@ -176,7 +192,7 @@ b1	B1: HSI跌幅+TOP20	2025年4月恒指跌幅超过2%时，成交量最大的20
 b4	B4: Q1新闻放量	检测2025年1月至3月期间，在重大新闻公告发布当天，成交量超过前30日平均成交量3倍的股票。重大新闻定义为sehknews表中typeid in (0,3,7,8,10,14,18,21,25,26,28,32)的记录。	SELECT n.trade_date, n.securitycode, s.SISTKN FROM (SELECT securitycode, trade_date FROM sehknews WHERE typeid IN (0,3,7,8,10,14,18,21,25,26,28,32) AND timestamp >= '2025-01-01' AND timestamp < '2025-04-01' GROUP BY securitycode, trade_date) n JOIN ms_t_stk_sis s ON n.securitycode = s.SISTKC AND n.trade_date = s.trade_date WHERE s.avg_vol_30d > 0 AND s.SIVOL > s.avg_vol_30d * 3
 b5	B5: 股票88营收YoY	展示股票88从2023年到2025年的营收增长情况	SELECT a.fin_yr, a.quarter, a.turnover, b.turnover AS prev FROM profit_loss a JOIN profit_loss b ON a.stock_code = b.stock_code AND a.quarter = b.quarter AND CAST(SUBSTRING(a.fin_yr,1,4) AS UNSIGNED) = CAST(SUBSTRING(b.fin_yr,1,4) AS UNSIGNED) + 1 AND SUBSTRING(a.fin_yr,5,2) = SUBSTRING(b.fin_yr,5,2) WHERE a.stock_code = '88' AND a.fin_yr >= '202301'
 b6	B6: 恒指最大跌幅	2025年恒生指数单日最大跌幅是多少？发生在哪一天？	SELECT trade_date, hsi_pct_change FROM ms_v_stk_hsi_daily WHERE trade_date >= '2025-01-01' AND trade_date <= '2025-12-31' ORDER BY hsi_pct_change ASC LIMIT 1
-s1	S1: 行业市值增长率	2025年一季度，哪些行业的平均市值增长率最高？	SELECT industry_name, (AVG(CASE WHEN ref_date='2025-03-31' THEN SICAP END) - AVG(CASE WHEN ref_date='2025-01-31' THEN SICAP END)) / AVG(CASE WHEN ref_date='2025-01-31' THEN SICAP END) AS growth FROM ms_v_stock_capital WHERE ref_date IN ('2025-01-31','2025-03-31') AND industry_name IS NOT NULL GROUP BY industry_name HAVING AVG(CASE WHEN ref_date='2025-01-31' THEN SICAP END) IS NOT NULL ORDER BY growth DESC LIMIT 5
+s1	S1: 行业市值增长率	2025年一季度，哪些行业的平均市值增长率最高？	SELECT industry_name, (AVG(CASE WHEN ref_date='2025-03-31' THEN SICAP END) - AVG(CASE WHEN ref_date='2025-01-31' THEN SICAP END)) / AVG(CASE WHEN ref_date='2025-01-31' THEN SICAP END) AS growth FROM ms_v_stock_capital WHERE ref_date IN ('2025-01-31','2025-03-31') AND industry_name IS NOT NULL GROUP BY industry_name HAVING AVG(CASE WHEN ref_date='2025-01-31' THEN SICAP END) IS NOT NULL ORDER BY growth DESC
 s2	S2: 2月新闻放量TOP20	2025年2月份有哪些股票在发布重大新闻公告的当天成交量异常放大（超过前30日均量3倍以上）？列出前20条	SELECT n.trade_date, n.securitycode, s.SISTKN FROM (SELECT securitycode, trade_date FROM sehknews WHERE typeid IN (0,3,7,8,10,14,18,21,25,26,28,32) AND timestamp >= '2025-02-01' AND timestamp < '2025-03-01' GROUP BY securitycode, trade_date) n JOIN ms_t_stk_sis s ON n.securitycode = s.SISTKC AND n.trade_date = s.trade_date WHERE s.avg_vol_30d > 0 AND s.SIVOL > s.avg_vol_30d * 3 LIMIT 20
 s3	S3: 连续5天>MA20	2025年1月到3月，哪些股票代码小于1000的股票收盘价连续5天高于20日均线？	SELECT DISTINCT SISTKC, SISTKN FROM ms_t_stk_sis WHERE trade_date BETWEEN '2025-01-01' AND '2025-03-31' AND SISTKC < '01000' AND SISTKC >= '00001' AND consecutive_above_ma20 >= 5
 s4	S4: 恒指月末+涨跌幅	2025年各月的恒生指数月末收盘值和当月涨跌幅分别是多少？	SELECT trade_date, HSHSI FROM (SELECT trade_date, HSHSI, ROW_NUMBER() OVER (PARTITION BY YEAR(trade_date), MONTH(trade_date) ORDER BY trade_date DESC) AS rn FROM ms_v_stk_hsi_daily WHERE trade_date >= '2025-01-01' AND trade_date <= '2025-12-31') t WHERE rn = 1
@@ -195,9 +211,11 @@ log "========== 并发发送查询 (concurrency=$CONCURRENCY) =========="
 pids=()
 count=0
 
-while IFS=$'\t' read -r sid label question gt_sql must_not tolerance; do
+while IFS=$'\t' read -r sid label question gt_sql must_not must_contain; do
   [ -z "$sid" ] && continue
-  [ -n "$FILTER" ] && [ "$sid" != "$FILTER" ] && continue
+  if [ -n "$FILTER" ]; then
+    echo ",$FILTER," | grep -q ",$sid," || continue
+  fi
   log "  提交: $label"
   fire "$sid" "$question" &
   pids+=($!)
@@ -232,10 +250,12 @@ check_or_die() {
   fi
 }
 
-while IFS=$'\t' read -r sid label question gt_sql must_not tolerance; do
+while IFS=$'\t' read -r sid label question gt_sql must_not must_contain; do
   [ -z "$sid" ] && continue
-  [ -n "$FILTER" ] && [ "$sid" != "$FILTER" ] && continue
-  check_or_die "$label" "$sid" "$gt_sql" "$must_not" "$tolerance"
+  if [ -n "$FILTER" ]; then
+    echo ",$FILTER," | grep -q ",$sid," || continue
+  fi
+  check_or_die "$label" "$sid" "$gt_sql" "$must_not" "$must_contain"
 done <<< "$CASES"
 
 # V5: CCASS — 数据可能不存在
