@@ -42,6 +42,29 @@ run_sql() {
     $MYSQL_CMD "$MO_DB" -e "$1" 2>&1 | { grep -v "Warning.*password" || true; }
 }
 
+# 分批 UPDATE：对 WHERE 条件匹配的行按 LIMIT 逐批执行，避免 MO context deadline exceeded
+# $1 = UPDATE SQL（不含 LIMIT）  $2 = 检查剩余行数的 SQL  $3 = 批次大小（默认50万）
+# 安全机制：remaining 不再减少时自动退出，防止死循环
+run_sql_batched() {
+    local sql="$1" check_sql="$2" batch="${3:-500000}"
+    local prev_remaining=-1
+    while true; do
+        local remaining
+        remaining=$($MYSQL_CMD "$MO_DB" -N -B -e "$check_sql" 2>/dev/null)
+        remaining=${remaining:-0}
+        [ "$remaining" -eq 0 ] && break
+        if [ "$remaining" -eq "$prev_remaining" ]; then
+            log "  ⚠ ERROR: remaining stuck at $remaining — check SQL or temp table mismatch"
+            log "  UPDATE SQL: ${sql:0:120}..."
+            log "  CHECK  SQL: $check_sql"
+            return 1
+        fi
+        prev_remaining=$remaining
+        log "  remaining: $remaining, batch $batch..."
+        $MYSQL_CMD "$MO_DB" -e "${sql} LIMIT ${batch};" 2>&1 | { grep -v "Warning.*password" || true; }
+    done
+}
+
 load_csv() {
     local table="$1"
     local file="$2"
@@ -189,53 +212,17 @@ rm -f "$PROFIT_LOSS_CSV"
 log ""
 log "========== Step 4: 日期标准化 =========="
 
-log "ms_t_stk_hsi.trade_date..."
-run_sql "
-UPDATE ms_t_stk_hsi SET trade_date = CAST(
-  CONCAT(
-    SUBSTR(HSTXDT, 6, 4), '-',
-    CASE SUBSTR(HSTXDT, 3, 3)
-      WHEN 'JAN' THEN '01' WHEN 'FEB' THEN '02' WHEN 'MAR' THEN '03'
-      WHEN 'APR' THEN '04' WHEN 'MAY' THEN '05' WHEN 'JUN' THEN '06'
-      WHEN 'JUL' THEN '07' WHEN 'AUG' THEN '08' WHEN 'SEP' THEN '09'
-      WHEN 'OCT' THEN '10' WHEN 'NOV' THEN '11' WHEN 'DEC' THEN '12'
-    END, '-',
-    SUBSTR(HSTXDT, 1, 2)
-  ) AS DATE
-) WHERE trade_date IS NULL;
-"
+log "ms_t_stk_hsi.trade_date (batched)..."
+run_sql_batched "UPDATE ms_t_stk_hsi SET trade_date = CAST(CONCAT(SUBSTR(HSTXDT, 6, 4), '-', CASE SUBSTR(HSTXDT, 3, 3) WHEN 'JAN' THEN '01' WHEN 'FEB' THEN '02' WHEN 'MAR' THEN '03' WHEN 'APR' THEN '04' WHEN 'MAY' THEN '05' WHEN 'JUN' THEN '06' WHEN 'JUL' THEN '07' WHEN 'AUG' THEN '08' WHEN 'SEP' THEN '09' WHEN 'OCT' THEN '10' WHEN 'NOV' THEN '11' WHEN 'DEC' THEN '12' END, '-', SUBSTR(HSTXDT, 1, 2)) AS DATE) WHERE trade_date IS NULL" \
+  "SELECT COUNT(*) FROM ms_t_stk_hsi WHERE trade_date IS NULL" 500000
 
-log "ms_t_stk_sis.trade_date..."
-run_sql "
-UPDATE ms_t_stk_sis SET trade_date = CAST(
-  CONCAT(
-    SUBSTR(SITXDT, 6, 4), '-',
-    CASE SUBSTR(SITXDT, 3, 3)
-      WHEN 'JAN' THEN '01' WHEN 'FEB' THEN '02' WHEN 'MAR' THEN '03'
-      WHEN 'APR' THEN '04' WHEN 'MAY' THEN '05' WHEN 'JUN' THEN '06'
-      WHEN 'JUL' THEN '07' WHEN 'AUG' THEN '08' WHEN 'SEP' THEN '09'
-      WHEN 'OCT' THEN '10' WHEN 'NOV' THEN '11' WHEN 'DEC' THEN '12'
-    END, '-',
-    SUBSTR(SITXDT, 1, 2)
-  ) AS DATE
-) WHERE trade_date IS NULL;
-"
+log "ms_t_stk_sis.trade_date (batched)..."
+run_sql_batched "UPDATE ms_t_stk_sis SET trade_date = CAST(CONCAT(SUBSTR(SITXDT, 6, 4), '-', CASE SUBSTR(SITXDT, 3, 3) WHEN 'JAN' THEN '01' WHEN 'FEB' THEN '02' WHEN 'MAR' THEN '03' WHEN 'APR' THEN '04' WHEN 'MAY' THEN '05' WHEN 'JUN' THEN '06' WHEN 'JUL' THEN '07' WHEN 'AUG' THEN '08' WHEN 'SEP' THEN '09' WHEN 'OCT' THEN '10' WHEN 'NOV' THEN '11' WHEN 'DEC' THEN '12' END, '-', SUBSTR(SITXDT, 1, 2)) AS DATE) WHERE trade_date IS NULL" \
+  "SELECT COUNT(*) FROM ms_t_stk_sis WHERE trade_date IS NULL" 500000
 
-log "ms_v_stock_capital.ref_date..."
-run_sql "
-UPDATE ms_v_stock_capital SET ref_date = CAST(
-  CONCAT(
-    '20', SUBSTR(SIRXDT, 8, 2), '-',
-    CASE SUBSTR(SIRXDT, 4, 3)
-      WHEN 'JAN' THEN '01' WHEN 'FEB' THEN '02' WHEN 'MAR' THEN '03'
-      WHEN 'APR' THEN '04' WHEN 'MAY' THEN '05' WHEN 'JUN' THEN '06'
-      WHEN 'JUL' THEN '07' WHEN 'AUG' THEN '08' WHEN 'SEP' THEN '09'
-      WHEN 'OCT' THEN '10' WHEN 'NOV' THEN '11' WHEN 'DEC' THEN '12'
-    END, '-',
-    SUBSTR(SIRXDT, 1, 2)
-  ) AS DATE
-) WHERE ref_date IS NULL;
-"
+log "ms_v_stock_capital.ref_date (batched)..."
+run_sql_batched "UPDATE ms_v_stock_capital SET ref_date = CAST(CONCAT('20', SUBSTR(SIRXDT, 8, 2), '-', CASE SUBSTR(SIRXDT, 4, 3) WHEN 'JAN' THEN '01' WHEN 'FEB' THEN '02' WHEN 'MAR' THEN '03' WHEN 'APR' THEN '04' WHEN 'MAY' THEN '05' WHEN 'JUN' THEN '06' WHEN 'JUL' THEN '07' WHEN 'AUG' THEN '08' WHEN 'SEP' THEN '09' WHEN 'OCT' THEN '10' WHEN 'NOV' THEN '11' WHEN 'DEC' THEN '12' END, '-', SUBSTR(SIRXDT, 1, 2)) AS DATE) WHERE ref_date IS NULL" \
+  "SELECT COUNT(*) FROM ms_v_stock_capital WHERE ref_date IS NULL" 500000
 log "sehknews.trade_date (nearest trading day)..."
 run_sql "
 UPDATE sehknews n
@@ -331,27 +318,65 @@ log "  industry_name 填充: $filled 行"
 log ""
 log "========== Step 5: 预计算列 =========="
 
-log "计算 MA3/MA20/MA50/MA100..."
-run_sql "
-UPDATE ms_t_stk_sis t
-JOIN (
-    SELECT SISTKC, trade_date,
-           AVG(SICLSE) OVER (PARTITION BY SISTKC ORDER BY trade_date ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS ma3,
-           AVG(SICLSE) OVER (PARTITION BY SISTKC ORDER BY trade_date ROWS BETWEEN 19 PRECEDING AND CURRENT ROW) AS ma20,
-           AVG(SICLSE) OVER (PARTITION BY SISTKC ORDER BY trade_date ROWS BETWEEN 49 PRECEDING AND CURRENT ROW) AS ma50,
-           AVG(SICLSE) OVER (PARTITION BY SISTKC ORDER BY trade_date ROWS BETWEEN 99 PRECEDING AND CURRENT ROW) AS ma100
-    FROM ms_t_stk_sis
-    WHERE SISTKC < '10000'
-) calc ON t.SISTKC = calc.SISTKC AND t.trade_date = calc.trade_date
-SET t.ma_3 = calc.ma3, t.ma_20 = calc.ma20, t.ma_50 = calc.ma50, t.ma_100 = calc.ma100;
-"
+log "计算 MA3/MA20/MA50/MA100 (Python + temp table)..."
+$MYSQL_CMD "$MO_DB" -N -B -e "
+SELECT SISTKC, trade_date, SICLSE FROM ms_t_stk_sis ORDER BY SISTKC, trade_date;
+" 2>/dev/null | python3 -c "
+import sys
+from collections import deque
+
+prev = None
+buf = deque(maxlen=100)
+
+def fmt(v):
+    return f'{v:.10f}' if v is not None else r'\N'
+
+def avg_w(buf, w):
+    n = len(buf)
+    start = max(0, n - w)
+    s = c = 0
+    for i in range(start, n):
+        if buf[i] is not None:
+            s += buf[i]; c += 1
+    return s / c if c else None
+
+for line in sys.stdin:
+    parts = line.rstrip().split('\t')
+    code, date = parts[0], parts[1]
+    v = parts[2] if len(parts) > 2 else ''
+    close = float(v) if v and v not in ('NULL', r'\N') else None
+    if code != prev:
+        buf = deque(maxlen=100)
+        prev = code
+    buf.append(close)
+    print(f'{code},{date},{fmt(avg_w(buf,3))},{fmt(avg_w(buf,20))},{fmt(avg_w(buf,50))},{fmt(avg_w(buf,100))}')
+" > /tmp/_ma.csv
+
+row_count=$(wc -l < /tmp/_ma.csv)
+log "  Python 计算完成: $row_count 行"
+
+run_sql "DROP TABLE IF EXISTS _tmp_ma;"
+run_sql "CREATE TABLE _tmp_ma (SISTKC VARCHAR(10), trade_date DATE, ma3 DOUBLE, ma20 DOUBLE, ma50 DOUBLE, ma100 DOUBLE);"
+$MYSQL_CMD "$MO_DB" --local-infile=1 -e "
+LOAD DATA LOCAL INFILE '/tmp/_ma.csv'
+INTO TABLE _tmp_ma
+FIELDS TERMINATED BY ','
+LINES TERMINATED BY '\n';
+" 2>&1 | { grep -v "Warning.*password" || true; }
+log "  batched updating..."
+run_sql_batched \
+  "UPDATE ms_t_stk_sis t JOIN _tmp_ma calc ON t.SISTKC = calc.SISTKC AND t.trade_date = calc.trade_date SET t.ma_3 = calc.ma3, t.ma_20 = calc.ma20, t.ma_50 = calc.ma50, t.ma_100 = calc.ma100 WHERE t.ma_3 IS NULL" \
+  "SELECT COUNT(*) FROM ms_t_stk_sis WHERE ma_3 IS NULL" \
+  500000
+run_sql "DROP TABLE IF EXISTS _tmp_ma;"
+rm -f /tmp/_ma.csv
 
 log "计算 consecutive_above_ma3 (Python + temp table)..."
 # 导出 → Python 计算连续天数 → 写 CSV → LOAD DATA LOCAL
 $MYSQL_CMD "$MO_DB" -N -B -e "
 SELECT SISTKC, trade_date, CASE WHEN SICLSE > ma_3 THEN 1 ELSE 0 END
 FROM ms_t_stk_sis
-WHERE SISTKC < '10000' AND ma_3 IS NOT NULL
+WHERE ma_3 IS NOT NULL
 ORDER BY SISTKC, trade_date;
 " 2>/dev/null | python3 -c "
 import sys
@@ -374,11 +399,11 @@ INTO TABLE _tmp_consec_ma3
 FIELDS TERMINATED BY ','
 LINES TERMINATED BY '\n';
 " 2>&1 | { grep -v "Warning.*password" || true; }
-run_sql "
-UPDATE ms_t_stk_sis t
-JOIN _tmp_consec_ma3 c ON t.SISTKC = c.SISTKC AND t.trade_date = c.trade_date
-SET t.consecutive_above_ma3 = c.streak;
-"
+log "  batched updating..."
+run_sql_batched \
+  "UPDATE ms_t_stk_sis t JOIN _tmp_consec_ma3 c ON t.SISTKC = c.SISTKC AND t.trade_date = c.trade_date SET t.consecutive_above_ma3 = c.streak WHERE t.consecutive_above_ma3 IS NULL" \
+  "SELECT COUNT(*) FROM ms_t_stk_sis WHERE consecutive_above_ma3 IS NULL AND ma_3 IS NOT NULL" \
+  500000
 run_sql "DROP TABLE IF EXISTS _tmp_consec_ma3;"
 rm -f /tmp/_consecutive_ma3.csv
 
@@ -386,7 +411,7 @@ log "计算 consecutive_above_ma20 (Python + temp table)..."
 $MYSQL_CMD "$MO_DB" -N -B -e "
 SELECT SISTKC, trade_date, CASE WHEN SICLSE > ma_20 THEN 1 ELSE 0 END
 FROM ms_t_stk_sis
-WHERE SISTKC < '10000' AND ma_20 IS NOT NULL
+WHERE ma_20 IS NOT NULL
 ORDER BY SISTKC, trade_date;
 " 2>/dev/null | python3 -c "
 import sys
@@ -409,41 +434,101 @@ INTO TABLE _tmp_consec_ma20
 FIELDS TERMINATED BY ','
 LINES TERMINATED BY '\n';
 " 2>&1 | { grep -v "Warning.*password" || true; }
-run_sql "
-UPDATE ms_t_stk_sis t
-JOIN _tmp_consec_ma20 c ON t.SISTKC = c.SISTKC AND t.trade_date = c.trade_date
-SET t.consecutive_above_ma20 = c.streak;
-"
+log "  batched updating..."
+run_sql_batched \
+  "UPDATE ms_t_stk_sis t JOIN _tmp_consec_ma20 c ON t.SISTKC = c.SISTKC AND t.trade_date = c.trade_date SET t.consecutive_above_ma20 = c.streak WHERE t.consecutive_above_ma20 IS NULL" \
+  "SELECT COUNT(*) FROM ms_t_stk_sis WHERE consecutive_above_ma20 IS NULL AND ma_20 IS NOT NULL" \
+  500000
 run_sql "DROP TABLE IF EXISTS _tmp_consec_ma20;"
 rm -f /tmp/_consecutive_ma20.csv
 
-log "计算 consecutive_above_ma50..."
-run_sql "
-UPDATE ms_t_stk_sis t
-JOIN (
-    SELECT SISTKC, trade_date,
-           SUM(CASE WHEN SICLSE > ma_50 THEN 1 ELSE 0 END) OVER (
-               PARTITION BY SISTKC ORDER BY trade_date
-               ROWS BETWEEN 49 PRECEDING AND CURRENT ROW
-           ) AS consec
-    FROM ms_t_stk_sis
-    WHERE SISTKC < '10000' AND ma_50 IS NOT NULL
-) calc ON t.SISTKC = calc.SISTKC AND t.trade_date = calc.trade_date
-SET t.consecutive_above_ma50 = calc.consec;
-"
+log "计算 consecutive_above_ma50 (Python + temp table)..."
+$MYSQL_CMD "$MO_DB" -N -B -e "
+SELECT SISTKC, trade_date, SICLSE, ma_50 FROM ms_t_stk_sis
+WHERE ma_50 IS NOT NULL ORDER BY SISTKC, trade_date;
+" 2>/dev/null | python3 -c "
+import sys
+from collections import deque
 
-log "计算 avg_vol_30d（不足30个交易日写NULL）..."
-run_sql "
-UPDATE ms_t_stk_sis t
-JOIN (
-    SELECT SISTKC, trade_date,
-           AVG(SIVOL) OVER (PARTITION BY SISTKC ORDER BY trade_date ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING) AS avg30,
-           COUNT(SIVOL) OVER (PARTITION BY SISTKC ORDER BY trade_date ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING) AS cnt30
-    FROM ms_t_stk_sis
-    WHERE SISTKC < '10000'
-) calc ON t.SISTKC = calc.SISTKC AND t.trade_date = calc.trade_date
-SET t.avg_vol_30d = CASE WHEN calc.cnt30 >= 30 THEN calc.avg30 ELSE NULL END;
-"
+prev = None
+buf = deque(maxlen=50)
+
+for line in sys.stdin:
+    parts = line.rstrip().split('\t')
+    code, date = parts[0], parts[1]
+    close = float(parts[2]) if parts[2] not in ('NULL', '') else 0
+    ma50 = float(parts[3]) if parts[3] not in ('NULL', '') else 0
+    if code != prev:
+        buf = deque(maxlen=50)
+        prev = code
+    buf.append(1 if close > ma50 else 0)
+    print(f'{code},{date},{sum(buf)}')
+" > /tmp/_consec_ma50.csv
+
+row_count=$(wc -l < /tmp/_consec_ma50.csv)
+log "  Python 计算完成: $row_count 行"
+
+run_sql "DROP TABLE IF EXISTS _tmp_consec_ma50;"
+run_sql "CREATE TABLE _tmp_consec_ma50 (SISTKC VARCHAR(10), trade_date DATE, consec INT);"
+$MYSQL_CMD "$MO_DB" --local-infile=1 -e "
+LOAD DATA LOCAL INFILE '/tmp/_consec_ma50.csv'
+INTO TABLE _tmp_consec_ma50
+FIELDS TERMINATED BY ','
+LINES TERMINATED BY '\n';
+" 2>&1 | { grep -v "Warning.*password" || true; }
+log "  batched updating..."
+run_sql_batched \
+  "UPDATE ms_t_stk_sis t JOIN _tmp_consec_ma50 c ON t.SISTKC = c.SISTKC AND t.trade_date = c.trade_date SET t.consecutive_above_ma50 = c.consec WHERE t.consecutive_above_ma50 IS NULL" \
+  "SELECT COUNT(*) FROM ms_t_stk_sis WHERE consecutive_above_ma50 IS NULL AND ma_50 IS NOT NULL" \
+  500000
+run_sql "DROP TABLE IF EXISTS _tmp_consec_ma50;"
+rm -f /tmp/_consec_ma50.csv
+
+log "计算 avg_vol_30d (Python + temp table)..."
+$MYSQL_CMD "$MO_DB" -N -B -e "
+SELECT SISTKC, trade_date, SIVOL FROM ms_t_stk_sis ORDER BY SISTKC, trade_date;
+" 2>/dev/null | python3 -c "
+import sys
+from collections import deque
+
+prev = None
+vols = deque(maxlen=30)
+
+for line in sys.stdin:
+    parts = line.rstrip().split('\t')
+    code, date = parts[0], parts[1]
+    vol = float(parts[2]) if len(parts) > 2 and parts[2] not in ('NULL', '') else 0
+    if code != prev:
+        vols = deque(maxlen=30)
+        prev = code
+    # avg of preceding 30 days (before current), NULL if < 30
+    if len(vols) >= 30:
+        print(f'{code},{date},{sum(vols)/30:.4f}')
+    else:
+        print(f'{code},{date},\\\N')
+    vols.append(vol)
+" > /tmp/_avgvol.csv
+
+row_count=$(wc -l < /tmp/_avgvol.csv)
+log "  Python 计算完成: $row_count 行"
+
+run_sql "DROP TABLE IF EXISTS _tmp_avgvol;"
+run_sql "CREATE TABLE _tmp_avgvol (SISTKC VARCHAR(10), trade_date DATE, avg_vol DOUBLE);"
+$MYSQL_CMD "$MO_DB" --local-infile=1 -e "
+LOAD DATA LOCAL INFILE '/tmp/_avgvol.csv'
+INTO TABLE _tmp_avgvol
+FIELDS TERMINATED BY ','
+LINES TERMINATED BY '\n';
+" 2>&1 | { grep -v "Warning.*password" || true; }
+log "  batched updating by stock code prefix..."
+for prefix in 0 1 2 3 4 5 6 7 8 9; do
+  cnt=$($MYSQL_CMD "$MO_DB" -N -B -e "SELECT COUNT(*) FROM _tmp_avgvol WHERE SISTKC LIKE '${prefix}%';" 2>/dev/null)
+  [ "${cnt:-0}" -eq 0 ] && continue
+  log "    prefix $prefix: $cnt rows"
+  run_sql "UPDATE ms_t_stk_sis t JOIN _tmp_avgvol calc ON t.SISTKC = calc.SISTKC AND t.trade_date = calc.trade_date SET t.avg_vol_30d = calc.avg_vol WHERE t.SISTKC LIKE '${prefix}%';"
+done
+run_sql "DROP TABLE IF EXISTS _tmp_avgvol;"
+rm -f /tmp/_avgvol.csv
 log "预计算列完成"
 
 # 验证预计算列
@@ -507,7 +592,7 @@ UNION ALL SELECT 'profit_loss', COUNT(*) FROM profit_loss;
 # 验证关键字段非空
 log ""
 log "关键字段验证:"
-run_sql "SELECT 'trade_date NULL' AS chk, COUNT(*) AS cnt FROM ms_t_stk_sis WHERE trade_date IS NULL UNION ALL SELECT 'ma_50 NULL', COUNT(*) FROM ms_t_stk_sis WHERE ma_50 IS NULL AND SISTKC < '10000' UNION ALL SELECT 'ref_date NULL', COUNT(*) FROM ms_v_stock_capital WHERE ref_date IS NULL;"
+run_sql "SELECT 'trade_date NULL' AS chk, COUNT(*) AS cnt FROM ms_t_stk_sis WHERE trade_date IS NULL UNION ALL SELECT 'ma_50 NULL', COUNT(*) FROM ms_t_stk_sis WHERE ma_50 IS NULL UNION ALL SELECT 'ref_date NULL', COUNT(*) FROM ms_v_stock_capital WHERE ref_date IS NULL;"
 
 # ---- Step 10: 提示运行知识库配置 ----
 log ""

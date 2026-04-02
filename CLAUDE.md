@@ -48,7 +48,7 @@ React Frontend (web/) → Go Backend (backend/:3000) → Catalog API (:8084) →
 **Chat flow**: ChatHandler receives question → Clarifier checks for missing params (time range, stock code) via LLM → maps frontend UUID session to Catalog numeric session → sends to Explore API → EventProcessor transforms SSE stream (injects chart.recommendation) → streams to frontend.
 
 **Knowledge base**: 3 types in Catalog nl2sql-knowledge API (knowledge_base_id=10001):
-- `logic`: business constraints (derivative filter, news dedup, SQL dialect limits)
+- `logic`: business constraints (news dedup, SQL dialect limits)
 - `case_library`: fewshot SQL templates (CCASS change, YoY comparison, news volume anomaly, HSI monthly)
 - `glossary`: term-to-table/column mapping
 
@@ -65,7 +65,7 @@ These are NOT in official docs — discovered through testing:
 ## Database (hk_sfc)
 
 8 tables. Key conventions:
-- **SISTKC**: 5-digit zero-padded VARCHAR (`'00001'`), compare as string (`< '10000'` to exclude derivatives)
+- **SISTKC**: 5-digit zero-padded VARCHAR (`'00001'`), compare as string
 - **profit_loss.stock_code**: NOT zero-padded (e.g. `88` not `00088`)
 - **Pre-computed columns on ms_t_stk_sis**: `ma_3/20/50/100`, `consecutive_above_ma3/ma20/ma50`, `avg_vol_30d`, `trade_date`
 - **Pre-computed on ms_v_stock_capital**: `industry_name` (carry-forward from ds_t_int_hsicl_dtl)

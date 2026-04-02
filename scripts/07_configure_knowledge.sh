@@ -104,11 +104,6 @@ add_coverage "data_coverage_ccass"    "ccass_holdings"      "holding_date"
 log ""
 log "配置业务约束..."
 
-# --- 个股行情 ---
-add "logic" "derivative_filter" "SISTKC >= 10000 are derivatives, exclude by default" \
-  '"In ms_t_stk_sis, codes >= 10000 are derivatives (warrants, CBBCs). Always add WHERE SISTKC < '\''10000'\'' unless the user explicitly asks about derivatives."' \
-  '"ms_t_stk_sis"'
-
 # --- 行业分类 ---
 add "logic" "industry_carry_forward" "Industry classification is pre-computed on ms_v_stock_capital" \
   '"ms_v_stock_capital.industry_name is pre-computed from ds_t_int_hsicl_dtl (carry-forward: latest classification as of each month-end). For industry-level market cap analysis, use ms_v_stock_capital.industry_name directly — do NOT join ds_t_int_hsicl_dtl yourself."' \
@@ -223,7 +218,7 @@ add "case_library" \
 add "case_library" \
   "Detect abnormal volume on material news days — replace {{date_start}} and {{date_end}} with user-specified range" \
   "News volume anomaly detection with dedup and avg_vol_30d" \
-  '"SELECT n.trade_date AS announcement_date, n.text AS announcement_content, n.securitycode AS stock_code, s.SISTKN AS stock_name FROM (SELECT securitycode, trade_date, MIN(text) AS text FROM sehknews WHERE typeid IN (0,3,7,8,10,14,18,21,25,26,28,32) AND timestamp >= '\''{{date_start}}'\'' AND timestamp < '\''{{date_end}}'\'' GROUP BY securitycode, trade_date) n JOIN ms_t_stk_sis s ON n.securitycode = s.SISTKC AND n.trade_date = s.trade_date WHERE s.SISTKC < '\''10000'\'' AND s.avg_vol_30d > 0 AND s.SIVOL > s.avg_vol_30d * 3"' \
+  '"SELECT n.trade_date AS announcement_date, n.text AS announcement_content, n.securitycode AS stock_code, s.SISTKN AS stock_name FROM (SELECT securitycode, trade_date, MIN(text) AS text FROM sehknews WHERE typeid IN (0,3,7,8,10,14,18,21,25,26,28,32) AND timestamp >= '\''{{date_start}}'\'' AND timestamp < '\''{{date_end}}'\'' GROUP BY securitycode, trade_date) n JOIN ms_t_stk_sis s ON n.securitycode = s.SISTKC AND n.trade_date = s.trade_date WHERE s.avg_vol_30d > 0 AND s.SIVOL > s.avg_vol_30d * 3"' \
   '"sehknews","ms_t_stk_sis"'
 
 add "case_library" \

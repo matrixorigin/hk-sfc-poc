@@ -233,7 +233,7 @@ const feedbackSystemPrompt = `你是一个专业的 NL2SQL 分析专家。用户
 分析要求：
 1. 对比用户问题的语义和生成 SQL 的逻辑，找出不匹配之处
 2. 检查 SQL 是否正确使用了预计算列（如 trade_date, avg_vol_30d, industry_name, consecutive_above_ma3 等）
-3. 检查是否遗漏了必要的过滤条件（如衍生品排除 SISTKC < '10000'、新闻去重等）
+3. 检查是否遗漏了必要的过滤条件（如新闻去重等）
 4. 检查是否违反了知识库中的业务规则
 5. 检查 SQL 方言是否兼容 MatrixOne（如 RIGHT() 不支持、CHANGE 是保留字等）
 6. 如果能修正，给出修正后的 SQL
