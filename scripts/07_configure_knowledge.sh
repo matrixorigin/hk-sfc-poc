@@ -227,6 +227,12 @@ add "case_library" \
   '"SELECT month_end, month_end_close, LAG(month_end_close) OVER (ORDER BY month_end) AS prev_month_close, ROUND((month_end_close - LAG(month_end_close) OVER (ORDER BY month_end)) / LAG(month_end_close) OVER (ORDER BY month_end) * 100, 2) AS monthly_pct_change FROM (SELECT trade_date AS month_end, HSHSI AS month_end_close, ROW_NUMBER() OVER (PARTITION BY YEAR(trade_date), MONTH(trade_date) ORDER BY trade_date DESC) AS rn FROM ms_v_stk_hsi_daily WHERE trade_date >= '\''{{year_start}}-01-01'\'' AND trade_date <= '\''{{year_end}}-12-31'\'') t WHERE rn = 1 ORDER BY month_end"' \
   '"ms_v_stk_hsi_daily"'
 
+add "case_library" \
+  "List top N stocks by peak consecutive days above MA — replace {{MA}} with 3/20/50, {{N}} with minimum streak threshold" \
+  "Stocks ranked by max consecutive days above moving average with date range" \
+  '"SELECT stock_code, stock_name, max_streak, start_date, end_date FROM (SELECT SISTKC AS stock_code, SISTKN AS stock_name, consecutive_above_ma{{MA}} AS max_streak, consecutive_above_ma{{MA}}_start AS start_date, trade_date AS end_date, ROW_NUMBER() OVER (PARTITION BY SISTKC ORDER BY consecutive_above_ma{{MA}} DESC, trade_date DESC) AS rn FROM ms_t_stk_sis WHERE consecutive_above_ma{{MA}} >= {{N}}) t WHERE rn = 1 ORDER BY max_streak DESC"' \
+  '"ms_t_stk_sis"'
+
 # ============================================================
 # Step 4: 验证
 # ============================================================

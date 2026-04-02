@@ -45,9 +45,12 @@ CREATE TABLE ms_t_stk_sis (
     ma_50   DECIMAL(16,4)  NULL     COMMENT '50-day moving average of closing price. Pre-computed.',
     ma_100  DECIMAL(16,4)  NULL     COMMENT '100-day moving average of closing price. Pre-computed.',
     ma_3    DECIMAL(16,4)  NULL     COMMENT '3-day moving average of closing price. Pre-computed.',
-    consecutive_above_ma3 INT NULL  COMMENT 'Number of consecutive trading days closing price is strictly above ma_3. Pre-computed using gap-and-islands method.',
-    consecutive_above_ma20 INT NULL  COMMENT 'Number of consecutive trading days closing price is strictly above ma_20. Pre-computed.',
-    consecutive_above_ma50 INT NULL  COMMENT 'Number of consecutive trading days the closing price has been above the 50-day moving average (ma_50), as of this date. Pre-computed.',
+    consecutive_above_ma3 INT NULL  COMMENT 'Number of consecutive trading days closing price is strictly above ma_3, as of this date. Resets to 0 when price drops below. Pre-computed.',
+    consecutive_above_ma3_start DATE NULL COMMENT 'Start date of the current consecutive-above-ma3 streak. NULL when streak is 0.',
+    consecutive_above_ma20 INT NULL  COMMENT 'Number of consecutive trading days closing price is strictly above ma_20, as of this date. Resets to 0 when price drops below. Pre-computed.',
+    consecutive_above_ma20_start DATE NULL COMMENT 'Start date of the current consecutive-above-ma20 streak. NULL when streak is 0.',
+    consecutive_above_ma50 INT NULL  COMMENT 'Number of consecutive trading days closing price is strictly above ma_50, as of this date. Resets to 0 when price drops below. Pre-computed.',
+    consecutive_above_ma50_start DATE NULL COMMENT 'Start date of the current consecutive-above-ma50 streak. NULL when streak is 0.',
     avg_vol_30d DECIMAL(20,2) NULL  COMMENT '30-day average trading volume. Pre-computed. NULL when fewer than 30 prior trading days. Use this column to detect volume anomalies (e.g. SIVOL > avg_vol_30d * 3) instead of correlated subqueries.'
 );
 

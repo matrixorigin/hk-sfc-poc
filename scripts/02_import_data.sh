@@ -350,8 +350,9 @@ out = sys.stdout
 prev = None
 # MA rolling averages (O(1) per add)
 r3 = RollingAvg(3); r20 = RollingAvg(20); r50 = RollingAvg(50); r100 = RollingAvg(100)
-# Consecutive streaks
+# Consecutive streaks + start dates
 streak3 = 0; streak20 = 0; streak50 = 0
+start3 = None; start20 = None; start50 = None
 # Avg vol 30d: rolling avg of preceding 30 days
 vol_buf = deque()
 vol_sum = 0.0
@@ -367,6 +368,7 @@ for line in sys.stdin:
     if code != prev:
         r3.reset(); r20.reset(); r50.reset(); r100.reset()
         streak3 = 0; streak20 = 0; streak50 = 0
+        start3 = None; start20 = None; start50 = None
         vol_buf = deque(); vol_sum = 0.0
         prev = code
 
@@ -378,24 +380,25 @@ for line in sys.stdin:
     ma100 = round(r100.avg(), 4) if r100.avg() is not None else None
 
     # Consecutive above MA3
-    if ma3 is not None and close is not None:
-        streak3 = streak3 + 1 if close > ma3 else 0
+    if ma3 is not None and close is not None and close > ma3:
+        if streak3 == 0: start3 = date
+        streak3 += 1
     else:
-        streak3 = 0
+        streak3 = 0; start3 = None
 
     # Consecutive above MA20
-    if ma20 is not None and close is not None:
-        streak20 = streak20 + 1 if close > ma20 else 0
+    if ma20 is not None and close is not None and close > ma20:
+        if streak20 == 0: start20 = date
+        streak20 += 1
     else:
-        streak20 = 0
+        streak20 = 0; start20 = None
 
-    # Consecutive above MA50 (true streak, same as ma3/ma20)
-    if ma50 is not None and close is not None:
-        streak50 = streak50 + 1 if close > ma50 else 0
-        consec50 = streak50
+    # Consecutive above MA50
+    if ma50 is not None and close is not None and close > ma50:
+        if streak50 == 0: start50 = date
+        streak50 += 1
     else:
-        streak50 = 0
-        consec50 = 0
+        streak50 = 0; start50 = None
 
     # Avg vol 30d (preceding 30 days, NULL if < 30)
     if len(vol_buf) >= 30:
@@ -407,7 +410,10 @@ for line in sys.stdin:
     if len(vol_buf) > 30:
         vol_sum -= vol_buf.popleft()
 
-    out.write(f'{code},{date},{fmt(ma3)},{fmt(ma20)},{fmt(ma50)},{fmt(ma100)},{fmti(streak3)},{fmti(streak20)},{consec50},{avg_vol}\n')
+    s3 = start3 if start3 else r'\N'
+    s20 = start20 if start20 else r'\N'
+    s50 = start50 if start50 else r'\N'
+    out.write(f'{code},{date},{fmt(ma3)},{fmt(ma20)},{fmt(ma50)},{fmt(ma100)},{fmti(streak3)},{s3},{fmti(streak20)},{s20},{fmti(streak50)},{s50},{avg_vol}\n')
 " > /tmp/_precompute.csv
 
 row_count=$(wc -l < /tmp/_precompute.csv)
@@ -417,7 +423,10 @@ run_sql "DROP TABLE IF EXISTS _tmp_precompute;"
 run_sql "CREATE TABLE _tmp_precompute (
   SISTKC VARCHAR(10), trade_date DATE,
   ma3 DOUBLE, ma20 DOUBLE, ma50 DOUBLE, ma100 DOUBLE,
-  consec_ma3 INT, consec_ma20 INT, consec_ma50 INT, avg_vol DOUBLE
+  consec_ma3 INT, consec_ma3_start DATE,
+  consec_ma20 INT, consec_ma20_start DATE,
+  consec_ma50 INT, consec_ma50_start DATE,
+  avg_vol DOUBLE
 );"
 $MYSQL_CMD "$MO_DB" --local-infile=1 -e "
 LOAD DATA LOCAL INFILE '/tmp/_precompute.csv'
@@ -427,7 +436,7 @@ LINES TERMINATED BY '\n';
 " 2>&1 | { grep -v "Warning.*password" || true; }
 log "  LOAD 完成, batched updating..."
 run_sql_batched \
-  "UPDATE ms_t_stk_sis t JOIN _tmp_precompute p ON t.SISTKC = p.SISTKC AND t.trade_date = p.trade_date SET t.ma_3=p.ma3, t.ma_20=p.ma20, t.ma_50=p.ma50, t.ma_100=p.ma100, t.consecutive_above_ma3=p.consec_ma3, t.consecutive_above_ma20=p.consec_ma20, t.consecutive_above_ma50=p.consec_ma50, t.avg_vol_30d=p.avg_vol WHERE t.ma_3 IS NULL" \
+  "UPDATE ms_t_stk_sis t JOIN _tmp_precompute p ON t.SISTKC = p.SISTKC AND t.trade_date = p.trade_date SET t.ma_3=p.ma3, t.ma_20=p.ma20, t.ma_50=p.ma50, t.ma_100=p.ma100, t.consecutive_above_ma3=p.consec_ma3, t.consecutive_above_ma3_start=p.consec_ma3_start, t.consecutive_above_ma20=p.consec_ma20, t.consecutive_above_ma20_start=p.consec_ma20_start, t.consecutive_above_ma50=p.consec_ma50, t.consecutive_above_ma50_start=p.consec_ma50_start, t.avg_vol_30d=p.avg_vol WHERE t.ma_3 IS NULL" \
   "SELECT COUNT(*) FROM ms_t_stk_sis WHERE ma_3 IS NULL" \
   500000
 run_sql "DROP TABLE IF EXISTS _tmp_precompute;"
