@@ -340,17 +340,6 @@ class RollingAvg:
     def reset(self):
         self.buf.clear(); self.s = 0.0; self.c = 0
 
-class RollingSum:
-    __slots__ = ('w', 'buf', 's')
-    def __init__(self, w):
-        self.w = w; self.buf = deque(); self.s = 0
-    def add(self, v):
-        if len(self.buf) >= self.w:
-            self.s -= self.buf.popleft()
-        self.buf.append(v); self.s += v
-    def val(self): return self.s
-    def reset(self):
-        self.buf.clear(); self.s = 0
 
 def fmt(v):
     return f'{v:.10f}' if v is not None else r'\N'
@@ -362,9 +351,7 @@ prev = None
 # MA rolling averages (O(1) per add)
 r3 = RollingAvg(3); r20 = RollingAvg(20); r50 = RollingAvg(50); r100 = RollingAvg(100)
 # Consecutive streaks
-streak3 = 0; streak20 = 0
-# Consecutive above MA50: rolling count in 50-day window
-above50 = RollingSum(50)
+streak3 = 0; streak20 = 0; streak50 = 0
 # Avg vol 30d: rolling avg of preceding 30 days
 vol_buf = deque()
 vol_sum = 0.0
@@ -379,8 +366,7 @@ for line in sys.stdin:
 
     if code != prev:
         r3.reset(); r20.reset(); r50.reset(); r100.reset()
-        streak3 = 0; streak20 = 0
-        above50.reset()
+        streak3 = 0; streak20 = 0; streak50 = 0
         vol_buf = deque(); vol_sum = 0.0
         prev = code
 
@@ -403,12 +389,13 @@ for line in sys.stdin:
     else:
         streak20 = 0
 
-    # Consecutive above MA50 (rolling count in 50-day window)
+    # Consecutive above MA50 (true streak, same as ma3/ma20)
     if ma50 is not None and close is not None:
-        above50.add(1 if close > ma50 else 0)
-        consec50 = above50.val()
+        streak50 = streak50 + 1 if close > ma50 else 0
+        consec50 = streak50
     else:
-        consec50 = r'\N'
+        streak50 = 0
+        consec50 = 0
 
     # Avg vol 30d (preceding 30 days, NULL if < 30)
     if len(vol_buf) >= 30:
