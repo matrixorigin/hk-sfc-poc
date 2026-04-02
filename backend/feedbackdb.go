@@ -64,6 +64,11 @@ CREATE TABLE IF NOT EXISTS feedback_tasks (
 	return &FeedbackDB{db: db}, nil
 }
 
+// RawDB returns the underlying *sql.DB for shared use (e.g., paginated queries).
+func (f *FeedbackDB) RawDB() *sql.DB {
+	return f.db
+}
+
 func (f *FeedbackDB) Close() error {
 	return f.db.Close()
 }

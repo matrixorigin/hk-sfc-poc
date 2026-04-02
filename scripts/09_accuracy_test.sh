@@ -127,7 +127,7 @@ gt_keys = run_sql('''$gt_sql''')
 llm_keys = run_sql('''$llm_sql''')
 
 if not gt_keys:
-    print('ERROR:ground truth returned 0 rows')
+    print(f'OK:0/0:{1.0 if not llm_keys else 0.0:.2f}:{len(llm_keys)}')
     sys.exit(0)
 
 matched = len(gt_keys & llm_keys)
@@ -146,7 +146,16 @@ print(f'OK:{matched}/{len(gt_keys)}:{recall:.2f}:{len(llm_keys)}')
   gt_count=$(echo "$matched_gt" | cut -d/ -f2)
   local recall_pct=$(python3 -c "print(int(float('$recall_str')*100))" 2>/dev/null)
 
-  # recall >= 80% 算通过
+  # recall >= 80% 算通过；gt=0 时 LLM 也应为 0
+  if [ "$gt_count" = "0" ]; then
+    if [ "$llm_count" = "0" ]; then
+      echo "  ✅ $label — both returned 0 rows"
+      return 0
+    else
+      echo "  ❌ $label — gt=0 rows but llm=$llm_count rows"
+      return 1
+    fi
+  fi
   if [ "${recall_pct:-0}" -lt 80 ]; then
     echo "  ❌ $label — recall=${recall_pct}% ($matched/$gt_count), llm_rows=$llm_count"
     return 1
@@ -196,7 +205,7 @@ s1	S1: 行业市值增长率	2025年一季度，哪些行业的平均市值增�
 s2	S2: 2月新闻放量TOP20	2025年2月份有哪些股票在发布重大新闻公告的当天成交量异常放大（超过前30日均量3倍以上）？列出前20条	SELECT n.trade_date, n.securitycode, s.SISTKN FROM (SELECT securitycode, trade_date FROM sehknews WHERE typeid IN (0,3,7,8,10,14,18,21,25,26,28,32) AND timestamp >= '2025-02-01' AND timestamp < '2025-03-01' GROUP BY securitycode, trade_date) n JOIN ms_t_stk_sis s ON n.securitycode = s.SISTKC AND n.trade_date = s.trade_date WHERE s.avg_vol_30d > 0 AND s.SIVOL > s.avg_vol_30d * 3 LIMIT 20
 s3	S3: 连续5天>MA20	2025年1月到3月，哪些股票代码小于1000的股票收盘价连续5天高于20日均线？	SELECT DISTINCT SISTKC, SISTKN FROM ms_t_stk_sis WHERE trade_date BETWEEN '2025-01-01' AND '2025-03-31' AND SISTKC < '01000' AND SISTKC >= '00001' AND consecutive_above_ma20 >= 5
 s4	S4: 恒指月末+涨跌幅	2025年各月的恒生指数月末收盘值和当月涨跌幅分别是多少？	SELECT trade_date, HSHSI FROM (SELECT trade_date, HSHSI, ROW_NUMBER() OVER (PARTITION BY YEAR(trade_date), MONTH(trade_date) ORDER BY trade_date DESC) AS rn FROM ms_v_stk_hsi_daily WHERE trade_date >= '2025-01-01' AND trade_date <= '2025-12-31') t WHERE rn = 1
-v2	V2: 行业市值下降	计算各行业2025年11月相对2025年10月总市值下降值，取top3	SELECT industry_name, (oct_total - nov_total) AS decline FROM (SELECT industry_name, SUM(CASE WHEN ref_date='2025-10-31' THEN SICAP ELSE 0 END) AS oct_total, SUM(CASE WHEN ref_date='2025-11-30' THEN SICAP ELSE 0 END) AS nov_total FROM ms_v_stock_capital WHERE ref_date IN ('2025-10-31','2025-11-30') GROUP BY industry_name) t WHERE oct_total > nov_total ORDER BY decline DESC LIMIT 3	-	1
+v2	V2: 行业市值下降	计算各行业2025年11月相对2025年10月总市值下降值，取top3	SELECT industry_name, (oct_total - nov_total) AS decline FROM (SELECT industry_name, SUM(CASE WHEN ref_date='2025-10-31' THEN SICAP ELSE 0 END) AS oct_total, SUM(CASE WHEN ref_date='2025-11-30' THEN SICAP ELSE 0 END) AS nov_total FROM ms_v_stock_capital WHERE ref_date IN ('2025-10-31','2025-11-30') AND industry_name IS NOT NULL GROUP BY industry_name) t WHERE oct_total > nov_total ORDER BY decline DESC LIMIT 3	-	1
 s5	S5: H2行业市值下降TOP3	2025年下半年哪三个行业的总市值下降幅度最大？	SELECT industry_name FROM (SELECT industry_name, SUM(CASE WHEN ref_date = '2025-07-31' THEN SICAP ELSE 0 END) AS market_cap_start, SUM(CASE WHEN ref_date = '2025-12-31' THEN SICAP ELSE 0 END) AS market_cap_end, SUM(CASE WHEN ref_date = '2025-12-31' THEN SICAP ELSE 0 END) - SUM(CASE WHEN ref_date = '2025-07-31' THEN SICAP ELSE 0 END) AS market_cap_change FROM ms_v_stock_capital WHERE ref_date IN ('2025-07-31', '2025-12-31') AND industry_name IS NOT NULL GROUP BY industry_name HAVING SUM(CASE WHEN ref_date = '2025-07-31' THEN SICAP ELSE 0 END) > 0 AND SUM(CASE WHEN ref_date = '2025-12-31' THEN SICAP ELSE 0 END) > 0) t WHERE market_cap_change < 0 ORDER BY market_cap_change ASC LIMIT 3
 c3	C3: 连续站上MA50+起止日期	在2025年3月至2026年3月期间，收盘价连续10个交易日高于50日移动均线的股票代码、股票名称、连续高出的交易日总数、以及起止日期范围	SELECT stock_code, stock_name, max_streak, start_date, end_date FROM (SELECT SISTKC AS stock_code, SISTKN AS stock_name, consecutive_above_ma50 AS max_streak, consecutive_above_ma50_start AS start_date, trade_date AS end_date, ROW_NUMBER() OVER (PARTITION BY SISTKC ORDER BY consecutive_above_ma50 DESC, trade_date DESC) AS rn FROM ms_t_stk_sis WHERE consecutive_above_ma50 >= 10 AND trade_date >= '2025-03-01' AND trade_date <= '2026-03-03') t WHERE rn = 1 ORDER BY max_streak DESC
 c4	C4: 新闻放量(客户格式)	在2025年1月1日到2025年4月30日期间，在重大新闻公告发布当天，成交量超过30日平均值3倍的股票代码、股票名称、交易日期、当日成交量、前30日平均成交量	SELECT n.trade_date, n.securitycode AS stock_code, s.SISTKN AS stock_name, s.SIVOL AS daily_volume, s.avg_vol_30d FROM (SELECT securitycode, trade_date FROM sehknews WHERE typeid IN (0,3,7,8,10,14,18,21,25,26,28,32) AND timestamp >= '2025-01-01' AND timestamp < '2025-05-01' GROUP BY securitycode, trade_date) n JOIN ms_t_stk_sis s ON n.securitycode = s.SISTKC AND n.trade_date = s.trade_date WHERE s.avg_vol_30d > 0 AND s.SIVOL > s.avg_vol_30d * 3

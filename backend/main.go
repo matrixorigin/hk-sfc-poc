@@ -58,6 +58,9 @@ func main() {
 	mux.HandleFunc("/api/feedback/", feedbackHandler.ServeHTTP)
 	mux.HandleFunc("/api/feedback", feedbackHandler.ServeHTTP)
 
+	paginateHandler := NewPaginateHandler(feedbackDB.RawDB())
+	mux.HandleFunc("/api/query/paginate", paginateHandler.ServeHTTP)
+
 	if cfg.Server.StaticDir != "" {
 		absDir, _ := filepath.Abs(cfg.Server.StaticDir)
 		log.Printf("serving frontend from %s", absDir)
