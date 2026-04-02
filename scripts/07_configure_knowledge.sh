@@ -124,7 +124,7 @@ add "logic" "news_dedup" "Deduplicate news per stock per day before joining trad
 
 add "logic" "news_volume_event_granularity" "Volume anomaly detection must return event-level rows, not DISTINCT stocks" \
   '"When detecting volume anomalies related to news (e.g. volume > N times average on news days), output one row per (trade_date, stock) event. Do NOT use SELECT DISTINCT on stock_code alone. The same stock may trigger on multiple dates — each occurrence is a separate detection event that must be reported with its trade_date."' \
-  '"sehknews","ms_t_stk_sis"'
+  '"sehknews"'
 
 # --- CCASS ---
 add "logic" "ccass_participant_granularity" "CCASS must compare at participant level" \

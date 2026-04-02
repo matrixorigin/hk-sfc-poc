@@ -127,8 +127,7 @@ CREATE TABLE profit_loss (
 -- 7. CCASS 经纪商持仓数据（爬虫获取）
 --    源: https://www3.hkexnews.hk/sdw/search/searchsdw.aspx
 -- ============================================================
-DROP TABLE IF EXISTS ccass_holdings;
-CREATE TABLE ccass_holdings (
+CREATE TABLE IF NOT EXISTS ccass_holdings (
     holding_date    DATE           NOT NULL COMMENT 'Shareholding date.',
     stock_code      VARCHAR(10)    NOT NULL COMMENT 'Stock code (e.g. 00001).',
     stock_name      VARCHAR(200)   NULL     COMMENT 'Stock name.',
