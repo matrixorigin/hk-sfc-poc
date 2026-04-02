@@ -384,9 +384,12 @@ for line in sys.stdin:
         vol_buf = deque(); vol_sum = 0.0
         prev = code
 
-    # MA
+    # MA (round to 4 decimals to match MO DECIMAL(16,4), avoid float drift in streak comparison)
     r3.add(close); r20.add(close); r50.add(close); r100.add(close)
-    ma3 = r3.avg(); ma20 = r20.avg(); ma50 = r50.avg(); ma100 = r100.avg()
+    ma3 = round(r3.avg(), 4) if r3.avg() is not None else None
+    ma20 = round(r20.avg(), 4) if r20.avg() is not None else None
+    ma50 = round(r50.avg(), 4) if r50.avg() is not None else None
+    ma100 = round(r100.avg(), 4) if r100.avg() is not None else None
 
     # Consecutive above MA3
     if ma3 is not None and close is not None:
