@@ -162,7 +162,7 @@ add "logic" "date_boundary_capital_monthly" "ms_v_stock_capital ref_date is mont
 
 # --- 方向性语义约束 ---
 add "logic" "directional_filter_constraint" "Decline/increase queries must include sign filter" \
-  '"When the user asks about decline/decrease/drop (下降/下跌/减少/缩水/亏损), the SQL MUST include a < 0 filter on the computed change column. When the user asks about increase/growth/rise (上升/上涨/增长/增加), the SQL MUST include a > 0 filter. Without this filter, ORDER BY ASC/DESC LIMIT N may return results that do not match the directional intent (e.g. returning the smallest gain instead of an actual decline)."' \
+  '"When the user asks about decline/decrease/drop (下降/下跌/减少/缩水/亏损), the SQL MUST include a < 0 filter on the computed change column. When the user asks about increase/growth/rise (上升/上涨/增长/增加), the SQL MUST include a > 0 filter. WITHOUT this filter, ORDER BY ASC/DESC LIMIT N may return results that do not match the directional intent (e.g. returning the smallest gain instead of an actual decline). EXCEPTION: when the question asks about \"情况/趋势/走势/变化\" (e.g. \"增长情况\", \"营收变化趋势\"), this is descriptive — the user wants to see ALL data including both increases and decreases. Do NOT add a sign filter in this case."' \
   '"ms_t_stk_sis","ms_v_stock_capital","profit_loss","ms_v_stk_hsi_daily","ccass_holdings"'
 
 # --- 连续天数去重 ---
@@ -208,9 +208,9 @@ log ""
 log "配置 fewshot 示例..."
 
 add "case_library" \
-  "Which N industries had the largest market cap decline/increase in H1/H2/full-year — date mapping: H1 {{year}}={{year}}-01-31 to {{year}}-06-30, H2 {{year}}={{year}}-07-31 to {{year}}-12-31, full year={{year}}-01-31 to {{year}}-12-31. For decline use ORDER BY ASC + change<0; for increase use ORDER BY DESC + change>0" \
+  "哪些行业在某个时间段内的（平均）市值增长率最高/下降幅度最大？增长率=期末行业总市值vs期初总市值，取两个端点月末日期" \
   "Industry market cap period comparison on ms_v_stock_capital" \
-  '"SELECT industry_name, market_cap_start, market_cap_end, market_cap_change, ROUND(market_cap_change / market_cap_start * 100, 2) AS change_pct FROM (SELECT industry_name, SUM(CASE WHEN ref_date = '\''{{period_start}}'\'' THEN SICAP ELSE 0 END) AS market_cap_start, SUM(CASE WHEN ref_date = '\''{{period_end}}'\'' THEN SICAP ELSE 0 END) AS market_cap_end, SUM(CASE WHEN ref_date = '\''{{period_end}}'\'' THEN SICAP ELSE 0 END) - SUM(CASE WHEN ref_date = '\''{{period_start}}'\'' THEN SICAP ELSE 0 END) AS market_cap_change FROM ms_v_stock_capital WHERE ref_date IN ('\''{{period_start}}'\'', '\''{{period_end}}'\'') AND industry_name IS NOT NULL GROUP BY industry_name HAVING market_cap_start > 0 AND market_cap_end > 0) t WHERE market_cap_change < 0 ORDER BY market_cap_change ASC LIMIT {{N}}"' \
+  '"SELECT industry_name, market_cap_start, market_cap_end, market_cap_change, ROUND(market_cap_change / market_cap_start * 100, 2) AS change_pct FROM (SELECT industry_name, SUM(CASE WHEN ref_date = '\''{{period_start}}'\'' THEN SICAP ELSE 0 END) AS market_cap_start, SUM(CASE WHEN ref_date = '\''{{period_end}}'\'' THEN SICAP ELSE 0 END) AS market_cap_end, SUM(CASE WHEN ref_date = '\''{{period_end}}'\'' THEN SICAP ELSE 0 END) - SUM(CASE WHEN ref_date = '\''{{period_start}}'\'' THEN SICAP ELSE 0 END) AS market_cap_change FROM ms_v_stock_capital WHERE ref_date IN ('\''{{period_start}}'\'', '\''{{period_end}}'\'') AND industry_name IS NOT NULL GROUP BY industry_name HAVING market_cap_start > 0 AND market_cap_end > 0) t ORDER BY change_pct DESC"' \
   '"ms_v_stock_capital"'
 
 add "case_library" \
