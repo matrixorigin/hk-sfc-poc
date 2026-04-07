@@ -135,6 +135,7 @@ export function ChatPanel({
       sqlStatements: [],
       isStreaming: true,
       phase: 'thinking',
+      phaseHistory: ['thinking'],
       feedbackQuestion: question,
     }
 

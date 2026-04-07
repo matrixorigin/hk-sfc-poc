@@ -1,5 +1,5 @@
 import { useRef, useCallback } from 'react'
-import type { ExploreEvent, SQLResult, Message } from '../types'
+import type { ExploreEvent, SQLResult, Message, Phase } from '../types'
 
 /**
  * Strip JSON wrapper from synthesis output.
@@ -111,33 +111,56 @@ export function useExploreSSE({ onUpdate, onDone, onError }: UseExploreSSEOption
     [onUpdate, onDone, onError]
   )
 
+  /** Update phase and append to history (dedup) */
+  function setPhase(nextPhase: Phase) {
+    onUpdate((msg) => {
+      if (msg.phase === nextPhase) return msg
+      const history = msg.phaseHistory ?? []
+      return {
+        ...msg,
+        phase: nextPhase,
+        phaseHistory: history[history.length - 1] === nextPhase ? history : [...history, nextPhase],
+      }
+    })
+  }
+
   function handleEvent(event: ExploreEvent) {
     switch (event.event) {
       case 'run.started': {
-        onUpdate((msg) => ({ ...msg, phase: 'thinking' }))
+        setPhase('thinking')
         break
       }
       case 'planning.plan.ready':
       case 'planning.rewrite.ready': {
-        onUpdate((msg) => ({ ...msg, phase: 'planning' }))
+        setPhase('planning')
         break
       }
       case 'sql.schema.ready':
       case 'sql.generated': {
         // Update phase on sql.generated but don't store SQL yet — wait for sql.result which has the actually executed SQL
         if (event.event === 'sql.generated') {
-          onUpdate((msg) => ({ ...msg, phase: 'querying' }))
+          setPhase('querying')
         } else {
-          onUpdate((msg) => ({ ...msg, phase: msg.phase === 'thinking' ? 'planning' : msg.phase }))
+          onUpdate((msg) => {
+            if (msg.phase === 'thinking') {
+              const history = msg.phaseHistory ?? []
+              return {
+                ...msg,
+                phase: 'planning' as Phase,
+                phaseHistory: history[history.length - 1] === 'planning' ? history : [...history, 'planning' as Phase],
+              }
+            }
+            return msg
+          })
         }
         break
       }
       case 'retrieval.progress': {
-        onUpdate((msg) => ({ ...msg, phase: 'querying' }))
+        setPhase('querying')
         break
       }
       case 'sql.result': {
-        onUpdate((msg) => ({ ...msg, phase: 'querying' }))
+        setPhase('querying')
         // Store the actually executed SQL (may differ from sql.generated if repair happened)
         const executedSQL: string = event.data?.sql ?? ''
         if (executedSQL) {
@@ -197,10 +220,11 @@ export function useExploreSSE({ onUpdate, onDone, onError }: UseExploreSSEOption
       }
       case 'synthesis.delta': {
         const delta: string = event.data?.delta ?? ''
+        setPhase('answering')
         onUpdate((msg) => {
           const raw = (msg as any)._rawContent ?? msg.content
           const newRaw = raw + delta
-          return { ...msg, phase: 'answering', content: stripJsonWrapper(newRaw), _rawContent: newRaw } as any
+          return { ...msg, content: stripJsonWrapper(newRaw), _rawContent: newRaw } as any
         })
         break
       }

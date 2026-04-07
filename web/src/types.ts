@@ -34,6 +34,7 @@ export interface Message {
   sqlStatements: string[]
   isStreaming: boolean
   phase?: Phase
+  phaseHistory?: Phase[]
   error?: string
   chartSpec?: ChartSpec
   feedbackQuestion?: string

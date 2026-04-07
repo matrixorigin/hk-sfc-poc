@@ -965,6 +965,73 @@ body {
   to { transform: rotate(360deg); }
 }
 
+/* Phase trail (dynamic breadcrumb) */
+.phase-trail {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.phase-trail-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  animation: phaseSlideIn 0.3s ease-out both;
+}
+
+@keyframes phaseSlideIn {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.phase-trail-sep {
+  color: #cbd5e1;
+  font-size: 14px;
+  margin: 0 2px;
+}
+
+.phase-trail-done {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: #10b981;
+  font-weight: 500;
+}
+
+.phase-trail-done svg {
+  flex-shrink: 0;
+}
+
+.phase-trail-active {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #0f3460;
+  font-weight: 600;
+}
+
+.phase-trail-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #0f3460;
+  animation: phasePulse 1.2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes phasePulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(15, 52, 96, 0.5); }
+  50%      { opacity: 0.6; box-shadow: 0 0 0 5px rgba(15, 52, 96, 0); }
+}
+
+.phase-trail-pending {
+  color: #94a3b8;
+}
+
 /* Blinking cursor animation */
 @keyframes blink {
   0%, 100% { opacity: 1; }

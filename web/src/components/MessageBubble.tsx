@@ -9,28 +9,18 @@ import { useT } from '../i18n'
 import { Chart } from './Chart'
 import { DataTable } from './DataTable'
 import { FeedbackButton } from './FeedbackButton'
+import { PhasePipeline } from './PhasePipeline'
 import { selectPrimaryResult } from '../utils/selectPrimaryResult'
 
 interface MessageBubbleProps {
   message: Message
 }
 
-const phaseLabels: Record<string, { en: string; zh: string }> = {
-  thinking:  { en: 'Understanding your question', zh: '正在理解问题' },
-  planning:  { en: 'Generating query plan',       zh: '正在生成查询方案' },
-  querying:  { en: 'Querying database',           zh: '正在查询数据库' },
-  answering: { en: 'Generating answer',           zh: '正在生成回答' },
-}
-
 export function MessageBubble({ message }: MessageBubbleProps) {
-  const { t, lang } = useT()
+  const { t } = useT()
   const [showSQL, setShowSQL] = useState(false)
   const isUser = message.role === 'user'
   const isDone = !message.isStreaming || message.phase === 'done'
-
-  const phaseLabel = message.phase && phaseLabels[message.phase]
-    ? phaseLabels[message.phase][lang]
-    : null
 
   const primaryResult = !isUser ? selectPrimaryResult(message) : undefined
 
@@ -41,11 +31,14 @@ export function MessageBubble({ message }: MessageBubbleProps) {
       </div>
       <div className="message-content">
         <div className={`message-bubble ${isUser ? 'user' : 'ai'}`}>
-          {/* Phase progress indicator */}
-          {!isUser && message.isStreaming && !message.content && (
+          {/* Phase progress trail */}
+          {!isUser && message.isStreaming && !message.content && message.phaseHistory && message.phaseHistory.length > 0 && (
+            <PhasePipeline history={message.phaseHistory} current={message.phase} />
+          )}
+          {!isUser && message.isStreaming && !message.content && (!message.phaseHistory || message.phaseHistory.length === 0) && (
             <div className="phase-indicator">
               <div className="phase-spinner" />
-              <span>{phaseLabel || t('thinking')}</span>
+              <span>{t('thinking')}</span>
             </div>
           )}
 
