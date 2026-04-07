@@ -336,7 +336,7 @@ class RollingAvg:
         self.buf.append(v)
         if v is not None: self.s += v; self.c += 1
     def avg(self):
-        return self.s / self.c if self.c else None
+        return self.s / self.c if len(self.buf) >= self.w and self.c else None
     def reset(self):
         self.buf.clear(); self.s = 0.0; self.c = 0
 
@@ -436,8 +436,8 @@ LINES TERMINATED BY '\n';
 " 2>&1 | { grep -v "Warning.*password" || true; }
 log "  LOAD 完成, batched updating..."
 run_sql_batched \
-  "UPDATE ms_t_stk_sis t JOIN _tmp_precompute p ON t.SISTKC = p.SISTKC AND t.trade_date = p.trade_date SET t.ma_3=p.ma3, t.ma_20=p.ma20, t.ma_50=p.ma50, t.ma_100=p.ma100, t.consecutive_above_ma3=p.consec_ma3, t.consecutive_above_ma3_start=p.consec_ma3_start, t.consecutive_above_ma20=p.consec_ma20, t.consecutive_above_ma20_start=p.consec_ma20_start, t.consecutive_above_ma50=p.consec_ma50, t.consecutive_above_ma50_start=p.consec_ma50_start, t.avg_vol_30d=p.avg_vol WHERE t.ma_3 IS NULL" \
-  "SELECT COUNT(*) FROM ms_t_stk_sis WHERE ma_3 IS NULL" \
+  "UPDATE ms_t_stk_sis t JOIN _tmp_precompute p ON t.SISTKC = p.SISTKC AND t.trade_date = p.trade_date SET t.ma_3=p.ma3, t.ma_20=p.ma20, t.ma_50=p.ma50, t.ma_100=p.ma100, t.consecutive_above_ma3=p.consec_ma3, t.consecutive_above_ma3_start=p.consec_ma3_start, t.consecutive_above_ma20=p.consec_ma20, t.consecutive_above_ma20_start=p.consec_ma20_start, t.consecutive_above_ma50=p.consec_ma50, t.consecutive_above_ma50_start=p.consec_ma50_start, t.avg_vol_30d=p.avg_vol WHERE t.consecutive_above_ma3 IS NULL" \
+  "SELECT COUNT(*) FROM ms_t_stk_sis WHERE consecutive_above_ma3 IS NULL" \
   500000
 run_sql "DROP TABLE IF EXISTS _tmp_precompute;"
 rm -f /tmp/_precompute.csv

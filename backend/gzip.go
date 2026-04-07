@@ -22,6 +22,11 @@ func gzipMiddleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		// SSE 端点需要逐事件 flush，不能套 gzip 缓冲
+		if r.URL.Path == "/api/chat" {
+			next.ServeHTTP(w, r)
+			return
+		}
 		gz, _ := gzip.NewWriterLevel(w, gzip.BestCompression)
 		defer gz.Close()
 
