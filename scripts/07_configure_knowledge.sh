@@ -196,6 +196,11 @@ add "presentation" "profit_loss_show_all_periods" \
   '"When presenting profit_loss query results, you MUST describe EVERY row returned by the SQL. This includes both Final (full-year annual report / 年报) and Interim (half-year report / 半年报 / 中期报告) periods. Do not skip or summarize away any fiscal year period. Present them in chronological order by fin_yr."' \
   '"profit_loss"'
 
+add "presentation" "profit_loss_currency" \
+  "Reporting currency varies by company in profit_loss" \
+  '"Companies in profit_loss report in different currencies (e.g. Tencent uses RMB, HSBC uses USD, CK Hutchison uses HKD). When presenting financial amounts, if the query result includes a currency column, always use the actual currency from the data. If the result does not include currency, do not assume any specific currency — state the amounts without a currency prefix rather than guessing."' \
+  '"profit_loss"'
+
 # ============================================================
 # Step 3d: Fewshot 示例（case_library — 可复用的 SQL 模式）
 # ============================================================
@@ -217,7 +222,7 @@ add "case_library" \
 add "case_library" \
   "YoY revenue/profit comparison for any language (simplified Chinese, traditional Chinese, or English). Replace {{company_name_column}} with company_name_sc / company_name_tc / company_name_en based on input language. Replace {{company}} with the company keyword from the question. Always use LIKE for fuzzy matching — never guess the full company name. Example: '360 LUDASHI HOLDINGS LIMITED' → company_name_en LIKE '%LUDASHI%'" \
   "Year-over-year financial comparison using self-JOIN on profit_loss" \
-  '"SELECT a.fin_yr, a.quarter, a.turnover AS current_turnover, b.turnover AS previous_turnover, a.turnover - b.turnover AS turnover_change, ROUND((a.turnover - b.turnover) / b.turnover * 100, 2) AS change_pct FROM profit_loss a JOIN profit_loss b ON a.stock_code = b.stock_code AND a.quarter = b.quarter AND CAST(SUBSTRING(a.fin_yr, 1, 4) AS UNSIGNED) = CAST(SUBSTRING(b.fin_yr, 1, 4) AS UNSIGNED) + 1 AND SUBSTRING(a.fin_yr, 5, 2) = SUBSTRING(b.fin_yr, 5, 2) WHERE a.{{company_name_column}} LIKE '\''%{{company}}%'\'' AND a.fin_yr >= '\''{{start_fin_yr}}'\'' ORDER BY a.fin_yr, a.quarter"' \
+  '"SELECT a.fin_yr, a.quarter, a.currency, a.turnover AS current_turnover, b.turnover AS previous_turnover, a.turnover - b.turnover AS turnover_change, ROUND((a.turnover - b.turnover) / b.turnover * 100, 2) AS change_pct FROM profit_loss a JOIN profit_loss b ON a.stock_code = b.stock_code AND a.quarter = b.quarter AND CAST(SUBSTRING(a.fin_yr, 1, 4) AS UNSIGNED) = CAST(SUBSTRING(b.fin_yr, 1, 4) AS UNSIGNED) + 1 AND SUBSTRING(a.fin_yr, 5, 2) = SUBSTRING(b.fin_yr, 5, 2) WHERE a.{{company_name_column}} LIKE '\''%{{company}}%'\'' AND a.fin_yr >= '\''{{start_fin_yr}}'\'' ORDER BY a.fin_yr, a.quarter"' \
   '"profit_loss"'
 
 add "case_library" \
