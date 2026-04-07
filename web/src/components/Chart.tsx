@@ -133,7 +133,7 @@ function canRenderBarChart(result: SQLResult): boolean {
 
 // ── 子图表组件 ──
 
-function LineChart({ result }: { result: SQLResult }) {
+function LineChart({ result, spec }: ChartProps) {
   if (!canRenderChart(result)) return null
 
   const { columns, rows } = result
@@ -141,7 +141,7 @@ function LineChart({ result }: { result: SQLResult }) {
   const xData = rows.map((row) => formatDateValue(String(row[dateCol] ?? '')))
 
   // 过滤掉日期列和标识列，只保留真正的数值系列
-  const numericSeries = columns
+  const allNumeric = columns
     .map((col, ci) => ({ col, colIndex: ci }))
     .filter(
       ({ col, colIndex }) =>
@@ -149,6 +149,12 @@ function LineChart({ result }: { result: SQLResult }) {
         !isIdentifierColumn(col, rows.map((r) => r[colIndex])) &&
         rows.some((row) => isNumeric(row[colIndex]))
     )
+
+  // 如果 spec.y 指定了字段，只保留匹配的列
+  const specFields = spec?.y?.map((y) => y.field) ?? []
+  const numericSeries = specFields.length > 0
+    ? allNumeric.filter(({ col }) => specFields.includes(col))
+    : allNumeric
 
   const series = numericSeries.map(({ col, colIndex }, idx) => ({
     name: formatColumnName(col),
@@ -356,7 +362,7 @@ export function Chart({ result, spec }: ChartProps) {
 
   switch (chartType) {
     case 'line':
-      return <LineChart result={result} />
+      return <LineChart result={result} spec={spec} />
     case 'bar':
       return <BarChart result={result} spec={spec} />
     case 'pie':
