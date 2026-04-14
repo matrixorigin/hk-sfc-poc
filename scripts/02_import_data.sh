@@ -223,20 +223,33 @@ run_sql_batched "UPDATE ms_t_stk_sis SET trade_date = CAST(CONCAT(SUBSTR(SITXDT,
 log "ms_v_stock_capital.ref_date (batched)..."
 run_sql_batched "UPDATE ms_v_stock_capital SET ref_date = CAST(CONCAT('20', SUBSTR(SIRXDT, 8, 2), '-', CASE SUBSTR(SIRXDT, 4, 3) WHEN 'JAN' THEN '01' WHEN 'FEB' THEN '02' WHEN 'MAR' THEN '03' WHEN 'APR' THEN '04' WHEN 'MAY' THEN '05' WHEN 'JUN' THEN '06' WHEN 'JUL' THEN '07' WHEN 'AUG' THEN '08' WHEN 'SEP' THEN '09' WHEN 'OCT' THEN '10' WHEN 'NOV' THEN '11' WHEN 'DEC' THEN '12' END, '-', SUBSTR(SIRXDT, 1, 2)) AS DATE) WHERE ref_date IS NULL" \
   "SELECT COUNT(*) FROM ms_v_stock_capital WHERE ref_date IS NULL" 500000
-log "sehknews.trade_date (nearest trading day)..."
+log "sehknews.trade_date (next trading day; after-hours >=16:00 HKT shifts to next day)..."
+# HK 市场 16:00 收盘。盘后公告（HOUR>=16）当日不影响成交，归到下一交易日；
+# 盘中/盘前公告归当日。周末/假日公告自动落到下一交易日。
 run_sql "
 UPDATE sehknews n
 JOIN (
-    SELECT news_date, trade_date
+    SELECT effective_date, trade_date
     FROM (
-        SELECT nd.dt AS news_date, td.trade_date,
-               ROW_NUMBER() OVER (PARTITION BY nd.dt ORDER BY td.trade_date) AS rn
-        FROM (SELECT DISTINCT DATE(\`timestamp\`) AS dt FROM sehknews) nd
+        SELECT nd.effective_date, td.trade_date,
+               ROW_NUMBER() OVER (PARTITION BY nd.effective_date ORDER BY td.trade_date) AS rn
+        FROM (
+            SELECT DISTINCT
+                CASE WHEN HOUR(\`timestamp\`) >= 16
+                     THEN DATE_ADD(DATE(\`timestamp\`), INTERVAL 1 DAY)
+                     ELSE DATE(\`timestamp\`)
+                END AS effective_date
+            FROM sehknews
+        ) nd
         JOIN (SELECT DISTINCT trade_date FROM ms_t_stk_sis) td
-          ON td.trade_date >= nd.dt
-          AND td.trade_date <= DATE_ADD(nd.dt, INTERVAL 7 DAY)
+          ON td.trade_date >= nd.effective_date
+          AND td.trade_date <= DATE_ADD(nd.effective_date, INTERVAL 10 DAY)
     ) ranked WHERE rn = 1
-) mapping ON DATE(n.\`timestamp\`) = mapping.news_date
+) mapping
+  ON mapping.effective_date = (CASE WHEN HOUR(n.\`timestamp\`) >= 16
+                                    THEN DATE_ADD(DATE(n.\`timestamp\`), INTERVAL 1 DAY)
+                                    ELSE DATE(n.\`timestamp\`)
+                               END)
 SET n.trade_date = mapping.trade_date
 WHERE n.trade_date IS NULL;
 "
@@ -400,9 +413,10 @@ for line in sys.stdin:
     else:
         streak50 = 0; start50 = None
 
-    # Avg vol 30d (preceding 30 days, NULL if < 30)
-    if len(vol_buf) >= 30:
-        avg_vol = fmt(vol_sum / 30)
+    # Avg vol 30d: 前置滚动平均，取实有 N 天（≤30）。仅 N=0 时 NULL。
+    # 匹配客户 Avg_Vol_30_Pre 口径：新股 / 数据早期按实有天数平均，而非强制满30。
+    if len(vol_buf) > 0:
+        avg_vol = fmt(vol_sum / len(vol_buf))
     else:
         avg_vol = r'\N'
     # Update vol buffer (after computing, so current day excluded)
