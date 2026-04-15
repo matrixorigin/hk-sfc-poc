@@ -33,7 +33,8 @@ log() { echo "[$(date '+%H:%M:%S')] $*"; }
 
 add() {
   local type="$1" key="$2" name="$3" value="$4" tables="$5"
-  curl -s -X POST "$CATALOG/api/v1/workspaces/$WS/nl2sql-knowledge" \
+  local resp http
+  resp=$(curl -s -w "\n%{http_code}" -X POST "$CATALOG/api/v1/workspaces/$WS/nl2sql-knowledge" \
     -H "X-API-Key: $KEY" -H "Content-Type: application/json" \
     -d "{
       \"knowledge_base_id\": $KB_ID,
@@ -42,7 +43,13 @@ add() {
       \"name\": \"$name\",
       \"knowledge_value\": [$value],
       \"associate_tables\": [$tables]
-    }" > /dev/null 2>&1
+    }")
+  http=$(echo "$resp" | tail -n1)
+  if [ "$http" != "200" ] && [ "$http" != "201" ]; then
+    echo "  ✗ [$type] $key  (HTTP $http)"
+    echo "    body: $(echo "$resp" | head -n-1 | head -c 300)"
+    return 1
+  fi
   echo "  + [$type] $key"
 }
 
@@ -230,7 +237,7 @@ add "case_library" \
   '"ccass_holdings"'
 
 add "case_library" \
-  "Annual YoY revenue/profit comparison (DEFAULT template — annual reports only). Replace {{company_name_column}} with company_name_sc / company_name_tc / company_name_en based on input language. Replace {{company}} with the company keyword from the question. Always use LIKE for fuzzy matching — never guess the full company name. Example: '360 LUDASHI HOLDINGS LIMITED' → company_name_en LIKE '%LUDASHI%'. IMPORTANT: this template filters quarter = 'Final' on both sides, which is the default for \"year / annual / yearly\" questions. If the user explicitly asks about \"interim / H1 / 半年 / 中期\", change both quarter filters to 'Interim' instead." \
+  "Annual YoY revenue/profit comparison (DEFAULT template — annual reports only). Replace {{company_name_column}} with company_name_sc / company_name_tc / company_name_en based on input language. Replace {{company}} with the company keyword from the question. Always use LIKE for fuzzy matching — never guess the full company name. Example: '360 LUDASHI HOLDINGS LIMITED' → company_name_en LIKE '%LUDASHI%'. IMPORTANT: this template filters quarter = 'Final' on both sides, which is the default for year/annual/yearly questions. If the user explicitly asks about interim/H1/半年/中期, change both quarter filters to 'Interim' instead." \
   "Year-over-year annual (Final-only) financial comparison using self-JOIN on profit_loss" \
   '"SELECT a.fin_yr, a.currency, a.turnover AS current_turnover, b.turnover AS previous_turnover, a.turnover - b.turnover AS turnover_change, ROUND((a.turnover - b.turnover) / b.turnover * 100, 2) AS change_pct FROM profit_loss a JOIN profit_loss b ON a.stock_code = b.stock_code AND a.quarter = b.quarter AND CAST(SUBSTRING(a.fin_yr, 1, 4) AS UNSIGNED) = CAST(SUBSTRING(b.fin_yr, 1, 4) AS UNSIGNED) + 1 AND SUBSTRING(a.fin_yr, 5, 2) = SUBSTRING(b.fin_yr, 5, 2) WHERE a.{{company_name_column}} LIKE '\''%{{company}}%'\'' AND a.fin_yr >= '\''{{start_fin_yr}}'\'' AND a.quarter = '\''Final'\'' AND b.quarter = '\''Final'\'' ORDER BY a.fin_yr ASC"' \
   '"profit_loss"'
