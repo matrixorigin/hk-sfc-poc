@@ -6,6 +6,10 @@ interface ChartProps {
   spec?: ChartSpec
 }
 
+export function canChartResult(result: SQLResult): boolean {
+  return canRenderChart(result) || canRenderBarChart(result)
+}
+
 // ── 工具函数 ──
 
 function isNumeric(value: any): boolean {
@@ -347,7 +351,14 @@ function PieChart({ result, spec }: ChartProps) {
 
 // ── 路由入口 ──
 
-function resolveChartType(result: SQLResult, spec?: ChartSpec): string | null {
+function resolveChartType(
+  result: SQLResult,
+  spec?: ChartSpec,
+  override?: 'line' | 'bar' | 'pie' | 'none'
+): string | null {
+  // User override takes precedence
+  if (override === 'none') return null
+  if (override) return override
   if (spec?.chart_type === 'none') return null
   if (spec?.chart_type && spec.chart_type !== 'auto') return spec.chart_type
   // Fallback heuristics
@@ -356,8 +367,12 @@ function resolveChartType(result: SQLResult, spec?: ChartSpec): string | null {
   return null
 }
 
-export function Chart({ result, spec }: ChartProps) {
-  const chartType = resolveChartType(result, spec)
+export function Chart({
+  result,
+  spec,
+  overrideType,
+}: ChartProps & { overrideType?: 'line' | 'bar' | 'pie' | 'none' }) {
+  const chartType = resolveChartType(result, spec, overrideType)
   if (!chartType) return null
 
   switch (chartType) {

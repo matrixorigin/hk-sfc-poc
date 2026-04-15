@@ -1069,6 +1069,43 @@ body {
   background: #fff;
 }
 
+/* Chart section (switcher + chart) */
+.chart-section {
+  margin-top: 12px;
+}
+.chart-section .chart-wrapper {
+  margin-top: 8px;
+}
+
+/* Chart type switcher */
+.chart-type-switcher {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+.chart-type-btn {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #6b7280;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+.chart-type-btn:hover {
+  background: #f9fafb;
+  border-color: #1a73e8;
+  color: #1a73e8;
+}
+.chart-type-btn.active {
+  background: #1a73e8;
+  color: #fff;
+  border-color: #1a73e8;
+}
+
 /* Responsive */
 @media (max-width: 640px) {
   .example-grid {

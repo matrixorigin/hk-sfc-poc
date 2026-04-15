@@ -37,6 +37,7 @@ export interface Message {
   phaseHistory?: Phase[]
   error?: string
   chartSpec?: ChartSpec
+  chartOverride?: { chartType?: 'line' | 'bar' | 'pie' | 'none' }
   feedbackQuestion?: string
 }
 

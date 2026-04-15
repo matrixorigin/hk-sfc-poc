@@ -6,7 +6,9 @@ import rehypeKatex from 'rehype-katex'
 import 'katex/dist/katex.min.css'
 import type { Message } from '../types'
 import { useT } from '../i18n'
-import { Chart } from './Chart'
+import { Chart, canChartResult } from './Chart'
+import { ChartTypeSwitcher } from './ChartTypeSwitcher'
+import type { ChartTypeOverride } from './ChartTypeSwitcher'
 import { DataTable } from './DataTable'
 import { FeedbackButton } from './FeedbackButton'
 import { PhasePipeline } from './PhasePipeline'
@@ -14,9 +16,10 @@ import { selectPrimaryResult } from '../utils/selectPrimaryResult'
 
 interface MessageBubbleProps {
   message: Message
+  onUpdateMessage?: (id: string, updater: (msg: Message) => Message) => void
 }
 
-export function MessageBubble({ message }: MessageBubbleProps) {
+export function MessageBubble({ message, onUpdateMessage }: MessageBubbleProps) {
   const { t } = useT()
   const [showSQL, setShowSQL] = useState(false)
   const isUser = message.role === 'user'
@@ -63,11 +66,27 @@ export function MessageBubble({ message }: MessageBubbleProps) {
             </div>
           )}
 
-          {/* Chart */}
-          {!isUser && isDone && primaryResult && (() => {
-            const { chartSpec } = message
-            if (chartSpec?.chart_type === 'none') return null
-            return <Chart result={primaryResult} spec={chartSpec} />
+          {/* Chart type switcher + Chart */}
+          {!isUser && isDone && primaryResult && canChartResult(primaryResult) && (() => {
+            const overrideType = message.chartOverride?.chartType
+            const currentType: ChartTypeOverride | 'auto' =
+              overrideType ?? (message.chartSpec?.chart_type as ChartTypeOverride | undefined) ?? 'auto'
+            return (
+              <div className="chart-section">
+                {onUpdateMessage && (
+                  <ChartTypeSwitcher
+                    current={currentType}
+                    onChange={(type) =>
+                      onUpdateMessage(message.id, (m) => ({
+                        ...m,
+                        chartOverride: { chartType: type },
+                      }))
+                    }
+                  />
+                )}
+                <Chart result={primaryResult} spec={message.chartSpec} overrideType={overrideType} />
+              </div>
+            )
           })()}
 
           {/* Data Table */}

@@ -83,6 +83,14 @@ export function ChatPanel({
     )
   }, [])
 
+  // Update any message by id (used by MessageBubble for chart type override etc.)
+  const handleUpdateMessage = useCallback(
+    (id: string, updater: (msg: Message) => Message) => {
+      setMessages((prev) => prev.map((m) => (m.id === id ? updater(m) : m)))
+    },
+    []
+  )
+
   const onDone = useCallback(() => {
     setIsLoading(false)
     streamingMsgIdRef.current = null
@@ -185,7 +193,7 @@ export function ChatPanel({
           </div>
         ) : (
           messages.map((msg) => (
-            <MessageBubble key={msg.id} message={msg} />
+            <MessageBubble key={msg.id} message={msg} onUpdateMessage={handleUpdateMessage} />
           ))
         )}
         <div ref={messagesEndRef} />
