@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 )
 
@@ -59,10 +60,10 @@ func NewEventProcessor() *EventProcessor {
 // ProcessEvent takes an upstream event and returns downstream events.
 func (ep *EventProcessor) ProcessEvent(evt SSEEvent) []SSEEvent {
 	switch evt.EventType {
-	case "planning.plan.ready", "planning.rewrite.ready":
-		ep.extractPresentation(evt.Data)
 	case "sql.result":
 		ep.extractSQLResultMeta(evt.Data)
+	case "synthesis.done":
+		ep.extractChartFromSynthesis(evt.Data)
 	}
 
 	if evt.EventType == "synthesis.done" && !ep.chartSent {
@@ -78,21 +79,32 @@ func (ep *EventProcessor) ProcessEvent(evt SSEEvent) []SSEEvent {
 	return []SSEEvent{ep.assignSeq(evt)}
 }
 
-func (ep *EventProcessor) extractPresentation(data string) {
+// extractChartFromSynthesis reads the grounded chart directive the synthesizer
+// emits in the synthesis.done payload. The synthesizer is the only source of
+// truth for chart recommendations: it sees the real SQL columns and picks
+// y_fields from them, so column-name mismatches cannot happen here.
+func (ep *EventProcessor) extractChartFromSynthesis(data string) {
 	var wrapper struct {
 		Data json.RawMessage `json:"data"`
 	}
 	if err := json.Unmarshal([]byte(data), &wrapper); err != nil {
+		log.Printf("[chart-debug] extractChartFromSynthesis: wrapper unmarshal failed: %v", err)
 		return
 	}
-	var planData struct {
-		Presentation *PresentationSpec `json:"presentation"`
+	var synthesis struct {
+		Chart *PresentationSpec `json:"chart"`
 	}
-	if err := json.Unmarshal(wrapper.Data, &planData); err != nil {
+	if err := json.Unmarshal(wrapper.Data, &synthesis); err != nil {
+		log.Printf("[chart-debug] extractChartFromSynthesis: inner unmarshal failed: %v", err)
 		return
 	}
-	if planData.Presentation != nil {
-		ep.presentation = planData.Presentation
+	if synthesis.Chart != nil {
+		ep.presentation = synthesis.Chart
+		log.Printf("[chart-debug] extractChartFromSynthesis: chart_type=%s x=%s y=%v display=%s",
+			synthesis.Chart.ChartType, synthesis.Chart.XField,
+			synthesis.Chart.YFields, synthesis.Chart.DisplayMode)
+	} else {
+		log.Printf("[chart-debug] extractChartFromSynthesis: synthesis.chart is nil (no directive emitted)")
 	}
 }
 
@@ -143,7 +155,12 @@ func (ep *EventProcessor) buildChartRecommendation() *SSEEvent {
 		rec.Y = append(rec.Y, ChartAxisSpec{Field: yf, Label: yf})
 	}
 
-	dataBytes, _ := json.Marshal(rec)
+	envelope := map[string]any{
+		"event": "chart.recommendation",
+		"data":  rec,
+	}
+	dataBytes, _ := json.Marshal(envelope)
+	log.Printf("[chart-debug] buildChartRecommendation: sending to frontend: %s", string(dataBytes))
 	return &SSEEvent{EventType: "chart.recommendation", Data: string(dataBytes)}
 }
 
