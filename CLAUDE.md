@@ -22,8 +22,8 @@ docker compose build app && docker compose up -d --force-recreate app
 ## Testing
 
 ```bash
-# Accuracy test (ground truth SQL comparison, fail-fast)
-bash scripts/09_accuracy_test.sh -c 2    # -c = concurrency
+# Accuracy test (streaming validation: finishes → validates → any failure stops all)
+python3 scripts/09_accuracy_test.py -c 2    # -c = concurrency
 
 # Integration test
 bash scripts/08_integration_test.sh
@@ -37,7 +37,8 @@ bash scripts/08_integration_test.sh
 | `02_import_data.sh` | CSV import + date standardization + pre-computed columns (MA, consecutive days, industry carry-forward) |
 | `04_init_poc_env.sh` | Catalog workspace initialization |
 | `07_configure_knowledge.sh` | Semantic knowledge base rules (logic/case_library/glossary) |
-| `09_accuracy_test.sh` | 14-case accuracy benchmark with ground truth SQL |
+| `09_accuracy_test.py` | Streaming accuracy test (ThreadPoolExecutor + as_completed + fail-fast) |
+| `accuracy_cases.tsv` | Test case data (sid/label/question/gt_sql/checks), loaded by 09_accuracy_test.py |
 
 ## Architecture
 
