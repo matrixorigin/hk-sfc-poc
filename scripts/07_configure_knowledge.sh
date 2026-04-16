@@ -152,10 +152,10 @@ add "logic" "hsi_daily_usage" "Use ms_v_stk_hsi_daily for daily HSI analysis" \
   '"ms_v_stk_hsi_daily is a daily summary table (one row per trading day, ~286 rows) with pre-computed hsi_pct_change. Use this instead of ms_t_stk_hsi (tick data, ~11000 rows/day) for daily-level HSI analysis."' \
   '"ms_v_stk_hsi_daily"'
 
-# --- 可视化 ---
-add "logic" "chart_friendly_output" "Generate chart-friendly SQL when visualization is requested" \
-  '"When the question asks for charts/plots/trends/visualization (图表/绘制/趋势/走势), return time series data with a date column and numeric columns. Limit to top 5 items if the result set would be too large."' \
-  '"ms_t_stk_sis","ms_v_stk_hsi_daily","profit_loss","ms_v_stock_capital"'
+# --- 可视化规则已删除 ---
+# chart_friendly_output 被移除。原因：（1）它强加 time-series 列形态，扭曲了 list 类查询的 SQL 结构；
+# （2）它带的 "Limit to top 5" 和 list_vs_rank_semantics 冲突；
+# （3）前端 DataTable 已有分页、Chart 能自适应任意 result shape，SQL 层无需截断。
 
 # --- 日期边界约束（通用） ---
 add "logic" "date_boundary_constraint" "All SQL date literals must fall within actual data coverage" \
@@ -174,7 +174,7 @@ add "logic" "list_vs_rank_semantics" "User phrasing determines whether to add LI
 
 # --- 方向性语义约束 ---
 add "logic" "directional_filter_constraint" "Decline/increase queries must include sign filter" \
-  '"When the user asks about decline/decrease/drop (下降/下跌/减少/缩水/亏损), the SQL MUST include a < 0 filter on the computed change column. When the user asks about increase/growth/rise (上升/上涨/增长/增加), the SQL MUST include a > 0 filter. WITHOUT this filter, ORDER BY ASC/DESC LIMIT N may return results that do not match the directional intent (e.g. returning the smallest gain instead of an actual decline). EXCEPTION: when the question asks about \"情况/趋势/走势/变化\" (e.g. \"增长情况\", \"营收变化趋势\"), this is descriptive — the user wants to see ALL data including both increases and decreases. Do NOT add a sign filter in this case."' \
+  '"When the user asks about decline/decrease/drop (下降/下跌/减少/缩水/亏损), the SQL MUST include a < 0 filter on the computed change column. When the user asks about increase/growth/rise (上升/上涨/增长/增加), the SQL MUST include a > 0 filter. Without this filter, the result set will contain rows whose change sign does not match the user'\''s directional intent. This rule governs WHICH rows qualify; it does NOT prescribe whether to LIMIT or rank — that decision belongs to list_vs_rank_semantics. EXCEPTION: when the question asks about \"情况/趋势/走势/变化\" (e.g. \"增长情况\", \"营收变化趋势\"), this is descriptive — the user wants to see ALL data including both increases and decreases. Do NOT add a sign filter in this case."' \
   '"ms_t_stk_sis","ms_v_stock_capital","profit_loss","ms_v_stk_hsi_daily","ccass_holdings"'
 
 # --- 过滤子集上的聚合：必须带 filter dimension + GROUP BY ---
@@ -189,7 +189,7 @@ add "logic" "consecutive_ma_dedup" "Deduplicate consecutive_above_ma queries to 
 
 # --- 时间序列排序 ---
 add "logic" "time_series_order_by" "Time series SQL must ORDER BY the temporal column ASC" \
-  '"When the SELECT list contains a date/time column (trade_date, fin_yr, holding_date, ref_date, announcement_date, timestamp, ym, month, year, etc.) AND the query returns multiple rows across time, the SQL MUST include ORDER BY <temporal_column> ASC as the final clause. This is NOT optional. A time series without ORDER BY returns rows in arbitrary/engine-dependent order, producing wrong visual trends in charts and confusing left-to-right reading in data tables. This is a correctness requirement, not an optimization. EXCEPTION: ranking queries where the primary intent is ORDER BY <metric> DESC LIMIT N — in that case the metric is the primary sort key and time is secondary. For comparison queries (self-JOIN, YoY, MoM), order by the CURRENT period'\''s temporal column (e.g. ORDER BY a.fin_yr ASC when a is the current row and b is the prior-period row)."' \
+  '"When the SELECT list contains a date/time column (trade_date, fin_yr, holding_date, ref_date, announcement_date, timestamp, ym, month, year, etc.) AND the query returns multiple rows across time, the SQL MUST include ORDER BY <temporal_column> ASC as the final clause. This is NOT optional. A time series without ORDER BY returns rows in arbitrary/engine-dependent order, producing wrong visual trends in charts and confusing left-to-right reading in data tables. This is a correctness requirement, not an optimization. For comparison queries (self-JOIN, YoY, MoM), order by the CURRENT period'\''s temporal column (e.g. ORDER BY a.fin_yr ASC when a is the current row and b is the prior-period row). Note: this rule governs temporal sort. Whether to rank by a non-temporal metric and LIMIT is decided by list_vs_rank_semantics — if that rule says LIMIT N with ORDER BY metric DESC, that sort takes precedence and this rule does not apply."' \
   '"ms_t_stk_sis","ms_v_stk_hsi_daily","profit_loss","ccass_holdings","sehknews","ds_t_int_hsicl_dtl","ms_v_stock_capital","ms_t_stk_hsi"'
 
 # --- SQL 方言 ---
