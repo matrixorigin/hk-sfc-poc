@@ -8,7 +8,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"sync"
 )
 
 // followUpCheckPrompt 用于判断新问题是否是对历史问题的追问/修改。
@@ -60,14 +59,18 @@ const classifySystemPrompt = `你是香港证券市场数据分析平台的参�
 
 仅返回 JSON，不要其他内容：
 - 参数齐全：{"complete": true}
-- 参数缺失：{"complete": false, "reply": "用自然语言反问用户补充缺失参数，简洁友好，一句话"}`
+- 参数缺失：{"complete": false, "reply": "用自然语言反问用户补充缺失参数，简洁友好，一句话"}
+
+重要：reply 字段必须使用与用户提问相同的语言。用户用英文问，reply 用英文；用户用中文问，reply 用中文。`
 
 const mergeSystemPrompt = `你是一个问题合并助手。用户之前问了一个不完整的问题，现在补充了信息。
 请判断用户的新输入：
 1. 如果是对原始问题的补充（提供了缺失的时间范围、股票代码等），把原始问题和补充合并成一个完整的自然语言问题。
 2. 如果是一个全新的、与原始问题无关的问题，只返回新问题原文。
 
-只返回合并后的问题文本，不要任何解释。`
+只返回合并后的问题文本，不要任何解释。
+
+重要：合并后的问题必须使用与原始问题相同的语言。原问题是英文就输出英文，是中文就输出中文。`
 
 // ClarifyResult 是分类 LLM 的返回结果。
 type ClarifyResult struct {
@@ -76,27 +79,24 @@ type ClarifyResult struct {
 }
 
 // Clarifier 通过 Catalog LLM API 判断问题参数是否完整，并管理反问上下文。
+// 状态（pending / history）持久化在 ConversationsDB 里，Clarifier 本身无内存态。
 type Clarifier struct {
 	catalogURL  string
 	apiKey      string
 	workspaceID string
 	model       string
 	httpClient  *http.Client
-
-	mu      sync.Mutex
-	pending map[string]string   // session_id → 被反问的原始问题
-	history map[string][]string // session_id → 已发送到 Explore 的历史问题
+	db          *ConversationsDB
 }
 
-func NewClarifier(catalogURL, apiKey, workspaceID, model string) *Clarifier {
+func NewClarifier(catalogURL, apiKey, workspaceID, model string, db *ConversationsDB) *Clarifier {
 	return &Clarifier{
 		catalogURL:  catalogURL,
 		apiKey:      apiKey,
 		workspaceID: workspaceID,
 		model:       model,
 		httpClient:  &http.Client{},
-		pending:     make(map[string]string),
-		history:     make(map[string][]string),
+		db:          db,
 	}
 }
 
@@ -104,18 +104,25 @@ func NewClarifier(catalogURL, apiKey, workspaceID, model string) *Clarifier {
 // 返回值：(最终问题, 需要反问的回复, error)
 //   - 如果参数齐全：返回 (question, "", nil)，调用方继续走 Explore
 //   - 如果需要反问：返回 ("", reply, nil)，调用方返回反问 SSE
-func (c *Clarifier) Process(ctx context.Context, sessionID, question string) (finalQuestion string, clarifyReply string, err error) {
-	c.mu.Lock()
-	pendingQ, hasPending := c.pending[sessionID]
-	if hasPending {
-		delete(c.pending, sessionID)
+//
+// 注意：Process 由 MessagesHandler 在「写当前 user message 之前」调用，
+// 因此 db.RecentUserQuestions 返回的历史天然不包含当前问题。
+// handler 负责在反问分支写 pending_clarify、在合并分支清 pending_clarify。
+func (c *Clarifier) Process(ctx context.Context, conversationID, question string) (finalQuestion string, clarifyReply string, err error) {
+	var pendingQ string
+	var hist []string
+	if c.db != nil {
+		conv, dbErr := c.db.GetConversation(conversationID)
+		if dbErr == nil && conv != nil {
+			pendingQ = conv.PendingClarify
+		}
+		if h, dbErr2 := c.db.RecentUserQuestions(conversationID, 5); dbErr2 == nil {
+			hist = h
+		}
 	}
-	hist := make([]string, len(c.history[sessionID]))
-	copy(hist, c.history[sessionID])
-	c.mu.Unlock()
 
 	// Step 1: 用户回答反问 → merge 后直接放行
-	if hasPending {
+	if pendingQ != "" {
 		merged := c.merge(ctx, pendingQ, question)
 		log.Printf("clarify: merged pending=%q + input=%q → %q", pendingQ, question, merged)
 		return merged, "", nil
@@ -136,32 +143,7 @@ func (c *Clarifier) Process(ctx context.Context, sessionID, question string) (fi
 		return question, "", nil
 	}
 
-	// Step 4: 参数不完整，缓存当前问题，返回反问
-	c.mu.Lock()
-	c.pending[sessionID] = question
-	c.mu.Unlock()
-
 	return "", result.Reply, nil
-}
-
-// ClearSession 清除某个 session 的全部状态（如用户点了 New Chat）。
-func (c *Clarifier) ClearSession(sessionID string) {
-	c.mu.Lock()
-	delete(c.pending, sessionID)
-	delete(c.history, sessionID)
-	c.mu.Unlock()
-}
-
-// RecordExplored 记录一条已发送到 Explore 的问题，用于后续对话历史上下文。
-func (c *Clarifier) RecordExplored(sessionID, question string) {
-	c.mu.Lock()
-	h := c.history[sessionID]
-	h = append(h, question)
-	if len(h) > 5 {
-		h = h[len(h)-5:]
-	}
-	c.history[sessionID] = h
-	c.mu.Unlock()
 }
 
 // merge 调用 LLM 合并原始问题和用户补充。

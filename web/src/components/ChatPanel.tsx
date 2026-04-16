@@ -1,89 +1,78 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { v4 as uuidv4 } from 'uuid'
-import type { Message, Conversation } from '../types'
+import type { Message, ConversationMeta } from '../types'
+import { fromStoredMessage } from '../types'
 import { useT } from '../i18n'
 import { useExploreSSE } from '../hooks/useExploreSSE'
 import { MessageBubble } from './MessageBubble'
 import { TableSelector } from './TableSelector'
+import { listMessages } from '../api/conversations'
 
 interface ChatPanelProps {
-  conversation: Conversation | null
-  onMessagesChange: (messages: Message[]) => void
-  onEnsureConversation: () => Conversation
+  conversation: ConversationMeta | null
+  onEnsureConversation: () => Promise<ConversationMeta>
   onNewChat: () => void
+  onConversationTouched: () => void
 }
+
+// 客户端临时 id 前缀，便于在收到 message.created 后替换
+const CLIENT_TEMP_PREFIX = 'client-temp-'
 
 export function ChatPanel({
   conversation,
-  onMessagesChange,
   onEnsureConversation,
   onNewChat,
+  onConversationTouched,
 }: ChatPanelProps) {
   const { t } = useT()
-  const [messages, setMessages] = useState<Message[]>(conversation?.messages || [])
+  const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [selectedTables, setSelectedTables] = useState<string[]>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const streamingMsgIdRef = useRef<string | null>(null)
-  const sessionIdRef = useRef(conversation?.sessionId || uuidv4())
-  const prevConvIdRef = useRef<string | null | undefined>(conversation?.id)
-  const sendingRef = useRef(false) // 标记是否正在发送（避免 useEffect 重置消息）
-  const loadingHistoryRef = useRef(false) // 标记正在加载历史（避免触发 onMessagesChange）
+  // 发送期间新建的会话，不要再去 fetch 历史（那会覆盖乐观插入的占位消息）
+  const skipNextFetchRef = useRef<string | null>(null)
 
+  // 切换会话时加载对应的消息历史；清空则回到欢迎页
   useEffect(() => {
-    const prevId = prevConvIdRef.current
-    const newId = conversation?.id
-    console.log('[ChatPanel useEffect] prevId:', prevId, 'newId:', newId, 'messages:', messages.length, 'isLoading:', isLoading)
-    prevConvIdRef.current = newId
-
-    // 发送消息时自动创建的会话，不要重置 messages
-    if (sendingRef.current) {
-      sendingRef.current = false
-      if (newId) sessionIdRef.current = conversation?.sessionId || uuidv4()
-      return
-    }
-
-    // 切到不同会话：加载它的 messages（空或有历史）
-    if (newId && prevId !== newId) {
-      loadingHistoryRef.current = true
-      setMessages(conversation?.messages || [])
-      sessionIdRef.current = conversation?.sessionId || uuidv4()
-      setIsLoading(false)
-      setInput('')
-      streamingMsgIdRef.current = null
-    }
-    // activeId 清空 (New Chat) — 也处理 prevId 为 undefined 但有消息的情况
-    if (!newId && (prevId || messages.length > 0)) {
-      cancel() // 取消正在进行的 SSE 流
+    const id = conversation?.id
+    if (!id) {
+      cancel()
       setMessages([])
       setInput('')
       setIsLoading(false)
       streamingMsgIdRef.current = null
-    }
-  }, [conversation?.id])
-
-  // Notify parent of message changes (skip when loading history to avoid updatedAt change)
-  useEffect(() => {
-    if (loadingHistoryRef.current) {
-      loadingHistoryRef.current = false
       return
     }
-    if (conversation) {
-      onMessagesChange(messages)
+    if (skipNextFetchRef.current === id) {
+      skipNextFetchRef.current = null
+      return
     }
-  }, [messages])
+    let cancelled = false
+    listMessages(id)
+      .then((stored) => {
+        if (cancelled) return
+        setMessages(stored.map(fromStoredMessage))
+        setIsLoading(false)
+        streamingMsgIdRef.current = null
+      })
+      .catch((err) => {
+        console.error('[ChatPanel] listMessages failed:', err)
+        if (!cancelled) setMessages([])
+      })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversation?.id])
 
   const onUpdate = useCallback((updater: (msg: Message) => Message) => {
     const id = streamingMsgIdRef.current
     if (!id) return
-    setMessages((prev) =>
-      prev.map((m) => (m.id === id ? updater(m) : m))
-    )
+    setMessages((prev) => prev.map((m) => (m.id === id ? updater(m) : m)))
   }, [])
 
-  // Update any message by id (used by MessageBubble for chart type override etc.)
   const handleUpdateMessage = useCallback(
     (id: string, updater: (msg: Message) => Message) => {
       setMessages((prev) => prev.map((m) => (m.id === id ? updater(m) : m)))
@@ -94,49 +83,73 @@ export function ChatPanel({
   const onDone = useCallback(() => {
     setIsLoading(false)
     streamingMsgIdRef.current = null
-  }, [])
+    // 刷新会话列表以拿到新的 title / updated_at
+    onConversationTouched()
+  }, [onConversationTouched])
 
   const onError = useCallback((error: string) => {
     const id = streamingMsgIdRef.current
     if (id) {
       setMessages((prev) =>
-        prev.map((m) =>
-          m.id === id ? { ...m, isStreaming: false, error } : m
-        )
+        prev.map((m) => (m.id === id ? { ...m, isStreaming: false, error } : m))
       )
     }
     setIsLoading(false)
     streamingMsgIdRef.current = null
   }, [])
 
-  const { send, cancel } = useExploreSSE({ onUpdate, onDone, onError })
+  // 服务端生成了 message id → 用它替换两条客户端临时 id
+  const onMessageCreated = useCallback(
+    (userMsgId: string, assistantMsgId: string) => {
+      setMessages((prev) => {
+        const next = [...prev]
+        // 找到最后两条 CLIENT_TEMP_PREFIX 开头的消息，按顺序替换 id
+        for (let i = next.length - 1; i >= 0 && (!next[i].id.startsWith(CLIENT_TEMP_PREFIX)); i--) {
+          // skip non-temp
+        }
+        let replaced = 0
+        for (let i = next.length - 1; i >= 0 && replaced < 2; i--) {
+          if (next[i].id.startsWith(CLIENT_TEMP_PREFIX)) {
+            const newId = next[i].role === 'assistant' ? assistantMsgId : userMsgId
+            next[i] = { ...next[i], id: newId }
+            replaced++
+          }
+        }
+        return next
+      })
+      // assistant 的新 id 用于后续 onUpdate 定位
+      streamingMsgIdRef.current = assistantMsgId
+    },
+    []
+  )
+
+  const { send, cancel } = useExploreSSE({ onUpdate, onDone, onError, onMessageCreated })
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  const handleSend = (text?: string) => {
+  const handleSend = async (text?: string) => {
     const question = (text || input).trim()
-    console.log('[handleSend]', { question, isLoading, input, text })
     if (!question || isLoading) return
 
-    // Ensure a conversation exists (标记发送中，防止 useEffect 重置 messages)
-    sendingRef.current = true
-    const conv = onEnsureConversation()
-    sessionIdRef.current = conv.sessionId
+    const conv = await onEnsureConversation()
+    // 标记该 id 下一次 useEffect 不要 fetch（否则会覆盖下面的乐观插入）
+    skipNextFetchRef.current = conv.id
+
+    const tempUserId = `${CLIENT_TEMP_PREFIX}${Date.now()}-u`
+    const tempAssistantId = `${CLIENT_TEMP_PREFIX}${Date.now()}-a`
 
     const userMsg: Message = {
-      id: uuidv4(),
+      id: tempUserId,
       role: 'user',
       content: question,
       sqlResults: [],
       sqlStatements: [],
       isStreaming: false,
     }
-
-    const assistantMsgId = uuidv4()
     const assistantMsg: Message = {
-      id: assistantMsgId,
+      id: tempAssistantId,
       role: 'assistant',
       content: '',
       sqlResults: [],
@@ -148,11 +161,11 @@ export function ChatPanel({
     }
 
     setMessages((prev) => [...prev, userMsg, assistantMsg])
-    streamingMsgIdRef.current = assistantMsgId
+    streamingMsgIdRef.current = tempAssistantId
     setInput('')
     setIsLoading(true)
 
-    send(question, sessionIdRef.current, selectedTables.length > 0 ? selectedTables : undefined)
+    send(conv.id, question, selectedTables.length > 0 ? selectedTables : undefined)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -171,7 +184,6 @@ export function ChatPanel({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* Messages or welcome */}
       <div className="messages-area">
         {messages.length === 0 ? (
           <div className="welcome">
@@ -199,7 +211,6 @@ export function ChatPanel({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input area */}
       <div className="input-section">
         <TableSelector selected={selectedTables} onChange={setSelectedTables} />
         <div className="input-area">

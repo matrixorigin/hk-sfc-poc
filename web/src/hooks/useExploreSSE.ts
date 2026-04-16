@@ -45,13 +45,14 @@ interface UseExploreSSEOptions {
   onUpdate: (updater: (msg: Message) => Message) => void
   onDone: () => void
   onError: (error: string) => void
+  onMessageCreated: (userMsgId: string, assistantMsgId: string) => void
 }
 
-export function useExploreSSE({ onUpdate, onDone, onError }: UseExploreSSEOptions) {
+export function useExploreSSE({ onUpdate, onDone, onError, onMessageCreated }: UseExploreSSEOptions) {
   const abortControllerRef = useRef<AbortController | null>(null)
 
   const send = useCallback(
-    async (question: string, sessionId: string, tables?: string[]) => {
+    async (conversationId: string, question: string, tables?: string[]) => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort()
       }
@@ -59,10 +60,10 @@ export function useExploreSSE({ onUpdate, onDone, onError }: UseExploreSSEOption
       abortControllerRef.current = controller
 
       try {
-        const response = await fetch('/api/chat', {
+        const response = await fetch(`/api/conversations/${conversationId}/messages`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ question, session_id: sessionId, ...(tables?.length ? { tables } : {}) }),
+          body: JSON.stringify({ question, ...(tables?.length ? { tables } : {}) }),
           signal: controller.signal,
         })
 
@@ -108,7 +109,7 @@ export function useExploreSSE({ onUpdate, onDone, onError }: UseExploreSSEOption
         onError(err?.message ?? 'Unknown error')
       }
     },
-    [onUpdate, onDone, onError]
+    [onUpdate, onDone, onError, onMessageCreated]
   )
 
   /** Update phase and append to history (dedup) */
@@ -126,6 +127,18 @@ export function useExploreSSE({ onUpdate, onDone, onError }: UseExploreSSEOption
 
   function handleEvent(event: ExploreEvent) {
     switch (event.event) {
+      case 'message.created': {
+        const userId: string = event.data?.user_message_id ?? ''
+        const assistantId: string = event.data?.assistant_message_id ?? ''
+        if (userId && assistantId) {
+          onMessageCreated(userId, assistantId)
+        }
+        break
+      }
+      case 'message.persisted': {
+        // 后端已落库，前端无额外处理（日志即可）
+        break
+      }
       case 'run.started': {
         setPhase('thinking')
         break

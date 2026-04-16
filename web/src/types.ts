@@ -1,9 +1,9 @@
 export interface ExploreEvent {
-  schema_version: string
-  run_id: string
+  schema_version?: string
+  run_id?: string
   event: string
-  ts_ms: number
-  seq: number
+  ts_ms?: number
+  seq?: number
   trace_id?: string
   data: any
 }
@@ -43,11 +43,46 @@ export interface Message {
 
 export type Language = 'en' | 'zh'
 
-export interface Conversation {
+// ConversationMeta 对应 GET /api/conversations 的单条元信息。
+// 前端不再持有会话的完整 messages，messages 按需拉取。
+export interface ConversationMeta {
   id: string
-  sessionId: string
   title: string
-  messages: Message[]
-  createdAt: number
-  updatedAt: number
+  created_at: number
+  updated_at: number
+}
+
+// StoredMessage 对应 GET /api/conversations/:id/messages 返回的原始消息结构。
+// 前端加载历史时需要映射为 Message（见 App.tsx 的 fromStoredMessage）。
+export interface StoredMessage {
+  id: string
+  conversation_id: string
+  role: 'user' | 'assistant'
+  content: string
+  sql_statements?: string[]
+  sql_results?: SQLResult[]
+  chart_spec?: ChartSpec
+  phase_history?: Phase[]
+  error?: string
+  feedback_question?: string
+  status: 'pending' | 'done' | 'failed'
+  seq: number
+  created_at: number
+}
+
+// fromStoredMessage 把后端存储结构映射为前端运行时的 Message。
+export function fromStoredMessage(m: StoredMessage): Message {
+  return {
+    id: m.id,
+    role: m.role,
+    content: m.content ?? '',
+    sqlResults: m.sql_results ?? [],
+    sqlStatements: m.sql_statements ?? [],
+    isStreaming: m.status === 'pending',
+    phase: m.status === 'done' ? 'done' : undefined,
+    phaseHistory: m.phase_history as Phase[] | undefined,
+    error: m.error,
+    chartSpec: m.chart_spec,
+    feedbackQuestion: m.feedback_question,
+  }
 }

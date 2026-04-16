@@ -7,7 +7,7 @@ interface ChartProps {
 }
 
 export function canChartResult(result: SQLResult): boolean {
-  return canRenderChart(result) || canRenderBarChart(result)
+  return isTimeSeriesLike(result) || isCategoricalLike(result)
 }
 
 // ── 工具函数 ──
@@ -95,6 +95,17 @@ function findCategoryColumnIndex(result: SQLResult): number {
   return 0
 }
 
+/** 可行性优先的 x 轴列选择：时间序列列 > category 列 > 第 0 列。
+ *  退化的日期列（unique<3）不当时间轴，改用 category，避免出现只有一根垂直线。 */
+function findXAxisIndex(result: SQLResult): number {
+  const dateCol = findDateColumnIndex(result)
+  if (dateCol >= 0) {
+    const uniq = new Set(result.rows.map((r) => String(r[dateCol] ?? '')))
+    if (uniq.size >= 3) return dateCol
+  }
+  return findCategoryColumnIndex(result)
+}
+
 // ── 金融配色 ──
 const COLORS = [
   '#1a73e8', // 蓝
@@ -105,9 +116,9 @@ const COLORS = [
   '#16a34a', // 绿
 ]
 
-// ── 判断函数 ──
+// ── 适合性评估（仅供自动推荐 resolveChartType 使用；不作为渲染门禁）──
 
-function canRenderChart(result: SQLResult): boolean {
+function isTimeSeriesLike(result: SQLResult): boolean {
   if (result.columns.length < 2) return false
   if (result.rows.length < 3) return false
   const dateCol = findDateColumnIndex(result)
@@ -126,7 +137,7 @@ function canRenderChart(result: SQLResult): boolean {
   return hasNumericCol
 }
 
-function canRenderBarChart(result: SQLResult): boolean {
+function isCategoricalLike(result: SQLResult): boolean {
   if (result.columns.length < 2 || result.rows.length < 1) return false
   const catCol = findCategoryColumnIndex(result)
   return result.columns.some((col, ci) =>
@@ -138,18 +149,19 @@ function canRenderBarChart(result: SQLResult): boolean {
 // ── 子图表组件 ──
 
 function LineChart({ result, spec }: ChartProps) {
-  if (!canRenderChart(result)) return null
-
   const { columns, rows } = result
-  const dateCol = findDateColumnIndex(result)
-  const xData = rows.map((row) => formatDateValue(String(row[dateCol] ?? '')))
+  const xCol = spec?.x?.field
+    ? columns.indexOf(spec.x.field)
+    : findXAxisIndex(result)
+  if (xCol < 0 || rows.length === 0) return null
+  const xData = rows.map((row) => formatDateValue(String(row[xCol] ?? '')))
 
-  // 过滤掉日期列和标识列，只保留真正的数值系列
+  // 过滤掉 x 轴列和标识列，只保留真正的数值系列
   const allNumeric = columns
     .map((col, ci) => ({ col, colIndex: ci }))
     .filter(
       ({ col, colIndex }) =>
-        colIndex !== dateCol &&
+        colIndex !== xCol &&
         !isIdentifierColumn(col, rows.map((r) => r[colIndex])) &&
         rows.some((row) => isNumeric(row[colIndex]))
     )
@@ -159,6 +171,7 @@ function LineChart({ result, spec }: ChartProps) {
   const numericSeries = specFields.length > 0
     ? allNumeric.filter(({ col }) => specFields.includes(col))
     : allNumeric
+  if (numericSeries.length === 0) return null
 
   const series = numericSeries.map(({ col, colIndex }, idx) => ({
     name: formatColumnName(col),
@@ -361,9 +374,9 @@ function resolveChartType(
   if (override) return override
   if (spec?.chart_type === 'none') return null
   if (spec?.chart_type && spec.chart_type !== 'auto') return spec.chart_type
-  // Fallback heuristics
-  if (canRenderChart(result)) return 'line'
-  if (canRenderBarChart(result)) return 'bar'
+  // Auto-selection (仅在 spec.chart_type 为 'auto' 或缺失时生效；override 不走这里)
+  if (isTimeSeriesLike(result)) return 'line'
+  if (isCategoricalLike(result)) return 'bar'
   return null
 }
 

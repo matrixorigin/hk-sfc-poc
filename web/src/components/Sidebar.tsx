@@ -1,8 +1,8 @@
-import type { Conversation } from '../types'
+import type { ConversationMeta } from '../types'
 import { useT } from '../i18n'
 
 interface SidebarProps {
-  conversations: Conversation[]
+  conversations: ConversationMeta[]
   activeId: string | null
   onSelect: (id: string) => void
   onNew: () => void
@@ -32,10 +32,8 @@ export function Sidebar({
     )
   }
 
-  // 只显示有消息的会话，过滤掉空会话
-  const sorted = [...conversations]
-    .filter((c) => c.messages.length > 0)
-    .sort((a, b) => b.updatedAt - a.updatedAt)
+  // 后端不存空会话前提下，直接按 updated_at DESC 显示所有
+  const sorted = [...conversations].sort((a, b) => b.updated_at - a.updated_at)
 
   return (
     <div className="sidebar">
@@ -56,7 +54,7 @@ export function Sidebar({
           >
             <div className="sidebar-item-title">{conv.title || t('newChat')}</div>
             <div className="sidebar-item-meta">
-              {new Date(conv.updatedAt).toLocaleDateString()}
+              {new Date(conv.updated_at).toLocaleDateString()}
             </div>
             <button
               className="sidebar-item-delete"

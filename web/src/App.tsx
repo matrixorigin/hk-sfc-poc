@@ -1,98 +1,79 @@
 import { useState, useCallback, useEffect } from 'react'
-import { v4 as uuidv4 } from 'uuid'
-import type { Language, Conversation, Message } from './types'
+import type { Language, ConversationMeta } from './types'
 import { LangContext, getT } from './i18n'
 import { LangSwitch } from './components/LangSwitch'
 import { ChatPanel } from './components/ChatPanel'
 import { Sidebar } from './components/Sidebar'
 import { KnowledgePanel } from './components/KnowledgePanel'
 import { AnalysisPanel } from './components/AnalysisPanel'
+import {
+  listConversations,
+  createConversation,
+  deleteConversation,
+} from './api/conversations'
 import './App.css'
-
-const STORAGE_KEY = 'hk-poc-conversations'
-
-function loadConversations(): Conversation[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? JSON.parse(raw) : []
-  } catch {
-    return []
-  }
-}
-
-function saveConversations(convs: Conversation[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(convs))
-}
-
-function createConversation(): Conversation {
-  return {
-    id: uuidv4(),
-    sessionId: uuidv4(),
-    title: '',
-    messages: [],
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-  }
-}
 
 function App() {
   const [lang, setLang] = useState<Language>('en')
   const t = getT(lang)
 
-  const [conversations, setConversations] = useState<Conversation[]>(loadConversations)
+  const [conversations, setConversations] = useState<ConversationMeta[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [knowledgeOpen, setKnowledgeOpen] = useState(false)
   const [analysisOpen, setAnalysisOpen] = useState(false)
 
-  // Persist conversations on change
+  // 启动时从后端加载会话列表
   useEffect(() => {
-    saveConversations(conversations)
-  }, [conversations])
+    listConversations()
+      .then(setConversations)
+      .catch((err) => console.error('[App] listConversations failed:', err))
+  }, [])
 
   const activeConv = conversations.find((c) => c.id === activeId) || null
 
+  const refreshList = useCallback(async () => {
+    try {
+      const list = await listConversations()
+      setConversations(list)
+    } catch (err) {
+      console.error('[App] refresh conversations failed:', err)
+    }
+  }, [])
+
   const handleNewChat = useCallback(() => {
-    console.log('[handleNewChat] activeId before clear:', activeId)
     setActiveId(null) // 回到欢迎页，会话在发消息时才创建
-  }, [activeId])
+  }, [])
 
   const handleSelect = useCallback((id: string) => {
     setActiveId(id)
   }, [])
 
-  const handleDelete = useCallback((id: string) => {
-    setConversations((prev) => prev.filter((c) => c.id !== id))
-    if (activeId === id) {
-      setActiveId(null)
+  const handleDelete = useCallback(async (id: string) => {
+    try {
+      await deleteConversation(id)
+      setConversations((prev) => prev.filter((c) => c.id !== id))
+      if (activeId === id) {
+        setActiveId(null)
+      }
+    } catch (err) {
+      console.error('[App] deleteConversation failed:', err)
     }
   }, [activeId])
 
-  const handleMessagesChange = useCallback((messages: Message[]) => {
-    if (!activeId) return
-    setConversations((prev) =>
-      prev.map((c) => {
-        if (c.id !== activeId) return c
-        // Auto-title from first user message
-        let title = c.title
-        if (!title) {
-          const firstUser = messages.find((m) => m.role === 'user')
-          if (firstUser) {
-            title = firstUser.content.slice(0, 50) + (firstUser.content.length > 50 ? '...' : '')
-          }
-        }
-        return { ...c, messages, title, updatedAt: Date.now() }
-      })
-    )
-  }, [activeId])
-
-  // Auto-create first conversation if needed when sending from welcome
-  const handleEnsureConversation = useCallback((): Conversation => {
+  // 欢迎页第一次发消息时调用：在后端创建一个空会话并切到它。
+  const handleEnsureConversation = useCallback(async (): Promise<ConversationMeta> => {
     if (activeConv) return activeConv
-    const conv = createConversation()
-    setConversations((prev) => [conv, ...prev])
-    setActiveId(conv.id)
-    return conv
+    const id = await createConversation()
+    const meta: ConversationMeta = {
+      id,
+      title: '',
+      created_at: Date.now(),
+      updated_at: Date.now(),
+    }
+    setConversations((prev) => [meta, ...prev])
+    setActiveId(id)
+    return meta
   }, [activeConv])
 
   return (
@@ -141,9 +122,9 @@ function App() {
           <main className="main">
             <ChatPanel
               conversation={activeConv}
-              onMessagesChange={handleMessagesChange}
               onEnsureConversation={handleEnsureConversation}
               onNewChat={handleNewChat}
+              onConversationTouched={refreshList}
             />
           </main>
         </div>

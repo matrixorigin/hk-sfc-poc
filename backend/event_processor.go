@@ -45,19 +45,29 @@ type SQLResultMeta struct {
 }
 
 // EventProcessor processes upstream SSE events and injects chart.recommendation.
+// 同时，EventProcessor 内嵌一个 MessageAggregate，在转发事件的同时把 assistant
+// message 的最终态聚合起来，供 handler 在 synthesis.done 之后落库。
 type EventProcessor struct {
 	presentation *PresentationSpec
 	sqlResults   []SQLResultMeta
 	chartSent    bool
 	nextSeq      int
+	aggregator   *MessageAggregate
 }
 
 // NewEventProcessor creates a new EventProcessor.
 func NewEventProcessor() *EventProcessor {
-	return &EventProcessor{nextSeq: 1}
+	return &EventProcessor{nextSeq: 1, aggregator: NewMessageAggregate()}
+}
+
+// Aggregator 返回当前聚合器（handler 在 synthesis.done 后调 Finalize() 拿落库结构）。
+func (ep *EventProcessor) Aggregator() *MessageAggregate {
+	return ep.aggregator
 }
 
 // ProcessEvent takes an upstream event and returns downstream events.
+// 同时将所有下游事件喂给 aggregator（chart.recommendation 要先注入，
+// 这样 aggregator 才能捕获到 chart 事件）。
 func (ep *EventProcessor) ProcessEvent(evt SSEEvent) []SSEEvent {
 	switch evt.EventType {
 	case "sql.result":
@@ -66,17 +76,23 @@ func (ep *EventProcessor) ProcessEvent(evt SSEEvent) []SSEEvent {
 		ep.extractChartFromSynthesis(evt.Data)
 	}
 
+	var out []SSEEvent
 	if evt.EventType == "synthesis.done" && !ep.chartSent {
-		var out []SSEEvent
 		if chartEvt := ep.buildChartRecommendation(); chartEvt != nil {
 			out = append(out, ep.assignSeq(*chartEvt))
 			ep.chartSent = true
 		}
 		out = append(out, ep.assignSeq(evt))
-		return out
+	} else {
+		out = append(out, ep.assignSeq(evt))
 	}
 
-	return []SSEEvent{ep.assignSeq(evt)}
+	// 把下游事件同步喂给 aggregator（chart.recommendation 已在上方注入）
+	for _, o := range out {
+		ep.aggregator.Apply(o)
+	}
+
+	return out
 }
 
 // extractChartFromSynthesis reads the grounded chart directive the synthesizer

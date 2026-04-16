@@ -24,11 +24,8 @@ func main() {
 	}
 
 	client := NewExploreClient(cfg.Catalog.URL, cfg.Catalog.APIKey)
-	clarifier := NewClarifier(cfg.Catalog.URL, cfg.Catalog.APIKey, cfg.Catalog.WorkspaceID, cfg.Explore.LLMModel)
-	chatHandler := &ChatHandler{client: client, clarify: clarifier, cfg: cfg, sessionMap: make(map[string]string)}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/chat", chatHandler.ServeHTTP)
 	mux.HandleFunc("/api/tables", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		tables := []map[string]string{
@@ -53,6 +50,22 @@ func main() {
 	if err != nil {
 		log.Fatalf("init feedback db: %v", err)
 	}
+
+	// Conversations DB 复用同一 MO 连接
+	convDB, err := NewConversationsDB(feedbackDB.RawDB())
+	if err != nil {
+		log.Fatalf("init conversations db: %v", err)
+	}
+
+	// Clarifier 依赖 ConversationsDB（读 pending_clarify + recent user questions）
+	clarifier := NewClarifier(cfg.Catalog.URL, cfg.Catalog.APIKey, cfg.Catalog.WorkspaceID, cfg.Explore.LLMModel, convDB)
+
+	// 会话消息流 handler
+	messagesHandler := NewMessagesHandler(client, clarifier, convDB, cfg)
+	conversationsHandler := NewConversationsHandler(convDB, messagesHandler)
+	mux.Handle("/api/conversations", conversationsHandler)
+	mux.Handle("/api/conversations/", conversationsHandler)
+
 	analyzer := NewFeedbackAnalyzer(cfg, feedbackDB, clarifier)
 	feedbackHandler := NewFeedbackHandler(feedbackDB, analyzer)
 	mux.HandleFunc("/api/feedback/", feedbackHandler.ServeHTTP)
