@@ -167,6 +167,11 @@ add "logic" "date_boundary_capital_monthly" "ms_v_stock_capital ref_date is mont
   '"ms_v_stock_capital.ref_date contains ONLY month-end dates (01-31, 02-28, ..., 12-31). You MUST use month-end dates when querying this table. Period mapping: H1 {year} → start={year}-01-31 end={year}-06-30. H2 {year} → start={year}-07-31 end={year}-12-31. Full year {year} → start={year}-01-31 end={year}-12-31. WRONG examples: {year}-01-01, {year}-06-01, {year}-07-01 (these are NOT month-end and will match ZERO rows). The start date is ALWAYS the first month-end WITHIN the period, NEVER the last day of the previous period (e.g. 2024-12-31 does not exist in this table)."' \
   '"ms_v_stock_capital"'
 
+# --- List vs Rank：是否加 LIMIT ---
+add "logic" "list_vs_rank_semantics" "User phrasing determines whether to add LIMIT" \
+  '"The decision to add LIMIT is driven by user intent, NOT by table size or default convention. (1) LIST intent — phrases like '\''list / 列出 / 列举 / 有哪些 / 哪些... / show me / 所有 / all'\''  — the user wants to see ALL matching rows. SQL MUST NOT add LIMIT. Returning a silent top-K slice misleads the user into believing they saw the full result. (2) RANK intent — phrases like '\''top N / 前N / 前N大 / 最...的N个 / 排名前N / 最高的N / 最低的N'\'' — add LIMIT N where N is the exact number requested. (3) AMBIGUOUS — no quantifier, no list/rank verb — default to NO LIMIT. Let the user see the full result; they can ask to rank later. (4) A fewshot SQL that does NOT include LIMIT is NOT an oversight — do NOT add LIMIT to follow a '\''top N'\'' pattern you infer from the fewshot description. Follow the user'\''s explicit phrasing only."' \
+  '"ms_t_stk_hsi","ms_v_stk_hsi_daily","ms_t_stk_sis","ms_v_stock_capital","profit_loss","ccass_holdings","ds_t_int_hsicl_dtl","sehknews"'
+
 # --- 方向性语义约束 ---
 add "logic" "directional_filter_constraint" "Decline/increase queries must include sign filter" \
   '"When the user asks about decline/decrease/drop (下降/下跌/减少/缩水/亏损), the SQL MUST include a < 0 filter on the computed change column. When the user asks about increase/growth/rise (上升/上涨/增长/增加), the SQL MUST include a > 0 filter. WITHOUT this filter, ORDER BY ASC/DESC LIMIT N may return results that do not match the directional intent (e.g. returning the smallest gain instead of an actual decline). EXCEPTION: when the question asks about \"情况/趋势/走势/变化\" (e.g. \"增长情况\", \"营收变化趋势\"), this is descriptive — the user wants to see ALL data including both increases and decreases. Do NOT add a sign filter in this case."' \
@@ -255,9 +260,15 @@ add "case_library" \
   '"ms_v_stk_hsi_daily"'
 
 add "case_library" \
-  "List top N stocks by peak consecutive days above MA — replace {{MA}} with 3/20/50, {{N}} with minimum streak threshold" \
-  "Stocks ranked by max consecutive days above moving average with date range" \
-  '"SELECT stock_code, stock_name, max_streak, start_date, end_date FROM (SELECT SISTKC AS stock_code, SISTKN AS stock_name, consecutive_above_ma{{MA}} AS max_streak, consecutive_above_ma{{MA}}_start AS start_date, trade_date AS end_date, ROW_NUMBER() OVER (PARTITION BY SISTKC ORDER BY consecutive_above_ma{{MA}} DESC, trade_date DESC) AS rn FROM ms_t_stk_sis WHERE consecutive_above_ma{{MA}} >= {{N}}) t WHERE rn = 1 ORDER BY max_streak DESC"' \
+  "Find ALL stocks whose peak consecutive days above MA reach a threshold (no LIMIT) — replace {{MA}} with 3/20/50, {{STREAK_THRESHOLD}} with minimum consecutive days (e.g. 10), {{DATE_START}} and {{DATE_END}} with the user-specified date range. {{STREAK_THRESHOLD}} is a filter threshold, NOT a result count limit. Do NOT add LIMIT unless the user explicitly asks for top N." \
+  "All stocks meeting consecutive-days-above-MA threshold within a date range" \
+  '"SELECT stock_code, stock_name, max_streak, start_date, end_date FROM (SELECT SISTKC AS stock_code, SISTKN AS stock_name, consecutive_above_ma{{MA}} AS max_streak, consecutive_above_ma{{MA}}_start AS start_date, trade_date AS end_date, ROW_NUMBER() OVER (PARTITION BY SISTKC ORDER BY consecutive_above_ma{{MA}} DESC, trade_date DESC) AS rn FROM ms_t_stk_sis WHERE trade_date >= '\''{{DATE_START}}'\'' AND trade_date <= '\''{{DATE_END}}'\'' AND consecutive_above_ma{{MA}} >= {{STREAK_THRESHOLD}}) t WHERE rn = 1 ORDER BY max_streak DESC, stock_code ASC"' \
+  '"ms_t_stk_sis"'
+
+add "case_library" \
+  "Top K stocks by longest consecutive days above MA — use ONLY when user explicitly asks for top N / 前N / 排名前N / 最长的N只. Replace {{MA}} with 3/20/50, {{K}} with the requested count, {{DATE_START}}/{{DATE_END}} with the date range." \
+  "Top-K ranking by peak consecutive days above MA within a date range" \
+  '"SELECT stock_code, stock_name, max_streak, start_date, end_date FROM (SELECT SISTKC AS stock_code, SISTKN AS stock_name, consecutive_above_ma{{MA}} AS max_streak, consecutive_above_ma{{MA}}_start AS start_date, trade_date AS end_date, ROW_NUMBER() OVER (PARTITION BY SISTKC ORDER BY consecutive_above_ma{{MA}} DESC, trade_date DESC) AS rn FROM ms_t_stk_sis WHERE trade_date >= '\''{{DATE_START}}'\'' AND trade_date <= '\''{{DATE_END}}'\'' AND consecutive_above_ma{{MA}} >= 1) t WHERE rn = 1 ORDER BY max_streak DESC, stock_code ASC LIMIT {{K}}"' \
   '"ms_t_stk_sis"'
 
 # ============================================================
