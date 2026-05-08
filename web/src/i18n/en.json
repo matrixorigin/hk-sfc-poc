@@ -14,7 +14,7 @@
   "example1": "In H1 2025, on days when HSI dropped over 2%, what was the total market trading volume?",
   "example2": "Which 3 industries saw the largest market cap decline in H1 2025?",
   "example3": "List stocks that closed above their 50-day moving average for 10 consecutive days in Q1 2025",
-  "example4": "Detect stocks with volume exceeding 3x the 30-day average before major news announcements in Q1 2025",
+  "example4": "Detect stocks with volume exceeding 3x Avg_Vol_30_Pre on material-news event trading days in Q1 2025",
   "noConversations": "No conversations yet",
   "knowledge": "Knowledge Base",
   "knowledgeDesc": "Manage semantic knowledge for SQL generation",

@@ -105,7 +105,7 @@ fire "en-q3" "List stocks that closed above their 50-day moving average for 10 c
 log "3 个英文问题 (1/2) 已提交，等待..."
 wait
 
-fire "en-q4" "Detect stocks with trading volume more than 3 times the 30-day average volume on the day of material news announcements between January and March 2025. Material news is defined as typeid in (0,3,7,8,10,14,18,21,25,26,28,32)." &
+fire "en-q4" "Detect stocks with trading volume more than 3 times Avg_Vol_30_Pre on the event trading day of material news announcements between January and March 2025. Avg_Vol_30_Pre excludes the current day, uses up to 30 previous trading days, and requires at least 20 valid prior volume observations. Material news is defined as typeid in (0,3,7,8,10,14,18,21,25,26,28,32)." &
 fire "en-q5" "Identify stocks with inter-broker CCASS shareholding movement greater than 30% on 2026-03-18 compared to 2026-03-17." &
 fire "en-q6" "Show me the revenue growth of stock 88 from 2023 to 2025." &
 
@@ -133,7 +133,7 @@ fire "cn-q3" "列出2025年1月至3月期间，收盘价连续10个交易日高�
 log "3 个中文问题 (1/2) 已提交，等待..."
 wait
 
-fire "cn-q4" "检测2025年1月至3月期间，在重大新闻公告发布当天，成交量超过前30日平均成交量3倍的股票。重大新闻定义为sehknews表中typeid in (0,3,7,8,10,14,18,21,25,26,28,32)的记录。" &
+fire "cn-q4" "检测2025年1月至3月期间，在重大新闻公告对应交易日，成交量超过 Avg_Vol_30_Pre 3倍的股票。Avg_Vol_30_Pre 排除当前日，使用前最多30个交易日，并且至少需要20个有效前序成交量。重大新闻定义为sehknews表中typeid in (0,3,7,8,10,14,18,21,25,26,28,32)的记录。" &
 fire "cn-q5" "识别在2026年3月18日相比3月17日，CCASS跨券商持仓变动超过30%的股票。" &
 fire "cn-q6" "展示股票88从2023年到2025年的营收增长情况。" &
 
