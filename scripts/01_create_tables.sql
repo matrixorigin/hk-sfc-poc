@@ -51,7 +51,7 @@ CREATE TABLE ms_t_stk_sis (
     consecutive_above_ma20_start DATE NULL COMMENT 'Start date of the current consecutive-above-ma20 streak. NULL when streak is 0.',
     consecutive_above_ma50 INT NULL  COMMENT 'Number of consecutive trading days closing price is strictly above ma_50, as of this date. Resets to 0 when price drops below. Pre-computed.',
     consecutive_above_ma50_start DATE NULL COMMENT 'Start date of the current consecutive-above-ma50 streak. NULL when streak is 0.',
-    avg_vol_30d DECIMAL(24,10) NULL  COMMENT 'Average trading volume over up to 30 preceding trading days (exclusive of current day). Pre-computed. NULL only on the very first trading day of a stock. Use this column to detect volume anomalies (e.g. SIVOL > avg_vol_30d * 3) instead of correlated subqueries.'
+    avg_vol_30d DECIMAL(24,10) NULL  COMMENT 'Average trading volume over up to 30 preceding trading days (exclusive of current day), requiring at least 20 valid prior observations. Pre-computed. Use this column to detect volume anomalies (e.g. SIVOL > avg_vol_30d * 3) instead of correlated subqueries.'
 );
 
 -- ============================================================

@@ -366,9 +366,10 @@ r3 = RollingAvg(3); r20 = RollingAvg(20); r50 = RollingAvg(50); r100 = RollingAv
 # Consecutive streaks + start dates
 streak3 = 0; streak20 = 0; streak50 = 0
 start3 = None; start20 = None; start50 = None
-# Avg vol 30d: rolling avg of preceding 30 days
+# Avg vol 30d: rolling avg of preceding 30 days, require at least 20 observations
 vol_buf = deque()
 vol_sum = 0.0
+vol_count = 0
 
 for line in sys.stdin:
     parts = line.rstrip().split('\t')
@@ -376,13 +377,13 @@ for line in sys.stdin:
     close_s = parts[2] if len(parts) > 2 else ''
     vol_s = parts[3] if len(parts) > 3 else ''
     close = float(close_s) if close_s and close_s != 'NULL' else None
-    vol = float(vol_s) if vol_s and vol_s != 'NULL' else 0.0
+    vol = float(vol_s) if vol_s and vol_s != 'NULL' else None
 
     if code != prev:
         r3.reset(); r20.reset(); r50.reset(); r100.reset()
         streak3 = 0; streak20 = 0; streak50 = 0
         start3 = None; start20 = None; start50 = None
-        vol_buf = deque(); vol_sum = 0.0
+        vol_buf = deque(); vol_sum = 0.0; vol_count = 0
         prev = code
 
     # MA (round to 4 decimals to match MO DECIMAL(16,4), avoid float drift in streak comparison)
@@ -413,16 +414,20 @@ for line in sys.stdin:
     else:
         streak50 = 0; start50 = None
 
-    # Avg vol 30d: 前置滚动平均，取实有 N 天（≤30）。仅 N=0 时 NULL。
-    # 匹配客户 Avg_Vol_30_Pre 口径：新股 / 数据早期按实有天数平均，而非强制满30。
-    if len(vol_buf) > 0:
-        avg_vol = fmt(vol_sum / len(vol_buf))
+    # Avg_Vol_30_Pre: x.shift(1).rolling(window=30, min_periods=20).mean()
+    # 当前日排除；前30个交易日窗口内至少20个有效成交量才计算。
+    if vol_count >= 20:
+        avg_vol = fmt(vol_sum / vol_count)
     else:
         avg_vol = r'\N'
     # Update vol buffer (after computing, so current day excluded)
-    vol_buf.append(vol); vol_sum += vol
+    vol_buf.append(vol)
+    if vol is not None:
+        vol_sum += vol; vol_count += 1
     if len(vol_buf) > 30:
-        vol_sum -= vol_buf.popleft()
+        old_vol = vol_buf.popleft()
+        if old_vol is not None:
+            vol_sum -= old_vol; vol_count -= 1
 
     s3 = start3 if start3 else r'\N'
     s20 = start20 if start20 else r'\N'

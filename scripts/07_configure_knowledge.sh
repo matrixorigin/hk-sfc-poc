@@ -121,8 +121,8 @@ add "logic" "material_news_typeid" "Material news typeid definition" \
   '"Material news (重大新闻/重大公告) in sehknews is defined as typeid IN (0, 3, 7, 8, 10, 14, 18, 21, 25, 26, 28, 32)."' \
   '"sehknews"'
 
-add "logic" "news_trade_date" "sehknews.trade_date is pre-computed nearest trading day" \
-  '"sehknews.trade_date is pre-computed as the nearest trading day on or after the news timestamp. Always use this column (not DATE(timestamp)) to JOIN with ms_t_stk_sis.trade_date."' \
+add "logic" "news_trade_date" "sehknews.trade_date is pre-computed event trading day" \
+  '"sehknews.trade_date is pre-computed for trading-data joins: news before 16:00 HKT maps to that date'\''s trading day when available; after-hours news (HOUR(timestamp) >= 16) maps to the next trading day; weekends/holidays also map to the next trading day. Always use this column (not DATE(timestamp)) to JOIN with ms_t_stk_sis.trade_date."' \
   '"sehknews","ms_t_stk_sis"'
 
 add "logic" "news_dedup" "Deduplicate news per stock per day before joining trading data" \
@@ -132,6 +132,10 @@ add "logic" "news_dedup" "Deduplicate news per stock per day before joining trad
 add "logic" "news_volume_event_granularity" "Volume anomaly detection must return event-level rows, not DISTINCT stocks" \
   '"When detecting volume anomalies related to news (e.g. volume > N times average on news days), output one row per (trade_date, stock) event. Do NOT use SELECT DISTINCT on stock_code alone. The same stock may trigger on multiple dates — each occurrence is a separate detection event that must be reported with its trade_date."' \
   '"sehknews"'
+
+add "logic" "avg_vol_30d_definition" "avg_vol_30d matches customer Avg_Vol_30_Pre" \
+  '"ms_t_stk_sis.avg_vol_30d is pre-computed to match Avg_Vol_30_Pre: for each stock, average Daily_Volume over the previous up-to-30 trading rows, excluding the current row (shift(1)); return NULL unless there are at least 20 valid prior volume observations (rolling window=30, min_periods=20). Use avg_vol_30d directly for volume anomaly detection; do NOT recompute it with correlated subqueries or assume fewer than 20 prior observations are valid."' \
+  '"ms_t_stk_sis"'
 
 # --- CCASS ---
 add "logic" "ccass_participant_granularity" "CCASS must compare at participant level" \
@@ -248,8 +252,8 @@ add "case_library" \
   '"profit_loss"'
 
 add "case_library" \
-  "Detect abnormal volume on material news days — replace {{date_start}} and {{date_end}} with user-specified range" \
-  "News volume anomaly detection with dedup and avg_vol_30d" \
+  "Detect abnormal volume on material news days — avg_vol_30d is previous up-to-30 trading days, current day excluded, min 20 valid observations; replace {{date_start}} and {{date_end}} with user-specified range" \
+  "News volume anomaly detection with dedup and customer Avg_Vol_30_Pre" \
   '"SELECT n.trade_date AS announcement_date, n.text AS announcement_content, n.securitycode AS stock_code, s.SISTKN AS stock_name FROM (SELECT securitycode, trade_date, MIN(text) AS text FROM sehknews WHERE typeid IN (0,3,7,8,10,14,18,21,25,26,28,32) AND timestamp >= '\''{{date_start}}'\'' AND timestamp < '\''{{date_end}}'\'' GROUP BY securitycode, trade_date) n JOIN ms_t_stk_sis s ON n.securitycode = s.SISTKC AND n.trade_date = s.trade_date WHERE s.avg_vol_30d > 0 AND s.SIVOL > s.avg_vol_30d * 3"' \
   '"sehknews","ms_t_stk_sis"'
 
