@@ -6,6 +6,7 @@ import {
   findXAxisIndex,
   formatColumnName,
   formatDateValue,
+  isDateLike,
   isIdentifierColumn,
   isNumeric,
 } from '../utils/chartFieldRoles'
@@ -270,6 +271,11 @@ function LineChart({ result, resolved }: { result: SQLResult; resolved: Resolved
     : buildSeriesPlain(result, xField, yFields, formatDateValue)
   if (built.series.length === 0) return null
 
+  // x 轴是否为日期型：决定 label rotate 策略。
+  // 日期通常每条 5-10 字符，可以横放；非日期（如股票名）很长，需要旋转。
+  const xIsDate = isDateLike(built.xData)
+  const maxLabelLen = built.xData.reduce((m, v) => Math.max(m, v.length), 0)
+
   // 多指标且无图例分组时，按量级自动分配双 y 轴
   const axisSplit = seriesField
     ? { leftAxis: yFields, rightAxis: [] as string[] }
@@ -315,7 +321,7 @@ function LineChart({ result, resolved }: { result: SQLResult; resolved: Resolved
       left: 60,
       right: useDualAxis ? 60 : 20,
       top: 36,
-      bottom: needSlider ? 70 : 36,
+      bottom: needSlider ? 90 : labelBottom(built.xData.length, xIsDate, maxLabelLen),
       containLabel: false,
     },
     xAxis: {
@@ -325,11 +331,17 @@ function LineChart({ result, resolved }: { result: SQLResult; resolved: Resolved
       axisLabel: {
         fontSize: 11,
         color: '#9ca3af',
-        rotate: built.xData.length > 30 ? 45 : 0,
-        interval: Math.max(0, Math.floor(built.xData.length / 12) - 1),
+        rotate: labelRotate(built.xData.length, xIsDate, maxLabelLen),
+        interval: xIsDate
+          ? Math.max(0, Math.floor(built.xData.length / 12) - 1)
+          : 0,
         formatter: (v: string) => {
-          const m = v.match(/^\d{4}-(\d{2}-\d{2})/)
-          return m ? m[1] : v
+          if (xIsDate) {
+            const m = v.match(/^\d{4}-(\d{2}-\d{2})/)
+            return m ? m[1] : v
+          }
+          // 非日期长标签截断到 12 字符 + 省略号
+          return v.length > 12 ? v.slice(0, 12) + '…' : v
         },
       },
       axisLine: { lineStyle: { color: '#e5e7eb' } },
@@ -387,6 +399,9 @@ function BarChart({ result, resolved }: { result: SQLResult; resolved: ResolvedS
     axisSplit.rightAxis.map((f) => formatColumnName(f))
   )
 
+  const xIsDate = isDateLike(built.xData)
+  const maxLabelLen = built.xData.reduce((m, v) => Math.max(m, v.length), 0)
+
   const stackKey = barMode === 'stack' ? 'total' : undefined
   const seriesOpt = built.series.map((s, idx) => ({
     name: s.name,
@@ -414,14 +429,22 @@ function BarChart({ result, resolved }: { result: SQLResult; resolved: ResolvedS
       itemHeight: 3,
       type: 'scroll',
     },
-    grid: { left: 60, right: useDualAxis ? 60 : 20, top: 36, bottom: 36, containLabel: false },
+    grid: {
+      left: 60,
+      right: useDualAxis ? 60 : 20,
+      top: 36,
+      bottom: labelBottom(built.xData.length, xIsDate, maxLabelLen),
+      containLabel: false,
+    },
     xAxis: {
       type: 'category',
       data: built.xData,
       axisLabel: {
         fontSize: 11,
         color: '#9ca3af',
-        rotate: built.xData.length > 8 ? 45 : 0,
+        rotate: labelRotate(built.xData.length, xIsDate, maxLabelLen),
+        interval: 0,
+        formatter: (v: string) => (v.length > 12 ? v.slice(0, 12) + '…' : v),
       },
       axisLine: { lineStyle: { color: '#e5e7eb' } },
       axisTick: { show: false },
@@ -477,6 +500,24 @@ function PieChart({ result, resolved }: { result: SQLResult; resolved: ResolvedS
       <ReactECharts option={option} notMerge lazyUpdate style={{ height: 300 }} />
     </div>
   )
+}
+
+// 根据 x 标签数量/类型/长度决定旋转角度
+function labelRotate(count: number, isDate: boolean, maxLen: number): number {
+  if (isDate) return count > 30 ? 45 : 0
+  if (maxLen <= 4 && count <= 12) return 0
+  if (maxLen <= 8 && count <= 10) return 30
+  return 45
+}
+
+// 根据旋转角度估算 grid bottom 留白
+function labelBottom(count: number, isDate: boolean, maxLen: number): number {
+  const r = labelRotate(count, isDate, maxLen)
+  if (r === 0) return 36
+  if (r === 30) return 56
+  // 45 度时按截断后最多 13 字符估算 ~ 9px/字符
+  const truncated = Math.min(maxLen, 13)
+  return Math.min(120, 36 + truncated * 6)
 }
 
 function buildYAxis(side: 'left' | 'right') {
