@@ -1234,15 +1234,20 @@ body {
   margin-top: 8px;
 }
 
-/* Chart field selector (维度 / 指标 / 图例 / 类型) */
+/* Chart field selector — 多行 row 排列 */
 .chart-field-selector {
   display: flex;
-  flex-wrap: wrap;
-  gap: 12px 16px;
-  align-items: center;
+  flex-direction: column;
+  gap: 6px;
   padding: 8px 4px;
   border-bottom: 1px dashed #f0f0f0;
   margin-bottom: 4px;
+}
+.cfs-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: center;
 }
 .cfs-group {
   display: inline-flex;
@@ -1269,12 +1274,6 @@ body {
   opacity: 0.4;
   cursor: not-allowed;
 }
-.cfs-chips {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  align-items: center;
-}
 .cfs-chip {
   padding: 4px 10px;
   font-size: 11px;
@@ -1286,8 +1285,11 @@ body {
   color: #6b7280;
   transition: all 0.15s ease;
   font-family: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
-.cfs-chip:hover {
+.cfs-chip:hover:not(.disabled) {
   background: #f9fafb;
   border-color: #1a73e8;
   color: #1a73e8;
@@ -1297,6 +1299,173 @@ body {
   color: #fff;
   border-color: #1a73e8;
 }
+.cfs-chip.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  /* 关键：不要用 HTML disabled 属性，避免 title tooltip 被吃掉 */
+}
+.cfs-chip.disabled:hover {
+  background: #fff;
+  border-color: #e5e7eb;
+  color: #6b7280;
+}
+
+/* 折叠开关 — 紧贴在 chart type chips 后面，弱化样式 */
+.cfs-toggle {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: #6b7280;
+  cursor: pointer;
+  font-family: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 6px;
+  transition: all 0.15s ease;
+}
+.cfs-toggle:hover {
+  background: #f3f4f6;
+  color: #1a73e8;
+}
+.cfs-toggle-arrow {
+  font-size: 9px;
+  opacity: 0.7;
+}
+.cfs-warn {
+  width: 13px;
+  height: 13px;
+  border: 1px solid #9ca3af;
+  border-radius: 50%;
+  color: #9ca3af;
+  font-size: 9px;
+  line-height: 11px;
+  text-align: center;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Metric pill: label + sub_type + axis + remove */
+.cfs-mpills {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.cfs-mpill {
+  display: inline-flex;
+  align-items: stretch;
+  background: #1a73e8;
+  color: #fff;
+  border: 1px solid #1a73e8;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  overflow: hidden;
+  font-family: inherit;
+}
+.cfs-mpill .lbl {
+  padding: 4px 8px;
+}
+.cfs-mpill .sub {
+  padding: 4px 6px;
+  background: rgba(255, 255, 255, 0.18);
+  border-left: 1px solid rgba(255, 255, 255, 0.3);
+  cursor: pointer;
+  user-select: none;
+  font-size: 10px;
+  display: inline-flex;
+  align-items: center;
+}
+.cfs-mpill .axis {
+  padding: 4px 6px;
+  background: rgba(255, 255, 255, 0.18);
+  border-left: 1px solid rgba(255, 255, 255, 0.3);
+  cursor: pointer;
+  user-select: none;
+  font-size: 10px;
+  display: inline-flex;
+  align-items: center;
+}
+.cfs-mpill .axis:hover,
+.cfs-mpill .sub:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+.cfs-mpill .axis.r {
+  background: rgba(0, 0, 0, 0.18);
+}
+.cfs-mpill .x {
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.7);
+  border-left: 1px solid rgba(255, 255, 255, 0.3);
+  display: inline-flex;
+  align-items: center;
+}
+.cfs-mpill .x:hover {
+  color: #fff;
+  background: rgba(0, 0, 0, 0.15);
+}
+.cfs-mpill.dashed {
+  background: transparent;
+  border: 1px dashed #9ca3af;
+  color: #6b7280;
+  cursor: pointer;
+  padding: 4px 10px;
+}
+.cfs-mpill.dashed:hover {
+  border-color: #1a73e8;
+  color: #1a73e8;
+}
+.cfs-mpill.dimmed {
+  opacity: 0.5;
+  filter: grayscale(0.6);
+}
+
+/* Checkbox row */
+.cfs-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #6b7280;
+  cursor: pointer;
+  user-select: none;
+}
+.cfs-check input {
+  display: none;
+}
+.cfs-check .box {
+  width: 13px;
+  height: 13px;
+  border: 1px solid #9ca3af;
+  border-radius: 3px;
+  background: #fff;
+  position: relative;
+  display: inline-block;
+}
+.cfs-check input:checked + .box {
+  background: #1a73e8;
+  border-color: #1a73e8;
+}
+.cfs-check input:checked + .box::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 0;
+  width: 4px;
+  height: 8px;
+  border: 1.5px solid #fff;
+  border-top: 0;
+  border-left: 0;
+  transform: rotate(45deg);
+}
+
 .cfs-hint {
   font-size: 11px;
   color: #9ca3af;
@@ -1306,6 +1475,26 @@ body {
   font-size: 11px;
   color: #dc2626;
   padding: 4px 0;
+}
+
+/* Chart empty state */
+.chart-wrapper.chart-empty {
+  margin-top: 12px;
+  padding: 32px 16px;
+  background: #fafbfc;
+  border: 1px dashed #e5e7eb;
+  border-radius: 8px;
+  text-align: center;
+}
+.chart-empty-msg {
+  color: #374151;
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+.chart-empty-hint {
+  color: #9ca3af;
+  font-size: 11px;
 }
 
 /* Responsive */

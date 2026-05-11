@@ -6,7 +6,7 @@ import rehypeKatex from 'rehype-katex'
 import 'katex/dist/katex.min.css'
 import type { ChartSpec, Message } from '../types'
 import { useT } from '../i18n'
-import { Chart, canChartResult, resolveSpec } from './Chart'
+import { Chart, canChartResult } from './Chart'
 import { ChartFieldSelector } from './ChartFieldSelector'
 import { DataTable } from './DataTable'
 import { FeedbackButton } from './FeedbackButton'
@@ -122,23 +122,18 @@ export function MessageBubble({ message, conversationId, onUpdateMessage }: Mess
           {/* Chart field selector + Chart */}
           {!isUser && isDone && primaryResult && canChartResult(primaryResult) && (() => {
             const spec: ChartSpec = message.chartSpec ?? { chart_type: 'auto' }
-            const resolved = resolveSpec(primaryResult, spec)
             return (
               <div className="chart-section">
                 {onUpdateMessage && (
                   <ChartFieldSelector
                     result={primaryResult}
                     spec={spec}
-                    effectiveChartType={resolved.chartType}
-                    effectiveX={resolved.xField}
-                    effectiveY={resolved.yFields}
-                    effectiveSeries={resolved.seriesField}
                     onChange={handleSpecChange}
                   />
                 )}
                 {persistError && (
                   <div className="chart-persist-error">
-                    {t('error')}: chart settings not saved
+                    {t('error')}: {t('chartPersistError')}
                   </div>
                 )}
                 <Chart result={primaryResult} spec={spec} />

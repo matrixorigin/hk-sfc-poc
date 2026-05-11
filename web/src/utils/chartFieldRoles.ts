@@ -12,47 +12,6 @@ export function isDateLike(values: string[]): boolean {
   return values.filter((v) => datePattern.test(v)).length >= values.length * 0.5
 }
 
-export function isIdentifierColumn(colName: string, values: any[]): boolean {
-  const lc = colName.toLowerCase()
-  if (/\b(code|id|name|symbol|ticker|stock|participant|industry)\b/.test(lc)) return true
-  if (/^(sistkc|sistkn|stkcd|stock_code|securitycode)$/.test(lc)) return true
-  const uniqueVals = new Set(values.map((v) => String(v)))
-  if (uniqueVals.size <= 3 && values.length > 10) return true
-  return false
-}
-
-export function findDateColumnIndex(result: SQLResult): number {
-  for (let ci = 0; ci < result.columns.length; ci++) {
-    const values = result.rows.map((row) => String(row[ci] ?? ''))
-    if (isDateLike(values)) return ci
-  }
-  return -1
-}
-
-export function findCategoryColumnIndex(result: SQLResult): number {
-  for (let ci = 0; ci < result.columns.length; ci++) {
-    if (isIdentifierColumn(result.columns[ci], result.rows.map((r) => r[ci]))) {
-      return ci
-    }
-  }
-  for (let ci = 0; ci < result.columns.length; ci++) {
-    const hasStrings = result.rows.some(
-      (row) => typeof row[ci] === 'string' && !isNumeric(row[ci])
-    )
-    if (hasStrings) return ci
-  }
-  return 0
-}
-
-export function findXAxisIndex(result: SQLResult): number {
-  const dateCol = findDateColumnIndex(result)
-  if (dateCol >= 0) {
-    const uniq = new Set(result.rows.map((r) => String(r[dateCol] ?? '')))
-    if (uniq.size >= 3) return dateCol
-  }
-  return findCategoryColumnIndex(result)
-}
-
 export function formatDateValue(v: string): string {
   return v.replace(/T\d{2}:\d{2}:\d{2}[\w:.]*Z?$/, '')
 }
@@ -86,49 +45,38 @@ export function formatColumnName(col: string): string {
   return col.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
-export interface ColumnRoles {
-  // 适合做 x 轴 / 类别维度的列
-  dimensions: string[]
-  // 适合做 y 轴指标的列（数值列且不是标识/常量列）
-  metrics: string[]
-  // 适合做图例分组维度的列（类别列且基数 2-30）
-  legends: string[]
+// 结构化 reason，便于 i18n 翻译
+// 全手动原则：chip 灰态只看「列数够不够」，不区分数值/类别/时间。
+export type AvailReason =
+  | { kind: 'empty' }
+  | { kind: 'need-cols'; n: number }
+
+// 不同图表类型所需的最少列数（用户手动绑定字段，引擎只检查列够不够）
+const MIN_COLS: Record<
+  'bar' | 'hbar' | 'line' | 'pie' | 'combo' | 'heatmap' | 'candlestick',
+  number
+> = {
+  bar: 2,        // X + ≥1 Y
+  hbar: 2,
+  line: 2,
+  pie: 2,        // X + 1 Y
+  combo: 3,      // X + ≥2 Y
+  heatmap: 3,    // X + Y + value
+  candlestick: 5, // time + open/close/high/low
 }
 
-export function classifyColumns(result: SQLResult): ColumnRoles {
-  const { columns, rows } = result
-  const dimensions: string[] = []
-  const metrics: string[] = []
-  const legends: string[] = []
-
-  for (let ci = 0; ci < columns.length; ci++) {
-    const col = columns[ci]
-    const values = rows.map((r) => r[ci])
-    const stringValues = values.map((v) => String(v ?? ''))
-    const uniqueCount = new Set(stringValues).size
-    const identifier = isIdentifierColumn(col, values)
-    const dateLike = isDateLike(stringValues)
-    const numericMajority = rows.length > 0 && rows.filter((r) => isNumeric(r[ci])).length >= rows.length * 0.7
-
-    // 维度候选：日期列、标识列、或非数值占多数的列
-    if (dateLike || identifier || !numericMajority) {
-      dimensions.push(col)
-    }
-    // 指标候选：数值列且不是标识列
-    if (numericMajority && !identifier) {
-      metrics.push(col)
-    }
-    // 图例候选：低基数类别列（2-30 个唯一值），日期与纯数值指标除外。
-    // 标识列即使值看起来是数字（如 5 位股票代码），也算图例候选。
-    if (
-      !dateLike &&
-      uniqueCount >= 2 &&
-      uniqueCount <= 30 &&
-      (identifier || !numericMajority)
-    ) {
-      legends.push(col)
-    }
+// chartTypeAvailability: 返回当前数据能否画这个图表类型 + 结构化 reason
+export function chartTypeAvailability(
+  result: SQLResult,
+  type: 'bar' | 'hbar' | 'line' | 'pie' | 'combo' | 'heatmap' | 'candlestick'
+): { ok: true } | { ok: false; reason: AvailReason } {
+  if (!result || result.rows.length === 0) {
+    return { ok: false, reason: { kind: 'empty' } }
   }
-
-  return { dimensions, metrics, legends }
+  const need = MIN_COLS[type]
+  if (result.columns.length < need) {
+    return { ok: false, reason: { kind: 'need-cols', n: need } }
+  }
+  return { ok: true }
 }
+
