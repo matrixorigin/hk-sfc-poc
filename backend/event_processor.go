@@ -53,11 +53,20 @@ type EventProcessor struct {
 	chartSent    bool
 	nextSeq      int
 	aggregator   *MessageAggregate
+	metrics      *MetricRegistry
+	// 已注入过 metric.explanations 的 round_index 集合，避免同一轮多发
+	metricRoundsSent map[int]bool
 }
 
 // NewEventProcessor creates a new EventProcessor.
-func NewEventProcessor() *EventProcessor {
-	return &EventProcessor{nextSeq: 1, aggregator: NewMessageAggregate()}
+// metrics 可为 nil（未配置 metrics.yaml 时），此时不注入 metric.explanations 事件。
+func NewEventProcessor(metrics *MetricRegistry) *EventProcessor {
+	return &EventProcessor{
+		nextSeq:          1,
+		aggregator:       NewMessageAggregate(),
+		metrics:          metrics,
+		metricRoundsSent: make(map[int]bool),
+	}
 }
 
 // Aggregator 返回当前聚合器（handler 在 synthesis.done 后调 Finalize() 拿落库结构）。
@@ -85,6 +94,13 @@ func (ep *EventProcessor) ProcessEvent(evt SSEEvent) []SSEEvent {
 		out = append(out, ep.assignSeq(evt))
 	} else {
 		out = append(out, ep.assignSeq(evt))
+	}
+
+	// 在 sql.result 之后追加 metric.explanations 事件（命中预计算列时）
+	if evt.EventType == "sql.result" {
+		if metricEvt := ep.buildMetricExplanations(evt.Data); metricEvt != nil {
+			out = append(out, ep.assignSeq(*metricEvt))
+		}
 	}
 
 	// 把下游事件同步喂给 aggregator（chart.recommendation 已在上方注入）
@@ -178,6 +194,49 @@ func (ep *EventProcessor) buildChartRecommendation() *SSEEvent {
 	dataBytes, _ := json.Marshal(envelope)
 	log.Printf("[chart-debug] buildChartRecommendation: sending to frontend: %s", string(dataBytes))
 	return &SSEEvent{EventType: "chart.recommendation", Data: string(dataBytes)}
+}
+
+// buildMetricExplanations 扫描 sql.result 事件的 SQL 文本 + columns，
+// 命中已注册的预计算列时返回一个 metric.explanations 事件，否则返回 nil。
+// 同一 round_index 只发一次。
+func (ep *EventProcessor) buildMetricExplanations(data string) *SSEEvent {
+	if ep.metrics == nil {
+		return nil
+	}
+	var wrapper struct {
+		Data struct {
+			SQL        string   `json:"sql"`
+			Columns    []string `json:"columns"`
+			RoundIndex int      `json:"round_index"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(data), &wrapper); err != nil {
+		return nil
+	}
+	if ep.metricRoundsSent[wrapper.Data.RoundIndex] {
+		return nil
+	}
+
+	hits := ep.metrics.MatchSQLAndColumns(wrapper.Data.SQL, wrapper.Data.Columns)
+	if len(hits) == 0 {
+		return nil
+	}
+	ep.metricRoundsSent[wrapper.Data.RoundIndex] = true
+
+	payload := map[string]any{
+		"event": "metric.explanations",
+		"data": map[string]any{
+			"round_index": wrapper.Data.RoundIndex,
+			"items":       hits,
+		},
+	}
+	dataBytes, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("[metric] marshal failed: %v", err)
+		return nil
+	}
+	log.Printf("[metric] injecting %d explanation(s) for round %d", len(hits), wrapper.Data.RoundIndex)
+	return &SSEEvent{EventType: "metric.explanations", Data: string(dataBytes)}
 }
 
 func (ep *EventProcessor) assignSeq(evt SSEEvent) SSEEvent {

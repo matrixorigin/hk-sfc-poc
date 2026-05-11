@@ -1,0 +1,249 @@
+# 指标计算可解释性配置
+# 每一条对应一个预计算列，展示给用户"怎么算的 + 核心代码 + 关键脚本"。
+# 修改预处理逻辑（scripts/02_import_data.sh）时务必同 PR 更新本文件。
+
+metrics:
+  # ====================================================================
+  # 1. trade_date 系列：从 DDMONYYYY:HH:MI:SS 格式解析为 DATE
+  # ====================================================================
+  - column: ms_t_stk_sis.trade_date
+    name: 个股交易日期
+    explain: |
+      从 SITXDT 原始字段（格式 DDMONYYYY:HH:MI:SS，如 02JAN2025:00:00:00）
+      解析出来的标准 DATE 类型。导入时用 SUBSTR + CASE 月份缩写映射写入。
+      作日期过滤/比较时用此列，不要用 SITXDT。
+    code: |
+      -- MatrixOne 不支持 STR_TO_DATE，用 SUBSTR 切片重组
+      UPDATE ms_t_stk_sis SET trade_date = CAST(CONCAT(
+          SUBSTR(SITXDT, 6, 4), '-',
+          CASE SUBSTR(SITXDT, 3, 3)
+            WHEN 'JAN' THEN '01' WHEN 'FEB' THEN '02' WHEN 'MAR' THEN '03'
+            WHEN 'APR' THEN '04' WHEN 'MAY' THEN '05' WHEN 'JUN' THEN '06'
+            WHEN 'JUL' THEN '07' WHEN 'AUG' THEN '08' WHEN 'SEP' THEN '09'
+            WHEN 'OCT' THEN '10' WHEN 'NOV' THEN '11' WHEN 'DEC' THEN '12'
+          END, '-',
+          SUBSTR(SITXDT, 1, 2)
+      ) AS DATE)
+    source: scripts/02_import_data.sh#L219-L221
+
+  - column: ms_t_stk_hsi.trade_date
+    name: 恒指交易日期
+    explain: |
+      从 HSTXDT 原始字段（格式 DDMONYYYY:HH:MI:SS）解析出的标准 DATE。
+      与 ms_t_stk_sis.trade_date 同算法。
+    code: |
+      UPDATE ms_t_stk_hsi SET trade_date = CAST(CONCAT(
+          SUBSTR(HSTXDT, 6, 4), '-',
+          CASE SUBSTR(HSTXDT, 3, 3)
+            WHEN 'JAN' THEN '01' ... WHEN 'DEC' THEN '12'
+          END, '-',
+          SUBSTR(HSTXDT, 1, 2)
+      ) AS DATE)
+    source: scripts/02_import_data.sh#L215-L217
+
+  - column: sehknews.trade_date
+    name: 公告影响交易日
+    explain: |
+      把公告的发生时间映射到对应的"下一个交易日"。规则：
+      盘后（≥16:00 HKT）的公告影响顺延到次个交易日。
+      用此列与 ms_t_stk_sis JOIN 时不会错过节假日/盘后场景。
+    code: |
+      -- 1) 把 timestamp 转换为 effective_date（盘后 +1 day）
+      -- 2) 在 ms_t_stk_sis 里找 >= effective_date 的最早 trade_date
+      UPDATE sehknews n
+      JOIN (
+        SELECT effective_date, MIN(trade_date) AS trade_date
+        FROM (SELECT nd.effective_date, td.trade_date
+              FROM (... CASE WHEN HOUR(timestamp) >= 16
+                             THEN DATE_ADD(DATE(timestamp), INTERVAL 1 DAY)
+                             ELSE DATE(timestamp) END AS effective_date ...) nd
+              JOIN (SELECT DISTINCT trade_date FROM ms_t_stk_sis) td
+                ON td.trade_date >= nd.effective_date) x
+        GROUP BY effective_date
+      ) mapping ON n.effective_date = mapping.effective_date
+      SET n.trade_date = mapping.trade_date
+    source: scripts/02_import_data.sh#L226-L256
+
+  # ====================================================================
+  # 2. 行业分类前向填充
+  # ====================================================================
+  - column: ms_v_stock_capital.industry_name
+    name: 行业分类（前向填充）
+    explain: |
+      从 ds_t_int_hsicl_dtl 前向填充到每个月末快照。
+      规则：对每只股票在每个 ref_date（月末），取截至该月末最近一次
+      （按 MODIFIED_DATE 排序）的行业分类。
+      做行业级市值分析时直接用此列，不要自己 JOIN ds_t_int_hsicl_dtl。
+    code: |
+      # Python：按股票分组、按时间排序，对每个月末做 as-of join
+      cls = {}  # stock_code -> [(modified_date, industry_name), ...]
+      for row in ds_t_int_hsicl_dtl:
+          cls.setdefault(row.STKCD, []).append((row.MODIFIED_DATE, row.industry_name))
+
+      for stock_code, history in cls.items():
+          history.sort()
+          for month_end in month_ends:
+              latest = max((d for d in history if d[0] <= month_end),
+                           key=lambda x: x[0], default=None)
+              if latest:
+                  yield (stock_code, month_end, latest[1])
+    source: scripts/02_import_data.sh#L259-L328
+
+  # ====================================================================
+  # 3. MA (Moving Average) 系列：简单移动平均
+  # ====================================================================
+  - column: ms_t_stk_sis.ma_3
+    name: 3日均价
+    explain: |
+      最近 3 个交易日 SICLSE（收盘价）的简单移动平均。
+      Python 在数据导入时用 O(1) 滚动均值算法计算；窗口不满 3 个观测时为 NULL。
+      数值四舍五入到 4 位小数，匹配 MO 的 DECIMAL(16,4) 精度。
+    code: |
+      class RollingAvg:
+          def __init__(self, w): self.w=w; self.buf=deque(); self.s=0.0; self.c=0
+          def add(self, v):
+              if len(self.buf) >= self.w:
+                  old = self.buf.popleft()
+                  if old is not None: self.s -= old; self.c -= 1
+              self.buf.append(v)
+              if v is not None: self.s += v; self.c += 1
+          def avg(self):
+              return self.s/self.c if len(self.buf) >= self.w and self.c else None
+
+      r3 = RollingAvg(3)
+      r3.add(close)
+      ma3 = round(r3.avg(), 4) if r3.avg() is not None else None
+    source: scripts/02_import_data.sh#L340-L394
+
+  - column: ms_t_stk_sis.ma_20
+    name: 20日均价
+    explain: |
+      最近 20 个交易日 SICLSE 的简单移动平均。算法同 ma_3，窗口为 20。
+    code: |
+      r20 = RollingAvg(20)
+      r20.add(close)
+      ma20 = round(r20.avg(), 4) if r20.avg() is not None else None
+    source: scripts/02_import_data.sh#L340-L394
+
+  - column: ms_t_stk_sis.ma_50
+    name: 50日均价
+    explain: |
+      最近 50 个交易日 SICLSE 的简单移动平均。算法同 ma_3，窗口为 50。
+    code: |
+      r50 = RollingAvg(50)
+      r50.add(close)
+      ma50 = round(r50.avg(), 4) if r50.avg() is not None else None
+    source: scripts/02_import_data.sh#L340-L394
+
+  - column: ms_t_stk_sis.ma_100
+    name: 100日均价
+    explain: |
+      最近 100 个交易日 SICLSE 的简单移动平均。算法同 ma_3，窗口为 100。
+    code: |
+      r100 = RollingAvg(100)
+      r100.add(close)
+      ma100 = round(r100.avg(), 4) if r100.avg() is not None else None
+    source: scripts/02_import_data.sh#L340-L394
+
+  # ====================================================================
+  # 4. 连续高于 MA 天数 + 起始日
+  # ====================================================================
+  - column: ms_t_stk_sis.consecutive_above_ma3
+    name: 连续高于 MA3 天数
+    explain: |
+      到该 trade_date 为止，SICLSE 连续高于当日 ma_3 的天数（含当天）。
+      一旦某日收盘 ≤ ma_3，streak 归零。
+      查询用法：每只股票通常用 ROW_NUMBER() 取每只股票的最长 streak 一行。
+    code: |
+      # 逐行扫描；遇到换股票就重置
+      if ma3 is not None and close is not None and close > ma3:
+          if streak3 == 0:
+              start3 = date              # 记录起始日
+          streak3 += 1
+      else:
+          streak3 = 0
+          start3 = None
+    source: scripts/02_import_data.sh#L398-L403
+
+  - column: ms_t_stk_sis.consecutive_above_ma3_start
+    name: 连续高于 MA3 起始日
+    explain: |
+      consecutive_above_ma3 当前 streak 开始那一天的 trade_date。
+      与 consecutive_above_ma3 配对使用，定位连涨段的起点。
+    code: |
+      if streak3 == 0:
+          start3 = date     # 新 streak 开始时记录
+      # streak 中断时 start3 = None
+    source: scripts/02_import_data.sh#L398-L403
+
+  - column: ms_t_stk_sis.consecutive_above_ma20
+    name: 连续高于 MA20 天数
+    explain: |
+      到该 trade_date 为止，SICLSE 连续高于当日 ma_20 的天数（含当天）。
+      算法同 consecutive_above_ma3，比较窗口换成 ma_20。
+    code: |
+      if ma20 is not None and close is not None and close > ma20:
+          if streak20 == 0: start20 = date
+          streak20 += 1
+      else:
+          streak20 = 0; start20 = None
+    source: scripts/02_import_data.sh#L405-L410
+
+  - column: ms_t_stk_sis.consecutive_above_ma20_start
+    name: 连续高于 MA20 起始日
+    explain: |
+      consecutive_above_ma20 当前 streak 开始那一天的 trade_date。
+    code: |
+      if streak20 == 0:
+          start20 = date
+    source: scripts/02_import_data.sh#L405-L410
+
+  - column: ms_t_stk_sis.consecutive_above_ma50
+    name: 连续高于 MA50 天数
+    explain: |
+      到该 trade_date 为止，SICLSE 连续高于当日 ma_50 的天数（含当天）。
+      算法同上，比较窗口换成 ma_50。
+    code: |
+      if ma50 is not None and close is not None and close > ma50:
+          if streak50 == 0: start50 = date
+          streak50 += 1
+      else:
+          streak50 = 0; start50 = None
+    source: scripts/02_import_data.sh#L412-L417
+
+  - column: ms_t_stk_sis.consecutive_above_ma50_start
+    name: 连续高于 MA50 起始日
+    explain: |
+      consecutive_above_ma50 当前 streak 开始那一天的 trade_date。
+    code: |
+      if streak50 == 0:
+          start50 = date
+    source: scripts/02_import_data.sh#L412-L417
+
+  # ====================================================================
+  # 5. 30 日平均成交量（Avg_Vol_30_Pre 客户口径）
+  # ====================================================================
+  - column: ms_t_stk_sis.avg_vol_30d
+    name: 30日平均成交量
+    explain: |
+      前 30 个交易日成交量的滚动均值，**不含当天**（shift(1)），
+      且至少需要 20 个有效观测，否则返回 NULL。
+      等价 pandas: x.shift(1).rolling(window=30, min_periods=20).mean()
+      对应客户口径 Avg_Vol_30_Pre。用于成交量异常检测，
+      如 SIVOL > avg_vol_30d * 3。
+    code: |
+      # 先用旧 buffer 算出 avg_vol（不含当天）
+      if vol_count >= 20:
+          avg_vol = vol_sum / vol_count
+      else:
+          avg_vol = None
+
+      # 计算之后再把当天 vol 推入 buffer（保证 shift(1) 语义）
+      vol_buf.append(vol)
+      if vol is not None:
+          vol_sum += vol; vol_count += 1
+      if len(vol_buf) > 30:
+          old = vol_buf.popleft()
+          if old is not None:
+              vol_sum -= old; vol_count -= 1
+    source: scripts/02_import_data.sh#L417-L432

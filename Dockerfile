@@ -26,6 +26,7 @@ WORKDIR /app
 COPY --from=backend /build/hk-poc-backend .
 COPY --from=frontend /build/dist ./web/dist
 COPY backend/config.yaml .
+COPY backend/metrics.yaml .
 
 ENV STATIC_DIR=/app/web/dist SERVER_PORT=3000
 EXPOSE 3000

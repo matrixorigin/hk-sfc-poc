@@ -16,11 +16,20 @@ import (
 
 func main() {
 	configPath := flag.String("config", "config.yaml", "path to config file")
+	metricsPath := flag.String("metrics", "metrics.yaml", "path to metrics yaml (column explainability)")
 	flag.Parse()
 
 	cfg, err := LoadConfig(*configPath)
 	if err != nil {
 		log.Fatalf("load config: %v", err)
+	}
+
+	metrics, err := LoadMetrics(*metricsPath)
+	if err != nil {
+		log.Printf("warning: load metrics file %s: %v (metric explanations disabled)", *metricsPath, err)
+		metrics = nil
+	} else {
+		log.Printf("loaded %d metric definition(s) from %s", len(metrics.all), *metricsPath)
 	}
 
 	client := NewExploreClient(cfg.Catalog.URL, cfg.Catalog.APIKey)
@@ -61,7 +70,7 @@ func main() {
 	clarifier := NewClarifier(cfg.Catalog.URL, cfg.Catalog.APIKey, cfg.Catalog.WorkspaceID, cfg.Explore.LLMModel, convDB)
 
 	// 会话消息流 handler
-	messagesHandler := NewMessagesHandler(client, clarifier, convDB, cfg)
+	messagesHandler := NewMessagesHandler(client, clarifier, convDB, cfg, metrics)
 	conversationsHandler := NewConversationsHandler(convDB, messagesHandler)
 	mux.Handle("/api/conversations", conversationsHandler)
 	mux.Handle("/api/conversations/", conversationsHandler)

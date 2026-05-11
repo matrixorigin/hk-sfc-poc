@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"time"
 )
 
@@ -47,19 +48,20 @@ type ConversationMeta struct {
 
 // StoredMessage 是 messages 表的一行。
 type StoredMessage struct {
-	ID               string            `json:"id"`
-	ConversationID   string            `json:"conversation_id"`
-	Role             string            `json:"role"`
-	Content          string            `json:"content"`
-	SQLStatements    []string          `json:"sql_statements,omitempty"`
-	SQLResults       []json.RawMessage `json:"sql_results,omitempty"`
-	ChartSpec        json.RawMessage   `json:"chart_spec,omitempty"`
-	PhaseHistory     []string          `json:"phase_history,omitempty"`
-	Error            string            `json:"error,omitempty"`
-	FeedbackQuestion string            `json:"feedback_question,omitempty"`
-	Status           string            `json:"status"`
-	Seq              int64             `json:"seq"`
-	CreatedAt        int64             `json:"created_at"`
+	ID                 string            `json:"id"`
+	ConversationID     string            `json:"conversation_id"`
+	Role               string            `json:"role"`
+	Content            string            `json:"content"`
+	SQLStatements      []string          `json:"sql_statements,omitempty"`
+	SQLResults         []json.RawMessage `json:"sql_results,omitempty"`
+	ChartSpec          json.RawMessage   `json:"chart_spec,omitempty"`
+	PhaseHistory       []string          `json:"phase_history,omitempty"`
+	Error              string            `json:"error,omitempty"`
+	FeedbackQuestion   string            `json:"feedback_question,omitempty"`
+	Status             string            `json:"status"`
+	Seq                int64             `json:"seq"`
+	CreatedAt          int64             `json:"created_at"`
+	MetricExplanations []MetricDef       `json:"metric_explanations,omitempty"`
 }
 
 // ConversationsDB 封装 conversations + messages 两表的 CRUD。
@@ -92,24 +94,53 @@ CREATE TABLE IF NOT EXISTS conversations (
 
 	const messagesDDL = `
 CREATE TABLE IF NOT EXISTS messages (
-    id                VARCHAR(64) PRIMARY KEY,
-    conversation_id   VARCHAR(64) NOT NULL,
-    role              VARCHAR(16) NOT NULL,
-    content           TEXT,
-    sql_statements    TEXT,
-    sql_results       TEXT,
-    chart_spec        TEXT,
-    phase_history     TEXT,
-    error             TEXT,
-    feedback_question TEXT,
-    status            VARCHAR(16) NOT NULL,
-    seq               BIGINT NOT NULL,
-    created_at        BIGINT NOT NULL
+    id                  VARCHAR(64) PRIMARY KEY,
+    conversation_id     VARCHAR(64) NOT NULL,
+    role                VARCHAR(16) NOT NULL,
+    content             TEXT,
+    sql_statements      TEXT,
+    sql_results         TEXT,
+    chart_spec          TEXT,
+    phase_history       TEXT,
+    error               TEXT,
+    feedback_question   TEXT,
+    status              VARCHAR(16) NOT NULL,
+    seq                 BIGINT NOT NULL,
+    created_at          BIGINT NOT NULL,
+    metric_explanations TEXT
 )`
 	if _, err := c.db.Exec(messagesDDL); err != nil {
 		return fmt.Errorf("create messages table: %w", err)
 	}
 
+	// 幂等 add column: 仅添加缺失的 metric_explanations 列（不修改任何已有数据）。
+	if err := c.ensureColumn("messages", "metric_explanations", "TEXT"); err != nil {
+		log.Printf("warning: ensure metric_explanations column: %v (metric persistence will be skipped)", err)
+	}
+
+	return nil
+}
+
+// ensureColumn 检查表是否存在指定列；若不存在则 ALTER TABLE ADD COLUMN。
+// 这是一次「只新增、不修改」的幂等迁移，对已有数据无影响。
+func (c *ConversationsDB) ensureColumn(table, column, colType string) error {
+	var n int
+	err := c.db.QueryRow(
+		`SELECT COUNT(*) FROM information_schema.columns
+		 WHERE table_name = ? AND column_name = ?`,
+		table, column,
+	).Scan(&n)
+	if err != nil {
+		return fmt.Errorf("check column %s.%s: %w", table, column, err)
+	}
+	if n > 0 {
+		return nil
+	}
+	stmt := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, colType)
+	log.Printf("[migration] %s", stmt)
+	if _, err := c.db.Exec(stmt); err != nil {
+		return fmt.Errorf("add column: %w", err)
+	}
 	return nil
 }
 
@@ -259,14 +290,15 @@ func (c *ConversationsDB) InsertMessage(msg *StoredMessage) error {
 	sqlResults := marshalOrEmpty(msg.SQLResults)
 	phaseHist := marshalOrEmpty(msg.PhaseHistory)
 	chartSpec := rawOrEmpty(msg.ChartSpec)
+	metricExps := marshalOrEmpty(msg.MetricExplanations)
 
 	_, err := c.db.Exec(
 		`INSERT INTO messages
-		 (id, conversation_id, role, content, sql_statements, sql_results, chart_spec, phase_history, error, feedback_question, status, seq, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 (id, conversation_id, role, content, sql_statements, sql_results, chart_spec, phase_history, error, feedback_question, status, seq, created_at, metric_explanations)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		msg.ID, msg.ConversationID, msg.Role, msg.Content,
 		sqlStmts, sqlResults, chartSpec, phaseHist,
-		msg.Error, msg.FeedbackQuestion, msg.Status, msg.Seq, msg.CreatedAt,
+		msg.Error, msg.FeedbackQuestion, msg.Status, msg.Seq, msg.CreatedAt, metricExps,
 	)
 	if err != nil {
 		return fmt.Errorf("insert message: %w", err)
@@ -301,13 +333,14 @@ func (c *ConversationsDB) PersistAssistantMessage(msg *StoredMessage) error {
 	sqlResults := marshalOrEmpty(msg.SQLResults)
 	phaseHist := marshalOrEmpty(msg.PhaseHistory)
 	chartSpec := rawOrEmpty(msg.ChartSpec)
+	metricExps := marshalOrEmpty(msg.MetricExplanations)
 
 	_, err := c.db.Exec(
 		`UPDATE messages
 		 SET content = ?, sql_statements = ?, sql_results = ?, chart_spec = ?,
-		     phase_history = ?, error = ?, status = ?
+		     phase_history = ?, error = ?, status = ?, metric_explanations = ?
 		 WHERE id = ?`,
-		msg.Content, sqlStmts, sqlResults, chartSpec, phaseHist, msg.Error, msg.Status, msg.ID,
+		msg.Content, sqlStmts, sqlResults, chartSpec, phaseHist, msg.Error, msg.Status, metricExps, msg.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("persist assistant message: %w", err)
@@ -319,7 +352,7 @@ func (c *ConversationsDB) PersistAssistantMessage(msg *StoredMessage) error {
 func (c *ConversationsDB) ListMessages(conversationID string) ([]StoredMessage, error) {
 	rows, err := c.db.Query(
 		`SELECT id, conversation_id, role, content, sql_statements, sql_results, chart_spec,
-		        phase_history, error, feedback_question, status, seq, created_at
+		        phase_history, error, feedback_question, status, seq, created_at, metric_explanations
 		 FROM messages WHERE conversation_id = ? ORDER BY seq ASC`,
 		conversationID,
 	)
@@ -339,11 +372,12 @@ func (c *ConversationsDB) ListMessages(conversationID string) ([]StoredMessage, 
 			phaseHist        sql.NullString
 			errMsg           sql.NullString
 			feedbackQuestion sql.NullString
+			metricExps       sql.NullString
 		)
 		if err := rows.Scan(
 			&m.ID, &m.ConversationID, &m.Role, &content,
 			&sqlStmts, &sqlResults, &chartSpec, &phaseHist,
-			&errMsg, &feedbackQuestion, &m.Status, &m.Seq, &m.CreatedAt,
+			&errMsg, &feedbackQuestion, &m.Status, &m.Seq, &m.CreatedAt, &metricExps,
 		); err != nil {
 			return nil, err
 		}
@@ -361,6 +395,9 @@ func (c *ConversationsDB) ListMessages(conversationID string) ([]StoredMessage, 
 		}
 		if phaseHist.Valid && phaseHist.String != "" {
 			_ = json.Unmarshal([]byte(phaseHist.String), &m.PhaseHistory)
+		}
+		if metricExps.Valid && metricExps.String != "" {
+			_ = json.Unmarshal([]byte(metricExps.String), &m.MetricExplanations)
 		}
 		out = append(out, m)
 	}

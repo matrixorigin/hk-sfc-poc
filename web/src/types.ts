@@ -32,6 +32,14 @@ export interface SQLResult {
 
 export type Phase = 'thinking' | 'planning' | 'querying' | 'answering' | 'done'
 
+export interface MetricExplainItem {
+  column: string
+  name: string
+  explain: string
+  code: string
+  source: string
+}
+
 export interface Message {
   id: string
   role: 'user' | 'assistant'
@@ -44,6 +52,7 @@ export interface Message {
   error?: string
   chartSpec?: ChartSpec
   feedbackQuestion?: string
+  metricExplanations?: MetricExplainItem[]
 }
 
 export type Language = 'en' | 'zh'
@@ -73,6 +82,7 @@ export interface StoredMessage {
   status: 'pending' | 'done' | 'failed'
   seq: number
   created_at: number
+  metric_explanations?: MetricExplainItem[]
 }
 
 // fromStoredMessage 把后端存储结构映射为前端运行时的 Message。
@@ -89,5 +99,6 @@ export function fromStoredMessage(m: StoredMessage): Message {
     error: m.error,
     chartSpec: m.chart_spec,
     feedbackQuestion: m.feedback_question,
+    metricExplanations: m.metric_explanations,
   }
 }

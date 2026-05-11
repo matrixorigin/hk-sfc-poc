@@ -10,6 +10,7 @@ import { Chart, canChartResult, resolveSpec } from './Chart'
 import { ChartFieldSelector } from './ChartFieldSelector'
 import { DataTable } from './DataTable'
 import { FeedbackButton } from './FeedbackButton'
+import { MetricExplanations } from './MetricExplanations'
 import { PhasePipeline } from './PhasePipeline'
 import { selectPrimaryResult } from '../utils/selectPrimaryResult'
 import { updateMessageChartSpec } from '../api/conversations'
@@ -148,6 +149,11 @@ export function MessageBubble({ message, conversationId, onUpdateMessage }: Mess
           {/* Data Table */}
           {!isUser && isDone && primaryResult && primaryResult.rows.length > 0 && (
             <DataTable result={primaryResult} />
+          )}
+
+          {/* 预计算字段说明 — 介于数据表和 SQL 之间 */}
+          {!isUser && isDone && message.metricExplanations && message.metricExplanations.length > 0 && (
+            <MetricExplanations items={message.metricExplanations} />
           )}
 
           {/* SQL toggle — only after done */}

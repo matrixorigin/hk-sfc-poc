@@ -8,20 +8,22 @@ import (
 // MessageAggregate 从 SSE 事件流聚合 assistant message 的最终态。
 // 每条 assistant message 对应一个 Aggregator 实例，流结束后调用 Finalize() 写库。
 type MessageAggregate struct {
-	content          string
-	sqlStatements    []string
-	sqlResults       []json.RawMessage
-	sqlResultColSig  []string // 与 sqlResults 一一对应，用于列数替换规则去重
-	chartSpec        json.RawMessage
-	phaseHistory     []string
-	errorMsg         string
-	hasFailed        bool
-	hasDone          bool
+	content            string
+	sqlStatements      []string
+	sqlResults         []json.RawMessage
+	sqlResultColSig    []string // 与 sqlResults 一一对应，用于列数替换规则去重
+	chartSpec          json.RawMessage
+	phaseHistory       []string
+	errorMsg           string
+	hasFailed          bool
+	hasDone            bool
+	metricExplanations []MetricDef
+	metricSeen         map[string]bool
 }
 
 // NewMessageAggregate 创建一个新聚合器。
 func NewMessageAggregate() *MessageAggregate {
-	return &MessageAggregate{}
+	return &MessageAggregate{metricSeen: make(map[string]bool)}
 }
 
 // Apply 按事件类型分发到对应的 handler。
@@ -32,6 +34,8 @@ func (a *MessageAggregate) Apply(evt SSEEvent) {
 		a.handleSQLResult(evt.Data)
 	case "chart.recommendation":
 		a.handleChartRecommendation(evt.Data)
+	case "metric.explanations":
+		a.handleMetricExplanations(evt.Data)
 	case "synthesis.done":
 		a.handleSynthesisDone(evt.Data)
 	case "run.started":
@@ -59,13 +63,14 @@ func (a *MessageAggregate) Finalize() *StoredMessage {
 		status = "done"
 	}
 	return &StoredMessage{
-		Content:       a.content,
-		SQLStatements: a.sqlStatements,
-		SQLResults:    a.sqlResults,
-		ChartSpec:     a.chartSpec,
-		PhaseHistory:  a.phaseHistory,
-		Error:         a.errorMsg,
-		Status:        status,
+		Content:            a.content,
+		SQLStatements:      a.sqlStatements,
+		SQLResults:         a.sqlResults,
+		ChartSpec:          a.chartSpec,
+		PhaseHistory:       a.phaseHistory,
+		Error:              a.errorMsg,
+		Status:             status,
+		MetricExplanations: a.metricExplanations,
 	}
 }
 
@@ -124,6 +129,27 @@ func (a *MessageAggregate) handleSQLResult(data string) {
 	if !replaced {
 		a.sqlResults = append(a.sqlResults, wrapper.Data)
 		a.sqlResultColSig = append(a.sqlResultColSig, colSig)
+	}
+}
+
+func (a *MessageAggregate) handleMetricExplanations(data string) {
+	// metric.explanations 是 backend EventProcessor 自己注入的，格式为
+	// {"event":"metric.explanations","data":{"round_index":N,"items":[...]},"seq":N}
+	var wrapper struct {
+		Data struct {
+			Items []MetricDef `json:"items"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(data), &wrapper); err != nil {
+		log.Printf("[aggregate] metric.explanations: unmarshal failed: %v", err)
+		return
+	}
+	for _, m := range wrapper.Data.Items {
+		if a.metricSeen[m.Column] {
+			continue
+		}
+		a.metricSeen[m.Column] = true
+		a.metricExplanations = append(a.metricExplanations, m)
 	}
 }
 

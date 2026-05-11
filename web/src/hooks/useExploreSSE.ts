@@ -215,6 +215,24 @@ export function useExploreSSE({ onUpdate, onDone, onError, onMessageCreated }: U
         })
         break
       }
+      case 'metric.explanations': {
+        const items = event.data?.items
+        if (Array.isArray(items) && items.length > 0) {
+          onUpdate((msg) => {
+            const existing = msg.metricExplanations ?? []
+            const seen = new Set(existing.map((m) => m.column))
+            const merged = [...existing]
+            for (const it of items) {
+              if (it && it.column && !seen.has(it.column)) {
+                seen.add(it.column)
+                merged.push(it)
+              }
+            }
+            return { ...msg, metricExplanations: merged }
+          })
+        }
+        break
+      }
       case 'chart.recommendation': {
         const spec = event.data
         if (spec) {

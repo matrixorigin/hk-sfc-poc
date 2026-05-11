@@ -23,11 +23,12 @@ type MessagesHandler struct {
 	clarify *Clarifier
 	db      *ConversationsDB
 	cfg     *Config
+	metrics *MetricRegistry
 }
 
-// NewMessagesHandler 构造 MessagesHandler。
-func NewMessagesHandler(client *ExploreClient, clarify *Clarifier, db *ConversationsDB, cfg *Config) *MessagesHandler {
-	return &MessagesHandler{client: client, clarify: clarify, db: db, cfg: cfg}
+// NewMessagesHandler 构造 MessagesHandler。metrics 可为 nil（未配置 metrics.yaml）。
+func NewMessagesHandler(client *ExploreClient, clarify *Clarifier, db *ConversationsDB, cfg *Config, metrics *MetricRegistry) *MessagesHandler {
+	return &MessagesHandler{client: client, clarify: clarify, db: db, cfg: cfg, metrics: metrics}
 }
 
 // HandleSend 处理 POST /api/conversations/{id}/messages。
@@ -228,7 +229,7 @@ func (h *MessagesHandler) HandleSend(w http.ResponseWriter, r *http.Request, con
 	// 记录该问题供 Clarifier 判断追问上下文（通过 DB 的 recent 已实现，此处无操作）
 
 	// 7. 转发 SSE + 聚合
-	ep := NewEventProcessor()
+	ep := NewEventProcessor(h.metrics)
 	scanner := bufio.NewScanner(stream)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
