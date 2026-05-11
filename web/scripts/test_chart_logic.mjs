@@ -1,108 +1,25 @@
-// 纯逻辑测试：classifyColumns / chartTypeAvailability / resolveSpec
+// 纯逻辑测试：chartTypeAvailability / resolveSpec
 // 实现复制自 src/utils/chartFieldRoles.ts + src/components/Chart.tsx 的核心函数
 // 跑法：node web/scripts/test_chart_logic.mjs
 
 import assert from 'node:assert/strict'
 
-// ─── chartFieldRoles 复制 ───
-const isNumeric = (v) => v !== null && v !== undefined && v !== '' && !isNaN(Number(v))
-const isDateLike = (vs) => {
-  if (vs.length < 3) return false
-  const re = /\d{4}[-/]\d{1,2}[-/]?|^\d{8}$|T\d{2}:\d{2}/
-  return vs.filter((v) => re.test(v)).length >= vs.length * 0.5
+// ─── chartTypeAvailability 复制（纯形状判断）───
+const MIN_COLS = {
+  bar: 2, hbar: 2, line: 2, pie: 2, combo: 3, heatmap: 3, candlestick: 5,
 }
-const isIdentifierColumn = (col, values) => {
-  const lc = col.toLowerCase()
-  if (/\b(code|id|name|symbol|ticker|stock|participant|industry)\b/.test(lc)) return true
-  if (/^(sistkc|sistkn|stkcd|stock_code|securitycode)$/.test(lc)) return true
-  const uniq = new Set(values.map(String))
-  if (uniq.size <= 3 && values.length > 10) return true
-  return false
-}
-function classifyColumns(result) {
-  const { columns, rows } = result
-  const dimensions = [], metrics = [], legends = []
-  for (let ci = 0; ci < columns.length; ci++) {
-    const col = columns[ci]
-    const values = rows.map((r) => r[ci])
-    const sv = values.map((v) => String(v ?? ''))
-    const uniq = new Set(sv).size
-    const id = isIdentifierColumn(col, values)
-    const dateLike = isDateLike(sv)
-    const numericMaj =
-      rows.length > 0 &&
-      rows.filter((r) => isNumeric(r[ci])).length >= rows.length * 0.7
-    if (dateLike || id || !numericMaj) dimensions.push(col)
-    if (numericMaj && !id) metrics.push(col)
-    if (!dateLike && uniq >= 2 && uniq <= 30 && (id || !numericMaj)) legends.push(col)
-  }
-  return { dimensions, metrics, legends }
-}
-
-const OHLC_PATTERNS = {
-  open: [/(^|[_\s-])open([_\s-]|$)/, /开盘/, /siopne/],
-  close: [/(^|[_\s-])close([_\s-]|$)/, /收盘/, /siclse/],
-  high: [/(^|[_\s-])high([_\s-]|$)/, /最高/, /sihige/],
-  low: [/(^|[_\s-])low([_\s-]|$)/, /最低/, /silowe/],
-}
-function detectOHLC(columns) {
-  const lower = columns.map((c) => c.toLowerCase())
-  const out = {}
-  for (const role of ['open', 'close', 'high', 'low']) {
-    for (let i = 0; i < lower.length; i++) {
-      if (OHLC_PATTERNS[role].some((re) => re.test(lower[i]))) {
-        out[role] = columns[i]
-        break
-      }
-    }
-  }
-  return out
-}
-
 function chartTypeAvailability(result, type) {
-  if (!result || result.rows.length === 0 || result.columns.length < 2) {
-    return { ok: false, reason: '数据为空或列太少' }
+  if (!result || result.rows.length === 0) {
+    return { ok: false, reason: { kind: 'empty' } }
   }
-  const roles = classifyColumns(result)
-  switch (type) {
-    case 'bar':
-    case 'hbar':
-    case 'line':
-      if (roles.metrics.length < 1) return { ok: false, reason: '需要 ≥ 1 个数值列' }
-      return { ok: true }
-    case 'pie':
-      if (roles.metrics.length < 1) return { ok: false, reason: '需要 ≥ 1 个数值列' }
-      if (roles.dimensions.length < 1) return { ok: false, reason: '需要 ≥ 1 个类别列' }
-      return { ok: true }
-    case 'combo':
-      if (roles.metrics.length < 2) return { ok: false, reason: '需要 ≥ 2 个数值列' }
-      return { ok: true }
-    case 'heatmap': {
-      const catDims = result.columns.filter((c, ci) => {
-        const vals = result.rows.map((r) => r[ci])
-        if (!isIdentifierColumn(c, vals) && !isDateLike(vals.map(String))) return false
-        const uniq = new Set(vals.map(String)).size
-        return uniq >= 2 && uniq <= 30
-      })
-      if (catDims.length < 2) return { ok: false, reason: '需要 ≥ 2 个类别列' }
-      if (roles.metrics.length < 1) return { ok: false, reason: '需要 ≥ 1 个数值列' }
-      return { ok: true }
-    }
-    case 'candlestick': {
-      const ohlc = detectOHLC(result.columns)
-      const missing = ['open', 'close', 'high', 'low'].filter((k) => !ohlc[k])
-      if (missing.length > 0)
-        return { ok: false, reason: `需要 OHLC 4 列（缺 ${missing.join('/')})` }
-      const hasTime = result.columns.some((c, ci) =>
-        isDateLike(result.rows.map((r) => String(r[ci] ?? '')))
-      )
-      if (!hasTime) return { ok: false, reason: '需要 1 个时间维度列' }
-      return { ok: true }
-    }
+  const need = MIN_COLS[type]
+  if (result.columns.length < need) {
+    return { ok: false, reason: { kind: 'need-cols', n: need } }
   }
+  return { ok: true }
 }
 
-// ─── resolveSpec 复制（新版，无规则式自动）───
+// ─── resolveSpec 复制（与 Chart.tsx 一致）───
 function resolveSpec(result, spec) {
   const cols = result.columns
   const has = (f) => !!f && cols.includes(f)
@@ -181,28 +98,6 @@ const volumeAnomaly = {
     ['08112', 'CORNERSTONE FIN', '2025-03-26', 170400, '4.66667', '36514.29'],
     ['00768', 'UBA INVESTMENTS', '2025-04-24', 101570000, '33266.66667', '3053.21'],
     ['01870', 'ACME INTL HLDGS', '2025-03-05', 344647500, '377583.33333', '912.77'],
-    ['00500', 'JINHUI HOLDINGS', '2025-03-05', 5000000, '5000', '100'],
-    ['00501', 'ADTIGER CORP', '2025-03-06', 9000000, '6000', '150'],
-  ],
-}
-const priceMA = {
-  columns: ['trade_date', 'close_price', 'ma_20', 'ma_50'],
-  rows: [
-    ['2025-01-01', 100.5, 99.2, 98.0],
-    ['2025-01-02', 101.0, 99.5, 98.5],
-    ['2025-01-03', 102.3, 100.0, 98.7],
-    ['2025-01-04', 101.8, 100.5, 99.0],
-  ],
-}
-const multiStock = {
-  columns: ['trade_date', 'stock_code', 'close_price'],
-  rows: [
-    ['2025-01-01', '00700', 320.0],
-    ['2025-01-01', '00388', 250.0],
-    ['2025-01-02', '00700', 322.5],
-    ['2025-01-02', '00388', 252.0],
-    ['2025-01-03', '00700', 318.0],
-    ['2025-01-03', '00388', 254.5],
   ],
 }
 const ohlcData = {
@@ -216,8 +111,8 @@ const ohlcData = {
 const industryMonth = {
   columns: ['industry', 'month', 'avg_return'],
   rows: [
-    ['Tech', '2025-01', 0.05], ['Tech', '2025-02', 0.03], ['Tech', '2025-03', -0.01],
-    ['Finance', '2025-01', 0.02], ['Finance', '2025-02', 0.01], ['Finance', '2025-03', 0.04],
+    ['Tech', '2025-01', 0.05], ['Tech', '2025-02', 0.03],
+    ['Finance', '2025-01', 0.02], ['Finance', '2025-02', 0.01],
   ],
 }
 
@@ -228,66 +123,56 @@ function it(name, fn) {
   catch (e) { console.error('✗', name, '\n   ', e.message); fail++ }
 }
 
-// ─── classifyColumns ───
-it('classifyColumns: volumeAnomaly', () => {
-  const c = classifyColumns(volumeAnomaly)
-  assert.deepEqual(c.dimensions, ['stock_code', 'stock_name', 'trade_date'])
-  assert.deepEqual(c.metrics, ['volume', 'avg_vol_30d', 'volume_multiple'])
+// ─── chartTypeAvailability (纯形状) ───
+it('availability: empty rows → empty', () => {
+  const r = chartTypeAvailability({ columns: ['a', 'b'], rows: [] }, 'bar')
+  assert.equal(r.ok, false)
+  assert.equal(r.reason.kind, 'empty')
 })
-it('classifyColumns: priceMA 全数值', () => {
-  const c = classifyColumns(priceMA)
-  assert.ok(c.dimensions.includes('trade_date'))
-  assert.deepEqual(c.metrics.sort(), ['close_price', 'ma_20', 'ma_50'].sort())
+it('availability: 2 列 → bar/hbar/line/pie OK', () => {
+  const d = { columns: ['x', 'y'], rows: [['a', 1], ['b', 2], ['c', 3]] }
+  for (const t of ['bar', 'hbar', 'line', 'pie']) {
+    assert.equal(chartTypeAvailability(d, t).ok, true, t)
+  }
 })
-it('classifyColumns: multiStock long 表', () => {
-  const c = classifyColumns(multiStock)
-  assert.ok(c.legends.includes('stock_code'))
+it('availability: 2 列 combo/heatmap → need 3 cols', () => {
+  const d = { columns: ['x', 'y'], rows: [['a', 1], ['b', 2]] }
+  for (const t of ['combo', 'heatmap']) {
+    const r = chartTypeAvailability(d, t)
+    assert.equal(r.ok, false)
+    assert.equal(r.reason.kind, 'need-cols')
+    assert.equal(r.reason.n, 3)
+  }
 })
-
-// ─── chartTypeAvailability ───
-it('availability: volumeAnomaly bar/line/pie/combo OK', () => {
-  for (const t of ['bar', 'hbar', 'line', 'pie', 'combo']) {
+it('availability: 3 列 → combo/heatmap OK', () => {
+  const d = { columns: ['a', 'b', 'c'], rows: [[1, 2, 3], [4, 5, 6], [7, 8, 9]] }
+  assert.equal(chartTypeAvailability(d, 'combo').ok, true)
+  assert.equal(chartTypeAvailability(d, 'heatmap').ok, true)
+})
+it('availability: 4 列 candlestick → need 5 cols', () => {
+  const d = { columns: ['a', 'b', 'c', 'd'], rows: [[1, 2, 3, 4]] }
+  const r = chartTypeAvailability(d, 'candlestick')
+  assert.equal(r.ok, false)
+  assert.equal(r.reason.kind, 'need-cols')
+  assert.equal(r.reason.n, 5)
+})
+it('availability: 5 列（任意列名）candlestick → OK', () => {
+  const d = {
+    columns: ['t', 'a', 'b', 'c', 'd'],
+    rows: [['2025-01-01', 1, 2, 3, 4], ['2025-01-02', 2, 3, 4, 5]],
+  }
+  assert.equal(chartTypeAvailability(d, 'candlestick').ok, true)
+})
+it('availability: volumeAnomaly 6 列 → 所有类型 OK', () => {
+  for (const t of ['bar', 'hbar', 'line', 'pie', 'combo', 'heatmap', 'candlestick']) {
     assert.equal(chartTypeAvailability(volumeAnomaly, t).ok, true, t)
   }
 })
-it('availability: priceMA pie ok（trade_date 算 dimension）', () => {
-  const r = chartTypeAvailability(priceMA, 'pie')
-  assert.equal(r.ok, true)
-})
-it('availability: 单指标数据 combo → fail', () => {
-  const single = { columns: ['x', 'v'], rows: [['a', 1], ['b', 2]] }
-  assert.equal(chartTypeAvailability(single, 'combo').ok, false)
-})
-it('availability: volumeAnomaly heatmap → fail（仅 stock_code/stock_name 是 ID，trade_date 算日期）', () => {
-  const r = chartTypeAvailability(volumeAnomaly, 'heatmap')
-  // 这里 stock_code 和 stock_name 都是 ID，所以候选有 2 个 → 应该 OK
-  assert.equal(r.ok, true)
-})
-it('availability: industryMonth heatmap → OK', () => {
-  assert.equal(chartTypeAvailability(industryMonth, 'heatmap').ok, true)
-})
-it('availability: ohlcData candlestick → OK', () => {
+it('availability: ohlcData 5 列 → candlestick OK', () => {
   assert.equal(chartTypeAvailability(ohlcData, 'candlestick').ok, true)
 })
-it('availability: volumeAnomaly candlestick → fail（没有 OHLC 列）', () => {
-  const r = chartTypeAvailability(volumeAnomaly, 'candlestick')
-  assert.equal(r.ok, false)
-  assert.ok(r.reason.includes('OHLC'))
-})
 
-// ─── detectOHLC ───
-it('detectOHLC: 标准列名', () => {
-  const o = detectOHLC(['date', 'open_price', 'close_price', 'high_price', 'low_price'])
-  assert.equal(o.open, 'open_price')
-  assert.equal(o.close, 'close_price')
-})
-it('detectOHLC: 缺失部分 → undefined', () => {
-  const o = detectOHLC(['date', 'open', 'close'])
-  assert.equal(o.high, undefined)
-  assert.equal(o.low, undefined)
-})
-
-// ─── resolveSpec（新版无规则式自动）───
+// ─── resolveSpec ───
 it('resolveSpec: chart_type=auto → reason=type-not-set', () => {
   const r = resolveSpec(volumeAnomaly, { chart_type: 'auto' })
   assert.equal(r.reason?.kind, 'type-not-set')

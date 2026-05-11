@@ -12,47 +12,6 @@ export function isDateLike(values: string[]): boolean {
   return values.filter((v) => datePattern.test(v)).length >= values.length * 0.5
 }
 
-export function isIdentifierColumn(colName: string, values: any[]): boolean {
-  const lc = colName.toLowerCase()
-  if (/\b(code|id|name|symbol|ticker|stock|participant|industry)\b/.test(lc)) return true
-  if (/^(sistkc|sistkn|stkcd|stock_code|securitycode)$/.test(lc)) return true
-  const uniqueVals = new Set(values.map((v) => String(v)))
-  if (uniqueVals.size <= 3 && values.length > 10) return true
-  return false
-}
-
-export function findDateColumnIndex(result: SQLResult): number {
-  for (let ci = 0; ci < result.columns.length; ci++) {
-    const values = result.rows.map((row) => String(row[ci] ?? ''))
-    if (isDateLike(values)) return ci
-  }
-  return -1
-}
-
-export function findCategoryColumnIndex(result: SQLResult): number {
-  for (let ci = 0; ci < result.columns.length; ci++) {
-    if (isIdentifierColumn(result.columns[ci], result.rows.map((r) => r[ci]))) {
-      return ci
-    }
-  }
-  for (let ci = 0; ci < result.columns.length; ci++) {
-    const hasStrings = result.rows.some(
-      (row) => typeof row[ci] === 'string' && !isNumeric(row[ci])
-    )
-    if (hasStrings) return ci
-  }
-  return 0
-}
-
-export function findXAxisIndex(result: SQLResult): number {
-  const dateCol = findDateColumnIndex(result)
-  if (dateCol >= 0) {
-    const uniq = new Set(result.rows.map((r) => String(r[dateCol] ?? '')))
-    if (uniq.size >= 3) return dateCol
-  }
-  return findCategoryColumnIndex(result)
-}
-
 export function formatDateValue(v: string): string {
   return v.replace(/T\d{2}:\d{2}:\d{2}[\w:.]*Z?$/, '')
 }
@@ -86,131 +45,38 @@ export function formatColumnName(col: string): string {
   return col.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
-export interface ColumnRoles {
-  // 适合做 x 轴 / 类别维度的列
-  dimensions: string[]
-  // 适合做 y 轴指标的列（数值列且不是标识/常量列）
-  metrics: string[]
-  // 适合做图例分组维度的列（类别列且基数 2-30）
-  legends: string[]
-}
-
-// 蜡烛图 OHLC 列名候选词（小写匹配，处理 open_price / open / 开盘等多种形式）
-const OHLC_PATTERNS = {
-  open: [/(^|[_\s-])open([_\s-]|$)/, /开盘/, /siopne/],
-  close: [/(^|[_\s-])close([_\s-]|$)/, /收盘/, /siclse/],
-  high: [/(^|[_\s-])high([_\s-]|$)/, /最高/, /sihige/],
-  low: [/(^|[_\s-])low([_\s-]|$)/, /最低/, /silowe/],
-}
-
-// detectOHLC: 扫描列名，返回各角色的候选列（按匹配度排序）
-export function detectOHLC(columns: string[]): { open?: string; close?: string; high?: string; low?: string } {
-  const lower = columns.map((c) => c.toLowerCase())
-  const out: { [k: string]: string | undefined } = {}
-  for (const role of ['open', 'close', 'high', 'low'] as const) {
-    for (let i = 0; i < lower.length; i++) {
-      if (OHLC_PATTERNS[role].some((re) => re.test(lower[i]))) {
-        out[role] = columns[i]
-        break
-      }
-    }
-  }
-  return out
-}
-
 // 结构化 reason，便于 i18n 翻译
+// 全手动原则：chip 灰态只看「列数够不够」，不区分数值/类别/时间。
 export type AvailReason =
   | { kind: 'empty' }
-  | { kind: 'need-metrics'; n: number }
-  | { kind: 'need-types'; n: number }
-  | { kind: 'need-ohlc'; missing: string[] }
-  | { kind: 'need-time' }
+  | { kind: 'need-cols'; n: number }
+
+// 不同图表类型所需的最少列数（用户手动绑定字段，引擎只检查列够不够）
+const MIN_COLS: Record<
+  'bar' | 'hbar' | 'line' | 'pie' | 'combo' | 'heatmap' | 'candlestick',
+  number
+> = {
+  bar: 2,        // X + ≥1 Y
+  hbar: 2,
+  line: 2,
+  pie: 2,        // X + 1 Y
+  combo: 3,      // X + ≥2 Y
+  heatmap: 3,    // X + Y + value
+  candlestick: 5, // time + open/close/high/low
+}
 
 // chartTypeAvailability: 返回当前数据能否画这个图表类型 + 结构化 reason
 export function chartTypeAvailability(
   result: SQLResult,
   type: 'bar' | 'hbar' | 'line' | 'pie' | 'combo' | 'heatmap' | 'candlestick'
 ): { ok: true } | { ok: false; reason: AvailReason } {
-  if (!result || result.rows.length === 0 || result.columns.length < 2) {
+  if (!result || result.rows.length === 0) {
     return { ok: false, reason: { kind: 'empty' } }
   }
-  const roles = classifyColumns(result)
-
-  switch (type) {
-    case 'bar':
-    case 'hbar':
-    case 'line':
-      if (roles.metrics.length < 1) return { ok: false, reason: { kind: 'need-metrics', n: 1 } }
-      return { ok: true }
-
-    case 'pie':
-      if (roles.metrics.length < 1) return { ok: false, reason: { kind: 'need-metrics', n: 1 } }
-      if (roles.dimensions.length < 1) return { ok: false, reason: { kind: 'need-types', n: 1 } }
-      return { ok: true }
-
-    case 'combo':
-      if (roles.metrics.length < 2) return { ok: false, reason: { kind: 'need-metrics', n: 2 } }
-      return { ok: true }
-
-    case 'heatmap': {
-      const catDims = result.columns.filter((c, ci) => {
-        const vals = result.rows.map((r) => r[ci])
-        if (!isIdentifierColumn(c, vals) && !isDateLike(vals.map(String))) return false
-        const uniq = new Set(vals.map(String)).size
-        return uniq >= 2 && uniq <= 30
-      })
-      if (catDims.length < 2) return { ok: false, reason: { kind: 'need-types', n: 2 } }
-      if (roles.metrics.length < 1) return { ok: false, reason: { kind: 'need-metrics', n: 1 } }
-      return { ok: true }
-    }
-
-    case 'candlestick': {
-      const ohlc = detectOHLC(result.columns)
-      const missing = (['open', 'close', 'high', 'low'] as const).filter((k) => !ohlc[k])
-      if (missing.length > 0) return { ok: false, reason: { kind: 'need-ohlc', missing: [...missing] } }
-      const hasTime = result.columns.some((_c, ci) =>
-        isDateLike(result.rows.map((r) => String(r[ci] ?? '')))
-      )
-      if (!hasTime) return { ok: false, reason: { kind: 'need-time' } }
-      return { ok: true }
-    }
+  const need = MIN_COLS[type]
+  if (result.columns.length < need) {
+    return { ok: false, reason: { kind: 'need-cols', n: need } }
   }
+  return { ok: true }
 }
 
-export function classifyColumns(result: SQLResult): ColumnRoles {
-  const { columns, rows } = result
-  const dimensions: string[] = []
-  const metrics: string[] = []
-  const legends: string[] = []
-
-  for (let ci = 0; ci < columns.length; ci++) {
-    const col = columns[ci]
-    const values = rows.map((r) => r[ci])
-    const stringValues = values.map((v) => String(v ?? ''))
-    const uniqueCount = new Set(stringValues).size
-    const identifier = isIdentifierColumn(col, values)
-    const dateLike = isDateLike(stringValues)
-    const numericMajority = rows.length > 0 && rows.filter((r) => isNumeric(r[ci])).length >= rows.length * 0.7
-
-    // 维度候选：日期列、标识列、或非数值占多数的列
-    if (dateLike || identifier || !numericMajority) {
-      dimensions.push(col)
-    }
-    // 指标候选：数值列且不是标识列
-    if (numericMajority && !identifier) {
-      metrics.push(col)
-    }
-    // 图例候选：低基数类别列（2-30 个唯一值），日期与纯数值指标除外。
-    // 标识列即使值看起来是数字（如 5 位股票代码），也算图例候选。
-    if (
-      !dateLike &&
-      uniqueCount >= 2 &&
-      uniqueCount <= 30 &&
-      (identifier || !numericMajority)
-    ) {
-      legends.push(col)
-    }
-  }
-
-  return { dimensions, metrics, legends }
-}

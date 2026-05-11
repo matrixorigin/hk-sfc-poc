@@ -1265,6 +1265,10 @@ body {
   border-color: #1a73e8;
   color: #1a73e8;
 }
+.cfs-mpill.dimmed {
+  opacity: 0.5;
+  filter: grayscale(0.6);
+}
 
 /* Checkbox row */
 .cfs-check {

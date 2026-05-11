@@ -3,8 +3,6 @@ import type { ChartSpec, ChartType, SQLResult } from '../types'
 import { useT, tpl } from '../i18n'
 import {
   chartTypeAvailability,
-  classifyColumns,
-  detectOHLC,
   formatColumnName,
   type AvailReason,
 } from '../utils/chartFieldRoles'
@@ -31,16 +29,12 @@ const NONE_VALUE = '__none__'
 function reasonToText(t: (k: any) => string, r: AvailReason): string {
   switch (r.kind) {
     case 'empty': return t('chartReasonEmpty')
-    case 'need-metrics': return tpl(t('chartReasonNeedMetrics'), { n: r.n })
-    case 'need-types': return tpl(t('chartReasonNeedTypes'), { n: r.n })
-    case 'need-ohlc': return tpl(t('chartReasonNeedOhlc'), { missing: r.missing.join(' / ') })
-    case 'need-time': return t('chartReasonNeedTime')
+    case 'need-cols': return tpl(t('chartReasonNeedCols'), { n: r.n })
   }
 }
 
 export function ChartFieldSelector({ result, spec, onChange }: ChartFieldSelectorProps) {
   const { t } = useT()
-  const roles = useMemo(() => classifyColumns(result), [result])
   const allCols = result.columns
 
   const chartType = spec.chart_type ?? 'auto'
@@ -66,59 +60,52 @@ export function ChartFieldSelector({ result, spec, onChange }: ChartFieldSelecto
     (chartType === 'combo' && yFields.length < 2)
   const expanded = userExpanded || forceExpand
 
+  // 下拉选项规则：所有列都可选，仅排除已被其他角色占用的列（避免一列同时绑两个角色）。
+  // 当前角色已绑的列要保留在自己的下拉里（让 select 能正确显示已选值）。
   const dimensionOptions = useMemo(() => {
-    const set = new Set(roles.dimensions)
-    yFields.forEach((y) => set.delete(y))
-    if (seriesField) set.delete(seriesField)
-    if (y2Field) set.delete(y2Field)
-    if (xField) set.add(xField)
-    return allCols.filter((c) => set.has(c))
-  }, [roles.dimensions, allCols, xField, yFields, seriesField, y2Field])
+    const used = new Set<string>()
+    yFields.forEach((y) => used.add(y))
+    if (seriesField) used.add(seriesField)
+    if (y2Field) used.add(y2Field)
+    if (xField) used.delete(xField)
+    return allCols.filter((c) => !used.has(c))
+  }, [allCols, xField, yFields, seriesField, y2Field])
 
   const metricOptions = useMemo(() => {
-    const set = new Set(roles.metrics)
-    if (xField) set.delete(xField)
-    if (seriesField) set.delete(seriesField)
-    if (y2Field) set.delete(y2Field)
-    yFields.forEach((y) => set.add(y))
-    return allCols.filter((c) => set.has(c))
-  }, [roles.metrics, allCols, xField, yFields, seriesField, y2Field])
+    const used = new Set<string>()
+    if (xField) used.add(xField)
+    if (seriesField) used.add(seriesField)
+    if (y2Field) used.add(y2Field)
+    yFields.forEach((y) => used.delete(y))
+    return allCols.filter((c) => !used.has(c))
+  }, [allCols, xField, yFields, seriesField, y2Field])
 
   const legendOptions = useMemo(() => {
-    const set = new Set(roles.legends)
-    if (xField) set.delete(xField)
-    yFields.forEach((y) => set.delete(y))
-    if (seriesField) set.add(seriesField)
-    return allCols.filter((c) => set.has(c))
-  }, [roles.legends, allCols, xField, yFields, seriesField])
+    const used = new Set<string>()
+    if (xField) used.add(xField)
+    yFields.forEach((y) => used.add(y))
+    if (y2Field) used.add(y2Field)
+    if (seriesField) used.delete(seriesField)
+    return allCols.filter((c) => !used.has(c))
+  }, [allCols, xField, yFields, seriesField, y2Field])
 
   const y2Options = useMemo(() => {
-    const set = new Set(roles.dimensions)
-    if (xField) set.delete(xField)
-    yFields.forEach((y) => set.delete(y))
-    if (y2Field) set.add(y2Field)
-    return allCols.filter((c) => set.has(c))
-  }, [roles.dimensions, allCols, xField, yFields, y2Field])
+    const used = new Set<string>()
+    if (xField) used.add(xField)
+    yFields.forEach((y) => used.add(y))
+    if (seriesField) used.add(seriesField)
+    if (y2Field) used.delete(y2Field)
+    return allCols.filter((c) => !used.has(c))
+  }, [allCols, xField, yFields, seriesField, y2Field])
 
   const seriesCount = seriesField ? Infinity : yFields.length
   const showStackToggle =
     (chartType === 'bar' || chartType === 'hbar' || chartType === 'combo') && seriesCount >= 2
 
   function handleChartType(t2: ChartType) {
-    const patch: Partial<ChartSpec> = { chart_type: t2, user_edited: true }
-    if (t2 === 'pie') {
-      patch.series = undefined
-      if (yFields.length > 1) {
-        patch.y = [{ field: yFields[0], label: formatColumnName(yFields[0]) }]
-      }
-    }
-    if (t2 === 'candlestick' && !spec.ohlc) {
-      const det = detectOHLC(allCols)
-      if (det.open && det.close && det.high && det.low) {
-        patch.ohlc = { open: det.open, close: det.close, high: det.high, low: det.low }
-      }
-    }
-    onChange(patch)
+    // 切类型只改 chart_type，不动 x/y/series/ohlc — spec 是用户意图的单一记录，
+    // 视图层（resolveSpec）按当前类型决定怎么渲染。
+    onChange({ chart_type: t2, user_edited: true })
   }
 
   function handleX(field: string) {
@@ -142,8 +129,8 @@ export function ChartFieldSelector({ result, spec, onChange }: ChartFieldSelecto
   }
 
   function handleToggleMetric(field: string) {
+    // pie 模式不再裁剪 — 用户可以绑多个，渲染层只取首项，切回 line 完整恢复
     if (yFields.includes(field)) {
-      if (isPie && yFields.length <= 1) return
       const next = yFields.filter((f) => f !== field)
       onChange({
         y: next.length > 0
@@ -152,8 +139,7 @@ export function ChartFieldSelector({ result, spec, onChange }: ChartFieldSelecto
         user_edited: true,
       })
     } else {
-      let next = [...yFields, field]
-      if (isPie) next = [field]
+      const next = [...yFields, field]
       onChange({
         y: next.map((f) => ({
           field: f,
@@ -334,11 +320,17 @@ export function ChartFieldSelector({ result, spec, onChange }: ChartFieldSelecto
 
             <span className="cfs-label" style={{ marginLeft: 12 }}>{t('chartMetric')}</span>
             <div className="cfs-mpills">
-              {yFields.map((f) => {
+              {yFields.map((f, idx) => {
                 const axis = yAxisMap.get(f) ?? 'primary'
                 const sub = ySubTypeMap.get(f) ?? 'bar'
+                // 饼图渲染只取首项，非首项给灰底视觉提示（数据仍保留，切回 line 完整恢复）
+                const dimmed = isPie && idx > 0
                 return (
-                  <span key={f} className="cfs-mpill">
+                  <span
+                    key={f}
+                    className={`cfs-mpill ${dimmed ? 'dimmed' : ''}`}
+                    title={dimmed ? t('chartPieOnlyFirst') : undefined}
+                  >
                     <span className="lbl">{formatColumnName(f)}</span>
                     {chartType === 'combo' && (
                       <span
@@ -349,13 +341,15 @@ export function ChartFieldSelector({ result, spec, onChange }: ChartFieldSelecto
                         {sub === 'bar' ? '▮' : '∿'}
                       </span>
                     )}
-                    <span
-                      className={`axis ${axis === 'secondary' ? 'r' : ''}`}
-                      onClick={() => handleToggleAxis(f)}
-                      title={t('chartAxisToggleTitle')}
-                    >
-                      {axis === 'secondary' ? 'R' : 'L'}
-                    </span>
+                    {!isPie && (
+                      <span
+                        className={`axis ${axis === 'secondary' ? 'r' : ''}`}
+                        onClick={() => handleToggleAxis(f)}
+                        title={t('chartAxisToggleTitle')}
+                      >
+                        {axis === 'secondary' ? 'R' : 'L'}
+                      </span>
+                    )}
                     <span className="x" onClick={() => handleToggleMetric(f)}>×</span>
                   </span>
                 )

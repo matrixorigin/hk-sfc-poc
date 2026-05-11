@@ -101,9 +101,7 @@
   "chartSortBy": "按 {field}",
   "chartAxisToggleTitle": "切换主 / 副 Y 轴",
   "chartSubtypeToggleTitle": "切换 柱 / 线",
-  "chartReasonNeedTypes": "需要 {n} 个类别列",
-  "chartReasonNeedMetrics": "需要 {n} 个数值列",
-  "chartReasonNeedOhlc": "需要 OHLC 4 列（缺 {missing}）",
-  "chartReasonNeedTime": "需要 1 个时间维度列",
-  "chartReasonEmpty": "数据为空或列太少"
+  "chartPieOnlyFirst": "饼图仅取首项；切回其他类型可恢复全部",
+  "chartReasonNeedCols": "需要至少 {n} 列",
+  "chartReasonEmpty": "数据为空"
 }

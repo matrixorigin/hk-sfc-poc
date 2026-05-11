@@ -101,9 +101,7 @@
   "chartSortBy": "By {field}",
   "chartAxisToggleTitle": "Toggle primary / secondary Y axis",
   "chartSubtypeToggleTitle": "Toggle bar / line",
-  "chartReasonNeedTypes": "Needs {n} categorical columns",
-  "chartReasonNeedMetrics": "Needs {n} numeric columns",
-  "chartReasonNeedOhlc": "Needs OHLC 4 columns (missing {missing})",
-  "chartReasonNeedTime": "Needs 1 time column",
-  "chartReasonEmpty": "Data is empty or has too few columns"
+  "chartPieOnlyFirst": "Pie uses only the first metric; switch back to restore others",
+  "chartReasonNeedCols": "Needs at least {n} columns",
+  "chartReasonEmpty": "Data is empty"
 }

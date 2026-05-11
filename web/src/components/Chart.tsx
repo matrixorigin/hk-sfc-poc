@@ -2,7 +2,6 @@ import ReactECharts from 'echarts-for-react'
 import type { ChartSpec, ChartType, SQLResult } from '../types'
 import { useT, tpl } from '../i18n'
 import {
-  classifyColumns,
   formatColumnName,
   formatDateValue,
   isDateLike,
@@ -15,11 +14,10 @@ interface ChartProps {
 }
 
 // canChartResult: 是否值得显示整个 chart-section（含字段选择器）。
-// 只要数据有 ≥1 数值列 + ≥2 列就给用户工具栏，是否能渲染某个具体类型由 chartTypeAvailability 决定。
+// 只看数据形状：≥2 列。具体能画哪个类型由 chartTypeAvailability 决定。
 export function canChartResult(result: SQLResult): boolean {
   if (!result || result.rows.length === 0) return false
-  if (result.columns.length < 2) return false
-  return classifyColumns(result).metrics.length > 0
+  return result.columns.length >= 2
 }
 
 // ── 解析后的 spec ──
