@@ -1,6 +1,10 @@
 # 指标计算可解释性配置
 # 每一条对应一个预计算列，展示给用户"怎么算的 + 核心代码 + 关键脚本"。
 # 修改预处理逻辑（scripts/02_import_data.sh）时务必同 PR 更新本文件。
+#
+# 字段约定：
+#   explain — 面向业务用户的自然语言说明（不出现 SQL/Python 关键字、API 名）
+#   code    — 给开发者看的核心算法片段（技术细节保留在这里）
 
 metrics:
   # ====================================================================
@@ -9,9 +13,9 @@ metrics:
   - column: ms_t_stk_sis.trade_date
     name: 个股交易日期
     explain: |
-      从 SITXDT 原始字段（格式 DDMONYYYY:HH:MI:SS，如 02JAN2025:00:00:00）
-      解析出来的标准 DATE 类型。导入时用 SUBSTR + CASE 月份缩写映射写入。
-      作日期过滤/比较时用此列，不要用 SITXDT。
+      原始数据里的日期是文本格式（例如 02JAN2025:00:00:00），
+      不能直接用来比较或筛选时间范围。导入时把它解析成标准日期格式
+      存到本列。做任何按日期查询、JOIN、排序时直接用这一列。
     code: |
       -- MatrixOne 不支持 STR_TO_DATE，用 SUBSTR 切片重组
       UPDATE ms_t_stk_sis SET trade_date = CAST(CONCAT(
@@ -29,8 +33,8 @@ metrics:
   - column: ms_t_stk_hsi.trade_date
     name: 恒指交易日期
     explain: |
-      从 HSTXDT 原始字段（格式 DDMONYYYY:HH:MI:SS）解析出的标准 DATE。
-      与 ms_t_stk_sis.trade_date 同算法。
+      恒生指数原始数据的日期同样是文本格式，导入时解析成标准日期
+      存到本列。和「个股交易日期」算法完全一致，用法也一样。
     code: |
       UPDATE ms_t_stk_hsi SET trade_date = CAST(CONCAT(
           SUBSTR(HSTXDT, 6, 4), '-',
@@ -44,9 +48,10 @@ metrics:
   - column: sehknews.trade_date
     name: 公告影响交易日
     explain: |
-      把公告的发生时间映射到对应的"下一个交易日"。规则：
-      盘后（≥16:00 HKT）的公告影响顺延到次个交易日。
-      用此列与 ms_t_stk_sis JOIN 时不会错过节假日/盘后场景。
+      把公告的发生时间映射到它实际能影响到的那个交易日：
+      当天 16:00 之前发布的算当天；16:00 之后或非交易日发布的，
+      顺延到下一个开市的交易日。
+      这样把公告和股价对齐分析时，不会错过节假日和盘后场景。
     code: |
       -- 1) 把 timestamp 转换为 effective_date（盘后 +1 day）
       -- 2) 在 ms_t_stk_sis 里找 >= effective_date 的最早 trade_date
@@ -70,10 +75,10 @@ metrics:
   - column: ms_v_stock_capital.industry_name
     name: 行业分类（前向填充）
     explain: |
-      从 ds_t_int_hsicl_dtl 前向填充到每个月末快照。
-      规则：对每只股票在每个 ref_date（月末），取截至该月末最近一次
-      （按 MODIFIED_DATE 排序）的行业分类。
-      做行业级市值分析时直接用此列，不要自己 JOIN ds_t_int_hsicl_dtl。
+      行业分类的原始数据只在「调整发生」时才记录一行，
+      而市值数据是按月末快照存的。本列预先把
+      「截至每个月末，每只股票最近一次的行业分类」对齐填好。
+      做行业级市值或回报分析时直接用这一列，无需自己处理对齐。
     code: |
       # Python：按股票分组、按时间排序，对每个月末做 as-of join
       cls = {}  # stock_code -> [(modified_date, industry_name), ...]
@@ -95,9 +100,8 @@ metrics:
   - column: ms_t_stk_sis.ma_3
     name: 3日均价
     explain: |
-      最近 3 个交易日 SICLSE（收盘价）的简单移动平均。
-      Python 在数据导入时用 O(1) 滚动均值算法计算；窗口不满 3 个观测时为 NULL。
-      数值四舍五入到 4 位小数，匹配 MO 的 DECIMAL(16,4) 精度。
+      最近 3 个交易日收盘价的简单平均值。
+      数据不足 3 天（例如某只股票刚上市）时本列为空。
     code: |
       class RollingAvg:
           def __init__(self, w): self.w=w; self.buf=deque(); self.s=0.0; self.c=0
@@ -118,7 +122,8 @@ metrics:
   - column: ms_t_stk_sis.ma_20
     name: 20日均价
     explain: |
-      最近 20 个交易日 SICLSE 的简单移动平均。算法同 ma_3，窗口为 20。
+      最近 20 个交易日收盘价的简单平均值。
+      数据不足 20 天时本列为空。
     code: |
       r20 = RollingAvg(20)
       r20.add(close)
@@ -128,7 +133,8 @@ metrics:
   - column: ms_t_stk_sis.ma_50
     name: 50日均价
     explain: |
-      最近 50 个交易日 SICLSE 的简单移动平均。算法同 ma_3，窗口为 50。
+      最近 50 个交易日收盘价的简单平均值。
+      数据不足 50 天时本列为空。
     code: |
       r50 = RollingAvg(50)
       r50.add(close)
@@ -138,7 +144,8 @@ metrics:
   - column: ms_t_stk_sis.ma_100
     name: 100日均价
     explain: |
-      最近 100 个交易日 SICLSE 的简单移动平均。算法同 ma_3，窗口为 100。
+      最近 100 个交易日收盘价的简单平均值。
+      数据不足 100 天时本列为空。
     code: |
       r100 = RollingAvg(100)
       r100.add(close)
@@ -151,9 +158,8 @@ metrics:
   - column: ms_t_stk_sis.consecutive_above_ma3
     name: 连续高于 MA3 天数
     explain: |
-      到该 trade_date 为止，SICLSE 连续高于当日 ma_3 的天数（含当天）。
-      一旦某日收盘 ≤ ma_3，streak 归零。
-      查询用法：每只股票通常用 ROW_NUMBER() 取每只股票的最长 streak 一行。
+      截至当天，收盘价连续高于 3 日均价的天数（含当天）。
+      哪天收盘价跌到 3 日均价或以下，计数归零，下次再涨过会重新开始。
     code: |
       # 逐行扫描；遇到换股票就重置
       if ma3 is not None and close is not None and close > ma3:
@@ -168,8 +174,8 @@ metrics:
   - column: ms_t_stk_sis.consecutive_above_ma3_start
     name: 连续高于 MA3 起始日
     explain: |
-      consecutive_above_ma3 当前 streak 开始那一天的 trade_date。
-      与 consecutive_above_ma3 配对使用，定位连涨段的起点。
+      当前这段「连续高于 3 日均价」是从哪一天开始的。
+      和「连续高于 MA3 天数」配对使用，能直接定位连涨段的起点。
     code: |
       if streak3 == 0:
           start3 = date     # 新 streak 开始时记录
@@ -179,8 +185,8 @@ metrics:
   - column: ms_t_stk_sis.consecutive_above_ma20
     name: 连续高于 MA20 天数
     explain: |
-      到该 trade_date 为止，SICLSE 连续高于当日 ma_20 的天数（含当天）。
-      算法同 consecutive_above_ma3，比较窗口换成 ma_20。
+      截至当天，收盘价连续高于 20 日均价的天数（含当天）。
+      哪天收盘价跌到 20 日均价或以下，计数归零。
     code: |
       if ma20 is not None and close is not None and close > ma20:
           if streak20 == 0: start20 = date
@@ -192,7 +198,7 @@ metrics:
   - column: ms_t_stk_sis.consecutive_above_ma20_start
     name: 连续高于 MA20 起始日
     explain: |
-      consecutive_above_ma20 当前 streak 开始那一天的 trade_date。
+      当前这段「连续高于 20 日均价」是从哪一天开始的。
     code: |
       if streak20 == 0:
           start20 = date
@@ -201,8 +207,8 @@ metrics:
   - column: ms_t_stk_sis.consecutive_above_ma50
     name: 连续高于 MA50 天数
     explain: |
-      到该 trade_date 为止，SICLSE 连续高于当日 ma_50 的天数（含当天）。
-      算法同上，比较窗口换成 ma_50。
+      截至当天，收盘价连续高于 50 日均价的天数（含当天）。
+      哪天收盘价跌到 50 日均价或以下，计数归零。
     code: |
       if ma50 is not None and close is not None and close > ma50:
           if streak50 == 0: start50 = date
@@ -214,7 +220,7 @@ metrics:
   - column: ms_t_stk_sis.consecutive_above_ma50_start
     name: 连续高于 MA50 起始日
     explain: |
-      consecutive_above_ma50 当前 streak 开始那一天的 trade_date。
+      当前这段「连续高于 50 日均价」是从哪一天开始的。
     code: |
       if streak50 == 0:
           start50 = date
@@ -226,11 +232,10 @@ metrics:
   - column: ms_t_stk_sis.avg_vol_30d
     name: 30日平均成交量
     explain: |
-      前 30 个交易日成交量的滚动均值，**不含当天**（shift(1)），
-      且至少需要 20 个有效观测，否则返回 NULL。
-      等价 pandas: x.shift(1).rolling(window=30, min_periods=20).mean()
-      对应客户口径 Avg_Vol_30_Pre。用于成交量异常检测，
-      如 SIVOL > avg_vol_30d * 3。
+      当天**之前**最近 30 个交易日成交量的平均值（不包含当天本身，
+      避免用未来信息）。如果这 30 天内有效数据不足 20 天，本列为空。
+      常用于判断成交量异常——例如当日成交量超过本列 3 倍即视为放量。
+      对应客户口径 Avg_Vol_30_Pre。
     code: |
       # 先用旧 buffer 算出 avg_vol（不含当天）
       if vol_count >= 20:

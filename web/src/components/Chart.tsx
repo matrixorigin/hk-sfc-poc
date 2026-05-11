@@ -286,6 +286,15 @@ function EmptyChartState({ reason }: { reason: ResolveReason }) {
   )
 }
 
+// ── DataZoom helpers ──
+// 当 X 类目数过多时，默认窗口大致只展示 ~TARGET_VISIBLE 根，让初始视图可读；
+// 用户可拖动滑块查看其他区间。
+const ZOOM_TARGET_VISIBLE = 200
+function defaultZoomStart(count: number): number {
+  if (count <= ZOOM_TARGET_VISIBLE) return 0
+  return Math.max(0, 100 - (ZOOM_TARGET_VISIBLE / count) * 100)
+}
+
 // ── X 轴 label 旋转 helpers ──
 function labelRotate(count: number, isDate: boolean, maxLen: number): number {
   if (isDate) return count > 30 ? 45 : 0
@@ -411,7 +420,7 @@ function LineChart({
         rotate: labelRotate(built.xData.length, xIsDate, maxLabelLen),
         interval: xIsDate
           ? Math.max(0, Math.floor(built.xData.length / 12) - 1)
-          : 0,
+          : 'auto',
         formatter: (v: string) => {
           if (xIsDate) {
             const m = v.match(/^\d{4}-(\d{2}-\d{2})/)
@@ -436,9 +445,10 @@ function LineChart({
               fillerColor: 'rgba(26,115,232,0.08)',
               handleStyle: { color: '#1a73e8' },
               textStyle: { fontSize: 10, color: '#9ca3af' },
-              start: 70,
+              start: defaultZoomStart(built.xData.length),
               end: 100,
             },
+            { type: 'inside', start: defaultZoomStart(built.xData.length), end: 100 },
           ],
         }
       : {}),
@@ -499,6 +509,9 @@ function BarChart({
   const xIsDate = isDateLike(built.xData)
   const maxLabelLen = built.xData.reduce((m, v) => Math.max(m, v.length), 0)
 
+  // 垂直柱状图在类目过多时启用滑块；hbar 用画布纵向滚动，不走 dataZoom。
+  const needSlider = !isHorizontal && built.xData.length > 60
+
   // hbar：x 是 value，y 是 category
   const catAxis = {
     type: 'category' as const,
@@ -507,7 +520,7 @@ function BarChart({
       fontSize: 11,
       color: '#9ca3af',
       rotate: isHorizontal ? 0 : labelRotate(built.xData.length, xIsDate, maxLabelLen),
-      interval: 0,
+      interval: isHorizontal ? 0 : 'auto',
       formatter: (v: string) => (v.length > 14 ? v.slice(0, 14) + '…' : v),
     },
     axisLine: { lineStyle: { color: '#e5e7eb' } },
@@ -536,12 +549,30 @@ function BarChart({
       left: isHorizontal ? 120 : 60,
       right: !isHorizontal && hasSecondary ? 60 : 20,
       top: 36,
-      bottom: isHorizontal ? 36 : labelBottom(built.xData.length, xIsDate, maxLabelLen),
+      bottom: needSlider ? 90 : (isHorizontal ? 36 : labelBottom(built.xData.length, xIsDate, maxLabelLen)),
       containLabel: false,
     },
     xAxis: isHorizontal ? valAxes : catAxis,
     yAxis: isHorizontal ? catAxis : valAxes,
     series: seriesOpt,
+    ...(needSlider
+      ? {
+          dataZoom: [
+            {
+              type: 'slider',
+              bottom: 8,
+              height: 24,
+              borderColor: '#e5e7eb',
+              fillerColor: 'rgba(26,115,232,0.08)',
+              handleStyle: { color: '#1a73e8' },
+              textStyle: { fontSize: 10, color: '#9ca3af' },
+              start: defaultZoomStart(built.xData.length),
+              end: 100,
+            },
+            { type: 'inside', start: defaultZoomStart(built.xData.length), end: 100 },
+          ],
+        }
+      : {}),
   }
 
   return (
@@ -551,7 +582,9 @@ function BarChart({
         option={option}
         notMerge
         lazyUpdate
-        style={{ height: isHorizontal ? Math.max(300, built.xData.length * 22) : 300 }}
+        style={{
+          height: isHorizontal ? Math.max(300, built.xData.length * 22) : (needSlider ? 340 : 300),
+        }}
       />
     </div>
   )
