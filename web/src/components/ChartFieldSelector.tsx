@@ -47,41 +47,63 @@ export function ChartFieldSelector({
   const isPie = effectiveChartType === 'pie'
   const isHidden = effectiveChartType === 'none'
 
-  // 维度选项：dimensions ∪ 当前选中（避免数据不兼容时显示空白）
+  // 三个角色的字段池都不能跟其它角色已选的字段冲突。
+  // 当前选中的字段始终保留（即使它不在 classify 的候选里，也要让用户看见自己选了什么）。
   const dimensionOptions = useMemo(() => {
     const set = new Set(roles.dimensions)
+    effectiveY.forEach((y) => set.delete(y))
+    if (effectiveSeries) set.delete(effectiveSeries)
     if (effectiveX) set.add(effectiveX)
     return allCols.filter((c) => set.has(c))
-  }, [roles.dimensions, allCols, effectiveX])
+  }, [roles.dimensions, allCols, effectiveX, effectiveY, effectiveSeries])
 
   const metricOptions = useMemo(() => {
     const set = new Set(roles.metrics)
+    if (effectiveX) set.delete(effectiveX)
+    if (effectiveSeries) set.delete(effectiveSeries)
     effectiveY.forEach((y) => set.add(y))
     return allCols.filter((c) => set.has(c))
-  }, [roles.metrics, allCols, effectiveY])
+  }, [roles.metrics, allCols, effectiveX, effectiveY, effectiveSeries])
 
   const legendOptions = useMemo(() => {
     const set = new Set(roles.legends)
-    if (effectiveSeries) set.add(effectiveSeries)
-    // 排除当前 x 维度
     if (effectiveX) set.delete(effectiveX)
+    effectiveY.forEach((y) => set.delete(y))
+    if (effectiveSeries) set.add(effectiveSeries)
     return allCols.filter((c) => set.has(c))
-  }, [roles.legends, allCols, effectiveX, effectiveSeries])
+  }, [roles.legends, allCols, effectiveX, effectiveY, effectiveSeries])
+
+  // series 数 ≥ 2 时显示堆叠/分组切换（多指标或多 legend 都算）
+  const seriesCount = effectiveSeries ? Infinity : effectiveY.length
+  const showStackToggle = effectiveChartType === 'bar' && seriesCount >= 2
 
   function handleChartType(t: ChartType) {
     const patch: Partial<ChartSpec> = { chart_type: t, user_edited: true }
-    // 切饼图时清掉 series（饼图不支持图例分组）
-    if (t === 'pie') patch.series = undefined
+    // 饼图：清掉 series + 裁剪 y 到 1 个，避免 chip active 状态与实际渲染不一致
+    if (t === 'pie') {
+      patch.series = undefined
+      if (effectiveY.length > 1) {
+        patch.y = [{ field: effectiveY[0], label: formatColumnName(effectiveY[0]) }]
+      }
+    }
     onChange(patch)
   }
 
   function handleX(field: string) {
-    onChange({
+    const patch: Partial<ChartSpec> = {
       x: { field, label: formatColumnName(field) },
       user_edited: true,
-      // 若新选的 x 等于现有 series，清空 series
-      ...(field === effectiveSeries ? { series: undefined } : {}),
-    })
+    }
+    // 若新选的 x 撞到 series → 清 series
+    if (field === effectiveSeries) patch.series = undefined
+    // 若新选的 x 撞到某个 metric → 从 y 中剔除（保底至少 1 个）
+    if (effectiveY.includes(field)) {
+      const next = effectiveY.filter((f) => f !== field)
+      patch.y = next.length > 0
+        ? next.map((f) => ({ field: f, label: formatColumnName(f) }))
+        : undefined
+    }
+    onChange(patch)
   }
 
   function handleToggleMetric(field: string) {
@@ -102,13 +124,22 @@ export function ChartFieldSelector({
 
   function handleSeries(field: string) {
     if (field === NONE_VALUE) {
-      onChange({ series: undefined, user_edited: true })
-    } else {
-      onChange({
-        series: { field, label: formatColumnName(field) },
-        user_edited: true,
-      })
+      // 取消 legend 时把 bar_mode 也复位（stack 在无 legend 时通常没意义）
+      onChange({ series: undefined, bar_mode: undefined, user_edited: true })
+      return
     }
+    const patch: Partial<ChartSpec> = {
+      series: { field, label: formatColumnName(field) },
+      user_edited: true,
+    }
+    // 若新选的 legend 撞到 metric → 剔除
+    if (effectiveY.includes(field)) {
+      const next = effectiveY.filter((f) => f !== field)
+      patch.y = next.length > 0
+        ? next.map((f) => ({ field: f, label: formatColumnName(f) }))
+        : undefined
+    }
+    onChange(patch)
   }
 
   function handleBarMode(m: 'group' | 'stack') {
@@ -194,8 +225,8 @@ export function ChartFieldSelector({
             </div>
           )}
 
-          {/* 柱图 分组/堆叠 */}
-          {effectiveChartType === 'bar' && effectiveSeries && (
+          {/* 柱图 分组/堆叠：≥2 系列时可见 */}
+          {showStackToggle && (
             <div className="cfs-group">
               {BAR_MODES.map((m) => (
                 <button

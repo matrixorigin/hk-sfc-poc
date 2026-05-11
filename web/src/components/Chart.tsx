@@ -77,15 +77,23 @@ export function resolveSpec(result: SQLResult, spec?: ChartSpec): ResolvedSpec {
   }
 
   // 3) yFields
+  // 先解出 seriesField（yField 兜底要排除它）
+  let seriesField: string | undefined
+  if (spec?.series?.field && result.columns.includes(spec.series.field) && chartType !== 'pie') {
+    seriesField = spec.series.field
+  }
+  if (seriesField === xField) seriesField = undefined
+
   let yFields: string[] = []
   if (spec?.y && spec.y.length > 0) {
-    yFields = spec.y.map((y) => y.field).filter((f) => result.columns.includes(f))
+    yFields = spec.y
+      .map((y) => y.field)
+      .filter((f) => result.columns.includes(f) && f !== xField && f !== seriesField)
   }
   if (yFields.length === 0) {
-    // 自动取所有数值非标识列（排除 x、series）
-    const series = spec?.series?.field
+    // 兜底：所有数值非标识列（排除 x、series）
     yFields = result.columns.filter((c, ci) => {
-      if (c === xField || c === series) return false
+      if (c === xField || c === seriesField) return false
       if (isIdentifierColumn(c, result.rows.map((r) => r[ci]))) return false
       return result.rows.some((r) => isNumeric(r[ci]))
     })
@@ -93,20 +101,11 @@ export function resolveSpec(result: SQLResult, spec?: ChartSpec): ResolvedSpec {
   // 饼图限制为单指标
   if (chartType === 'pie' && yFields.length > 1) yFields = [yFields[0]]
 
-  // 4) seriesField
-  let seriesField: string | undefined
-  if (spec?.series?.field && result.columns.includes(spec.series.field) && chartType !== 'pie') {
-    seriesField = spec.series.field
-  }
-  if (seriesField === xField) seriesField = undefined
+  // 5) barMode 兜底：series 数 < 2 时 stack 无意义，统一降级为 group
+  const seriesCount = seriesField ? Infinity : yFields.length
+  const barMode = (spec?.bar_mode === 'stack' && seriesCount >= 2) ? 'stack' : 'group'
 
-  return {
-    chartType,
-    xField,
-    yFields,
-    seriesField,
-    barMode: spec?.bar_mode ?? 'group',
-  }
+  return { chartType, xField, yFields, seriesField, barMode }
 }
 
 // ── 配色 ──
@@ -286,16 +285,23 @@ function LineChart({ result, resolved }: { result: SQLResult; resolved: Resolved
     axisSplit.rightAxis.map((f) => formatColumnName(f))
   )
 
-  const seriesOpt = built.series.map((s, idx) => ({
-    name: s.name,
-    type: 'line' as const,
-    data: s.data,
-    smooth: true,
-    symbol: 'none',
-    lineStyle: { width: 2 },
-    itemStyle: { color: COLORS[idx % COLORS.length] },
-    yAxisIndex: useDualAxis && rightFieldSet.has(s.name) ? 1 : 0,
-  }))
+  const seriesOpt = built.series.map((s, idx) => {
+    const nonNullCount = s.data.reduce<number>((n, v) => (v != null ? n + 1 : n), 0)
+    // 稀疏 series（≤5 点）显示符号，避免单点 series 因 line 需要 2 点而完全不可见
+    const sparse = nonNullCount <= 5
+    return {
+      name: s.name,
+      type: 'line' as const,
+      data: s.data,
+      smooth: !sparse,
+      symbol: sparse ? 'circle' : 'none',
+      symbolSize: sparse ? 6 : 4,
+      showSymbol: sparse,
+      lineStyle: { width: 2 },
+      itemStyle: { color: COLORS[idx % COLORS.length] },
+      yAxisIndex: useDualAxis && rightFieldSet.has(s.name) ? 1 : 0,
+    }
+  })
 
   const needSlider = built.xData.length > 60
 

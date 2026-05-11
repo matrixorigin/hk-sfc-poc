@@ -116,23 +116,25 @@ function resolveSpec(r, spec) {
     xField = idx >= 0 ? r.columns[idx] : undefined
   }
 
+  let seriesField
+  if (spec?.series?.field && r.columns.includes(spec.series.field) && chartType !== 'pie') seriesField = spec.series.field
+  if (seriesField === xField) seriesField = undefined
+
   let yFields = []
-  if (spec?.y?.length) yFields = spec.y.map((y) => y.field).filter((f) => r.columns.includes(f))
+  if (spec?.y?.length) yFields = spec.y.map((y) => y.field).filter((f) => r.columns.includes(f) && f !== xField && f !== seriesField)
   if (yFields.length === 0) {
-    const series = spec?.series?.field
     yFields = r.columns.filter((c, ci) => {
-      if (c === xField || c === series) return false
+      if (c === xField || c === seriesField) return false
       if (isIdentifierColumn(c, r.rows.map((row) => row[ci]))) return false
       return r.rows.some((row) => isNumeric(row[ci]))
     })
   }
   if (chartType === 'pie' && yFields.length > 1) yFields = [yFields[0]]
 
-  let seriesField
-  if (spec?.series?.field && r.columns.includes(spec.series.field) && chartType !== 'pie') seriesField = spec.series.field
-  if (seriesField === xField) seriesField = undefined
+  const seriesCount = seriesField ? Infinity : yFields.length
+  const barMode = (spec?.bar_mode === 'stack' && seriesCount >= 2) ? 'stack' : 'group'
 
-  return { chartType, xField, yFields, seriesField, barMode: spec?.bar_mode ?? 'group' }
+  return { chartType, xField, yFields, seriesField, barMode }
 }
 
 // ─── 测试数据 ───
@@ -265,6 +267,68 @@ it('chart_type=none → 隐藏', () => {
 it('auto + 时间序列特征 → 折线', () => {
   const r = resolveSpec(priceMA, { chart_type: 'auto' })
   assert.equal(r.chartType, 'line')
+})
+
+it('resolveSpec: y 字段撞到 x → 被剔除', () => {
+  const r = resolveSpec(volumeAnomaly, {
+    chart_type: 'bar',
+    x: { field: 'volume' },  // 故意把数值列当 x
+    y: [{ field: 'volume' }, { field: 'avg_vol_30d' }],
+  })
+  assert.deepEqual(r.yFields, ['avg_vol_30d'])
+})
+
+it('resolveSpec: y 字段撞到 series → 被剔除', () => {
+  const r = resolveSpec(volumeAnomaly, {
+    chart_type: 'bar',
+    x: { field: 'stock_code' },
+    y: [{ field: 'volume' }, { field: 'stock_name' }],
+    series: { field: 'stock_name' },
+  })
+  assert.equal(r.seriesField, 'stock_name')
+  assert.deepEqual(r.yFields, ['volume'])
+})
+
+it('resolveSpec: bar_mode=stack 但只有 1 个 y → 降级 group', () => {
+  const r = resolveSpec(volumeAnomaly, {
+    chart_type: 'bar',
+    x: { field: 'stock_code' },
+    y: [{ field: 'volume' }],
+    bar_mode: 'stack',
+  })
+  assert.equal(r.barMode, 'group')
+})
+
+it('resolveSpec: bar_mode=stack + 多指标无 legend → 保留 stack（用户可自行切换）', () => {
+  // 这是用户本次撞到的 bug 数据形态：barMode 不再被「兜底」吃掉
+  const r = resolveSpec(volumeAnomaly, {
+    chart_type: 'bar',
+    x: { field: 'stock_name' },
+    y: [{ field: 'volume' }, { field: 'avg_vol_30d' }, { field: 'volume_multiple' }],
+    bar_mode: 'stack',
+  })
+  assert.equal(r.barMode, 'stack')
+  // 系列数 ≥ 2，UI 应显示 stack/group toggle 让用户切换
+})
+
+it('resolveSpec: 饼图 y 多于 1 时只取第一个（持久化层的兜底）', () => {
+  const r = resolveSpec(volumeAnomaly, {
+    chart_type: 'pie',
+    x: { field: 'stock_name' },
+    y: [{ field: 'volume' }, { field: 'avg_vol_30d' }, { field: 'volume_multiple' }],
+  })
+  assert.deepEqual(r.yFields, ['volume'])
+})
+
+it('resolveSpec: bar_mode=stack + legend → 保留', () => {
+  const r = resolveSpec(multiStock, {
+    chart_type: 'bar',
+    x: { field: 'trade_date' },
+    y: [{ field: 'close_price' }],
+    series: { field: 'stock_code' },
+    bar_mode: 'stack',
+  })
+  assert.equal(r.barMode, 'stack')
 })
 
 it('auto + 类别特征 → 柱状', () => {
