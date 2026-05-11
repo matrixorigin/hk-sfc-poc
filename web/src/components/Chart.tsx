@@ -1,5 +1,14 @@
 import ReactECharts from 'echarts-for-react'
 import type { SQLResult, ChartSpec } from '../types'
+import {
+  classifyColumns,
+  findCategoryColumnIndex,
+  findXAxisIndex,
+  formatColumnName,
+  formatDateValue,
+  isIdentifierColumn,
+  isNumeric,
+} from '../utils/chartFieldRoles'
 
 interface ChartProps {
   result: SQLResult
@@ -10,183 +19,279 @@ export function canChartResult(result: SQLResult): boolean {
   return isTimeSeriesLike(result) || isCategoricalLike(result)
 }
 
-// ── 工具函数 ──
-
-function isNumeric(value: any): boolean {
-  if (value === null || value === undefined || value === '') return false
-  return !isNaN(Number(value))
-}
-
-function isDateLike(values: string[]): boolean {
-  if (values.length < 3) return false
-  const datePattern = /\d{4}[-/]\d{2}|^\d{6,8}$|T\d{2}:\d{2}/
-  return values.filter((v) => datePattern.test(v)).length >= values.length * 0.5
-}
-
-function findDateColumnIndex(result: SQLResult): number {
-  for (let ci = 0; ci < result.columns.length; ci++) {
-    const values = result.rows.map((row) => String(row[ci] ?? ''))
-    if (isDateLike(values)) return ci
-  }
-  return -1
-}
-
-function formatDateValue(v: string): string {
-  return v.replace(/T\d{2}:\d{2}:\d{2}[\w:.]*Z?$/, '')
-}
-
-/** 判断是否为标识/常量列（不应作为数据系列） */
-function isIdentifierColumn(colName: string, values: any[]): boolean {
-  const lc = colName.toLowerCase()
-  // 列名含 code/id/name/symbol 的大概率是标识列
-  if (/\b(code|id|name|symbol|ticker|stock|participant|industry)\b/.test(lc)) return true
-  // HK POC specific: SISTKC (stock code), SISTKN (stock name) are identifier columns
-  if (/^(sistkc|sistkn|stkcd|stock_code|securitycode)$/.test(lc)) return true
-  // 唯一值极少（< 5）的数值列很可能是标识
-  const uniqueVals = new Set(values.map((v) => String(v)))
-  if (uniqueVals.size <= 3 && values.length > 10) return true
-  return false
-}
-
-/** 将 DB 列名转为可读标签 */
-function formatColumnName(col: string): string {
-  const map: Record<string, string> = {
-    closing_price: 'Closing Price',
-    close_price: 'Close Price',
-    open_price: 'Open Price',
-    high_price: 'High',
-    low_price: 'Low',
-    ma_50: '50-Day MA',
-    ma_20: '20-Day MA',
-    ma_10: '10-Day MA',
-    trade_date: 'Date',
-    stock_code: 'Stock',
-    total_volume: 'Volume',
-    market_cap: 'Market Cap',
-    revenue: 'Revenue',
-    net_profit: 'Net Profit',
-    shareholding: 'Shareholding',
-    SICLSE: 'Closing Price',
-    SIOPNE: 'Open Price',
-    SIHIGE: 'High',
-    SILOWE: 'Low',
-    SITOQY: 'Volume',
-    SISTKC: 'Stock Code',
-  }
-  if (map[col]) return map[col]
-  // snake_case → Title Case
-  return col
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase())
-}
-
-function findCategoryColumnIndex(result: SQLResult): number {
-  // First try identifier columns
-  for (let ci = 0; ci < result.columns.length; ci++) {
-    if (isIdentifierColumn(result.columns[ci], result.rows.map((r) => r[ci]))) {
-      return ci
-    }
-  }
-  // Fallback: first string column
-  for (let ci = 0; ci < result.columns.length; ci++) {
-    const hasStrings = result.rows.some((row) => typeof row[ci] === 'string' && !isNumeric(row[ci]))
-    if (hasStrings) return ci
-  }
-  return 0
-}
-
-/** 可行性优先的 x 轴列选择：时间序列列 > category 列 > 第 0 列。
- *  退化的日期列（unique<3）不当时间轴，改用 category，避免出现只有一根垂直线。 */
-function findXAxisIndex(result: SQLResult): number {
-  const dateCol = findDateColumnIndex(result)
-  if (dateCol >= 0) {
-    const uniq = new Set(result.rows.map((r) => String(r[dateCol] ?? '')))
-    if (uniq.size >= 3) return dateCol
-  }
-  return findCategoryColumnIndex(result)
-}
-
-// ── 金融配色 ──
-const COLORS = [
-  '#1a73e8', // 蓝
-  '#e8710a', // 橙
-  '#0d9488', // 青
-  '#7c3aed', // 紫
-  '#dc2626', // 红
-  '#16a34a', // 绿
-]
-
-// ── 适合性评估（仅供自动推荐 resolveChartType 使用；不作为渲染门禁）──
+// ── 适合性评估（自动推荐用，不作为渲染门禁）──
 
 function isTimeSeriesLike(result: SQLResult): boolean {
   if (result.columns.length < 2) return false
   if (result.rows.length < 3) return false
-  const dateCol = findDateColumnIndex(result)
+  const roles = classifyColumns(result)
+  const dateCol = result.columns.findIndex((c) => roles.dimensions.includes(c) && hasEnoughDates(result, c))
   if (dateCol < 0) return false
+  return roles.metrics.length > 0
+}
 
-  // 日期列必须有足够的不同值才是时间序列（排名表同一天重复 N 次不该画图）
-  const uniqueDates = new Set(result.rows.map((row) => String(row[dateCol] ?? '')))
-  if (uniqueDates.size < 3) return false
-
-  const hasNumericCol = result.columns.some(
-    (col, ci) =>
-      ci !== dateCol &&
-      !isIdentifierColumn(col, result.rows.map((r) => r[ci])) &&
-      result.rows.some((row) => isNumeric(row[ci]))
-  )
-  return hasNumericCol
+function hasEnoughDates(result: SQLResult, colName: string): boolean {
+  const ci = result.columns.indexOf(colName)
+  if (ci < 0) return false
+  const uniq = new Set(result.rows.map((r) => String(r[ci] ?? '')))
+  return uniq.size >= 3
 }
 
 function isCategoricalLike(result: SQLResult): boolean {
   if (result.columns.length < 2 || result.rows.length < 1) return false
-  const catCol = findCategoryColumnIndex(result)
-  return result.columns.some((col, ci) =>
-    ci !== catCol && !isIdentifierColumn(col, result.rows.map((r) => r[ci])) &&
-    result.rows.some((row) => isNumeric(row[ci]))
-  )
+  const roles = classifyColumns(result)
+  return roles.metrics.length > 0
+}
+
+// ── 解析有效字段：spec 优先，缺失则自动推断 ──
+
+export type ResolvedChartType = 'line' | 'bar' | 'pie' | 'none'
+
+export interface ResolvedSpec {
+  chartType: ResolvedChartType
+  xField?: string
+  yFields: string[]
+  seriesField?: string
+  barMode: 'group' | 'stack'
+}
+
+export function resolveSpec(result: SQLResult, spec?: ChartSpec): ResolvedSpec {
+  // 1) chartType
+  let chartType: ResolvedChartType
+  if (spec?.chart_type === 'none') chartType = 'none'
+  else if (spec?.chart_type && spec.chart_type !== 'auto') chartType = spec.chart_type
+  else if (isTimeSeriesLike(result)) chartType = 'line'
+  else if (isCategoricalLike(result)) chartType = 'bar'
+  else chartType = 'none'
+
+  // 2) xField
+  let xField: string | undefined
+  if (spec?.x?.field && result.columns.includes(spec.x.field)) {
+    xField = spec.x.field
+  } else {
+    const idx = chartType === 'bar' || chartType === 'pie'
+      ? findCategoryColumnIndex(result)
+      : findXAxisIndex(result)
+    xField = idx >= 0 ? result.columns[idx] : undefined
+  }
+
+  // 3) yFields
+  let yFields: string[] = []
+  if (spec?.y && spec.y.length > 0) {
+    yFields = spec.y.map((y) => y.field).filter((f) => result.columns.includes(f))
+  }
+  if (yFields.length === 0) {
+    // 自动取所有数值非标识列（排除 x、series）
+    const series = spec?.series?.field
+    yFields = result.columns.filter((c, ci) => {
+      if (c === xField || c === series) return false
+      if (isIdentifierColumn(c, result.rows.map((r) => r[ci]))) return false
+      return result.rows.some((r) => isNumeric(r[ci]))
+    })
+  }
+  // 饼图限制为单指标
+  if (chartType === 'pie' && yFields.length > 1) yFields = [yFields[0]]
+
+  // 4) seriesField
+  let seriesField: string | undefined
+  if (spec?.series?.field && result.columns.includes(spec.series.field) && chartType !== 'pie') {
+    seriesField = spec.series.field
+  }
+  if (seriesField === xField) seriesField = undefined
+
+  return {
+    chartType,
+    xField,
+    yFields,
+    seriesField,
+    barMode: spec?.bar_mode ?? 'group',
+  }
+}
+
+// ── 配色 ──
+const COLORS = [
+  '#1a73e8',
+  '#e8710a',
+  '#0d9488',
+  '#7c3aed',
+  '#dc2626',
+  '#16a34a',
+  '#0891b2',
+  '#ca8a04',
+  '#db2777',
+  '#65a30d',
+]
+
+const LEGEND_MAX = 30 // 图例分组最多展示 30 个值，超出截断
+
+// ── series 构建（pivot 与否分两路） ──
+
+interface SeriesData {
+  name: string
+  data: (number | null)[]
+}
+
+interface BuiltSeries {
+  xData: string[]
+  series: SeriesData[]
+  truncated: boolean
+}
+
+// 当多个指标的量级差异超过此倍数时，自动启用第二条 y 轴。
+const DUAL_AXIS_RATIO = 50
+
+// splitYByMagnitude 按指标的绝对值上限，把 yFields 划成 left/right 两组。
+// 仅当存在「连续两个指标之间的最大值之比 > DUAL_AXIS_RATIO」时才切分。
+function splitYByMagnitude(
+  result: SQLResult,
+  yFields: string[]
+): { leftAxis: string[]; rightAxis: string[] } {
+  if (yFields.length < 2) return { leftAxis: yFields, rightAxis: [] }
+
+  const items = yFields
+    .map((f) => {
+      const idx = result.columns.indexOf(f)
+      let max = 0
+      for (const r of result.rows) {
+        const v = r[idx]
+        if (isNumeric(v)) {
+          const abs = Math.abs(Number(v))
+          if (abs > max) max = abs
+        }
+      }
+      return { f, max }
+    })
+    .sort((a, b) => b.max - a.max)
+
+  // 找相邻两档之间最大跳跃；阈值 > DUAL_AXIS_RATIO 才认为值得分两轴
+  let splitAt = -1
+  let bestRatio = DUAL_AXIS_RATIO
+  for (let i = 0; i < items.length - 1; i++) {
+    const lo = items[i + 1].max
+    const ratio = lo > 0 ? items[i].max / lo : Infinity
+    if (ratio > bestRatio) {
+      bestRatio = ratio
+      splitAt = i
+    }
+  }
+  if (splitAt < 0) return { leftAxis: yFields, rightAxis: [] }
+
+  return {
+    leftAxis: items.slice(0, splitAt + 1).map((x) => x.f),
+    rightAxis: items.slice(splitAt + 1).map((x) => x.f),
+  }
+}
+
+function buildSeriesWithLegend(
+  result: SQLResult,
+  xField: string,
+  yField: string,
+  seriesField: string,
+  formatX: (v: string) => string
+): BuiltSeries {
+  const xIdx = result.columns.indexOf(xField)
+  const yIdx = result.columns.indexOf(yField)
+  const sIdx = result.columns.indexOf(seriesField)
+
+  // 收集 x 的有序唯一值（按首次出现顺序）
+  const xOrder: string[] = []
+  const xSeen = new Set<string>()
+  for (const row of result.rows) {
+    const xv = String(row[xIdx] ?? '')
+    if (!xSeen.has(xv)) {
+      xSeen.add(xv)
+      xOrder.push(xv)
+    }
+  }
+
+  // 收集 series 唯一值（按首次出现顺序）
+  const seriesOrder: string[] = []
+  const seriesSeen = new Set<string>()
+  for (const row of result.rows) {
+    const sv = String(row[sIdx] ?? '')
+    if (!seriesSeen.has(sv)) {
+      seriesSeen.add(sv)
+      seriesOrder.push(sv)
+    }
+  }
+
+  const truncated = seriesOrder.length > LEGEND_MAX
+  const visibleSeries = truncated ? seriesOrder.slice(0, LEGEND_MAX) : seriesOrder
+
+  // 构建 (series, x) → value 索引
+  const valueMap = new Map<string, Map<string, number>>()
+  for (const sv of visibleSeries) valueMap.set(sv, new Map())
+  for (const row of result.rows) {
+    const sv = String(row[sIdx] ?? '')
+    if (!valueMap.has(sv)) continue
+    const xv = String(row[xIdx] ?? '')
+    const yv = row[yIdx]
+    if (isNumeric(yv)) valueMap.get(sv)!.set(xv, Number(yv))
+  }
+
+  const series: SeriesData[] = visibleSeries.map((sv) => ({
+    name: sv,
+    data: xOrder.map((xv) => {
+      const v = valueMap.get(sv)!.get(xv)
+      return v === undefined ? null : v
+    }),
+  }))
+
+  return { xData: xOrder.map(formatX), series, truncated }
+}
+
+function buildSeriesPlain(
+  result: SQLResult,
+  xField: string,
+  yFields: string[],
+  formatX: (v: string) => string
+): BuiltSeries {
+  const xIdx = result.columns.indexOf(xField)
+  const xData = result.rows.map((r) => formatX(String(r[xIdx] ?? '')))
+
+  const series: SeriesData[] = yFields.map((yField) => {
+    const yIdx = result.columns.indexOf(yField)
+    return {
+      name: formatColumnName(yField),
+      data: result.rows.map((r) => (isNumeric(r[yIdx]) ? Number(r[yIdx]) : null)),
+    }
+  })
+  return { xData, series, truncated: false }
 }
 
 // ── 子图表组件 ──
 
-function LineChart({ result, spec }: ChartProps) {
-  const { columns, rows } = result
-  const xCol = spec?.x?.field
-    ? columns.indexOf(spec.x.field)
-    : findXAxisIndex(result)
-  if (xCol < 0 || rows.length === 0) return null
-  const xData = rows.map((row) => formatDateValue(String(row[xCol] ?? '')))
+function LineChart({ result, resolved }: { result: SQLResult; resolved: ResolvedSpec }) {
+  const { xField, yFields, seriesField } = resolved
+  if (!xField || yFields.length === 0) return null
 
-  // 过滤掉 x 轴列和标识列，只保留真正的数值系列
-  const allNumeric = columns
-    .map((col, ci) => ({ col, colIndex: ci }))
-    .filter(
-      ({ col, colIndex }) =>
-        colIndex !== xCol &&
-        !isIdentifierColumn(col, rows.map((r) => r[colIndex])) &&
-        rows.some((row) => isNumeric(row[colIndex]))
-    )
+  const built = seriesField
+    ? buildSeriesWithLegend(result, xField, yFields[0], seriesField, formatDateValue)
+    : buildSeriesPlain(result, xField, yFields, formatDateValue)
+  if (built.series.length === 0) return null
 
-  // 如果 spec.y 指定了字段，只保留匹配的列
-  const specFields = spec?.y?.map((y) => y.field) ?? []
-  const numericSeries = specFields.length > 0
-    ? allNumeric.filter(({ col }) => specFields.includes(col))
-    : allNumeric
-  if (numericSeries.length === 0) return null
+  // 多指标且无图例分组时，按量级自动分配双 y 轴
+  const axisSplit = seriesField
+    ? { leftAxis: yFields, rightAxis: [] as string[] }
+    : splitYByMagnitude(result, yFields)
+  const useDualAxis = axisSplit.rightAxis.length > 0
+  // series.name → field 反查，用于决定 yAxisIndex
+  const rightFieldSet = new Set(
+    axisSplit.rightAxis.map((f) => formatColumnName(f))
+  )
 
-  const series = numericSeries.map(({ col, colIndex }, idx) => ({
-    name: formatColumnName(col),
+  const seriesOpt = built.series.map((s, idx) => ({
+    name: s.name,
     type: 'line' as const,
-    data: rows.map((row) => {
-      const v = row[colIndex]
-      return isNumeric(v) ? Number(v) : null
-    }),
+    data: s.data,
     smooth: true,
     symbol: 'none',
     lineStyle: { width: 2 },
     itemStyle: { color: COLORS[idx % COLORS.length] },
+    yAxisIndex: useDualAxis && rightFieldSet.has(s.name) ? 1 : 0,
   }))
 
-  const needSlider = xData.length > 60
+  const needSlider = built.xData.length > 60
 
   const option: any = {
     color: COLORS,
@@ -198,31 +303,31 @@ function LineChart({ result, spec }: ChartProps) {
       axisPointer: { type: 'cross', crossStyle: { color: '#9ca3af' } },
     },
     legend: {
-      data: numericSeries.map((s) => formatColumnName(s.col)),
+      data: seriesOpt.map((s) => s.name),
       top: 4,
       textStyle: { fontSize: 12, color: '#6b7280' },
       icon: 'roundRect',
       itemWidth: 16,
       itemHeight: 3,
+      type: 'scroll',
     },
     grid: {
       left: 60,
-      right: 20,
+      right: useDualAxis ? 60 : 20,
       top: 36,
       bottom: needSlider ? 70 : 36,
       containLabel: false,
     },
     xAxis: {
       type: 'category',
-      data: xData,
+      data: built.xData,
       boundaryGap: false,
       axisLabel: {
         fontSize: 11,
         color: '#9ca3af',
-        rotate: xData.length > 30 ? 45 : 0,
-        interval: Math.max(0, Math.floor(xData.length / 12) - 1),
+        rotate: built.xData.length > 30 ? 45 : 0,
+        interval: Math.max(0, Math.floor(built.xData.length / 12) - 1),
         formatter: (v: string) => {
-          // 只显示月-日，省略年份（除了第一个和跨年点）
           const m = v.match(/^\d{4}-(\d{2}-\d{2})/)
           return m ? m[1] : v
         },
@@ -230,14 +335,13 @@ function LineChart({ result, spec }: ChartProps) {
       axisLine: { lineStyle: { color: '#e5e7eb' } },
       axisTick: { show: false },
     },
-    yAxis: {
-      type: 'value',
-      splitLine: { lineStyle: { color: '#f3f4f6', type: 'dashed' } },
-      axisLabel: { fontSize: 11, color: '#9ca3af' },
-      axisLine: { show: false },
-      axisTick: { show: false },
-    },
-    series,
+    yAxis: useDualAxis
+      ? [
+          buildYAxis('left'),
+          buildYAxis('right'),
+        ]
+      : buildYAxis('left'),
+    series: seriesOpt,
     ...(needSlider
       ? {
           dataZoom: [
@@ -258,92 +362,105 @@ function LineChart({ result, spec }: ChartProps) {
   }
 
   return (
-    <div
-      className="chart-wrapper"
-      style={{
-        marginTop: 12,
-        padding: '12px 12px 4px',
-        background: '#fff',
-        borderRadius: 8,
-        border: '1px solid #f0f0f0',
-      }}
-    >
-      <ReactECharts option={option} style={{ height: needSlider ? 340 : 300 }} />
+    <div className="chart-wrapper" style={chartWrapperStyle}>
+      {built.truncated && <TruncationHint />}
+      <ReactECharts option={option} notMerge lazyUpdate style={{ height: needSlider ? 340 : 300 }} />
     </div>
   )
 }
 
-function BarChart({ result, spec }: ChartProps) {
-  const { columns, rows } = result
-  const xCol = spec?.x?.field
-    ? columns.indexOf(spec.x.field)
-    : findCategoryColumnIndex(result)
-  if (xCol < 0 && columns.length > 0) return null
+function BarChart({ result, resolved }: { result: SQLResult; resolved: ResolvedSpec }) {
+  const { xField, yFields, seriesField, barMode } = resolved
+  if (!xField || yFields.length === 0) return null
 
-  const xData = rows.map((row) => String(row[xCol] ?? ''))
+  const built = seriesField
+    ? buildSeriesWithLegend(result, xField, yFields[0], seriesField, (v) => v)
+    : buildSeriesPlain(result, xField, yFields, (v) => v)
+  if (built.series.length === 0) return null
 
-  const yColIndices = spec?.y?.length
-    ? spec.y.map((y) => columns.indexOf(y.field)).filter((i) => i >= 0)
-    : columns.map((_, ci) => ci).filter((ci) =>
-        ci !== xCol && !isIdentifierColumn(columns[ci], rows.map((r) => r[ci])) &&
-        rows.some((row) => isNumeric(row[ci]))
-      )
+  // 多指标且无图例 → 量级分轴；堆叠模式下强制单轴
+  const axisSplit = seriesField || barMode === 'stack'
+    ? { leftAxis: yFields, rightAxis: [] as string[] }
+    : splitYByMagnitude(result, yFields)
+  const useDualAxis = axisSplit.rightAxis.length > 0
+  const rightFieldSet = new Set(
+    axisSplit.rightAxis.map((f) => formatColumnName(f))
+  )
 
-  if (yColIndices.length === 0) return null
-
-  const series = yColIndices.map((ci, idx) => ({
-    name: formatColumnName(columns[ci]),
+  const stackKey = barMode === 'stack' ? 'total' : undefined
+  const seriesOpt = built.series.map((s, idx) => ({
+    name: s.name,
     type: 'bar' as const,
-    data: rows.map((row) => (isNumeric(row[ci]) ? Number(row[ci]) : null)),
+    data: s.data,
     itemStyle: { color: COLORS[idx % COLORS.length] },
+    ...(stackKey ? { stack: stackKey } : {}),
+    yAxisIndex: useDualAxis && rightFieldSet.has(s.name) ? 1 : 0,
   }))
 
   const option: any = {
     color: COLORS,
-    tooltip: { trigger: 'axis', backgroundColor: 'rgba(255,255,255,0.96)', borderColor: '#e5e7eb', textStyle: { color: '#374151', fontSize: 12 } },
-    legend: { data: series.map((s) => s.name), top: 4, textStyle: { fontSize: 12, color: '#6b7280' }, icon: 'roundRect', itemWidth: 16, itemHeight: 3 },
-    grid: { left: 60, right: 20, top: 36, bottom: 36, containLabel: false },
-    xAxis: { type: 'category', data: xData, axisLabel: { fontSize: 11, color: '#9ca3af', rotate: xData.length > 8 ? 45 : 0 }, axisLine: { lineStyle: { color: '#e5e7eb' } }, axisTick: { show: false } },
-    yAxis: { type: 'value', splitLine: { lineStyle: { color: '#f3f4f6', type: 'dashed' } }, axisLabel: { fontSize: 11, color: '#9ca3af' }, axisLine: { show: false }, axisTick: { show: false } },
-    series,
+    tooltip: {
+      trigger: 'axis',
+      backgroundColor: 'rgba(255,255,255,0.96)',
+      borderColor: '#e5e7eb',
+      textStyle: { color: '#374151', fontSize: 12 },
+    },
+    legend: {
+      data: seriesOpt.map((s) => s.name),
+      top: 4,
+      textStyle: { fontSize: 12, color: '#6b7280' },
+      icon: 'roundRect',
+      itemWidth: 16,
+      itemHeight: 3,
+      type: 'scroll',
+    },
+    grid: { left: 60, right: useDualAxis ? 60 : 20, top: 36, bottom: 36, containLabel: false },
+    xAxis: {
+      type: 'category',
+      data: built.xData,
+      axisLabel: {
+        fontSize: 11,
+        color: '#9ca3af',
+        rotate: built.xData.length > 8 ? 45 : 0,
+      },
+      axisLine: { lineStyle: { color: '#e5e7eb' } },
+      axisTick: { show: false },
+    },
+    yAxis: useDualAxis
+      ? [buildYAxis('left'), buildYAxis('right')]
+      : buildYAxis('left'),
+    series: seriesOpt,
   }
 
   return (
-    <div className="chart-wrapper" style={{ marginTop: 12, padding: '12px 12px 4px', background: '#fff', borderRadius: 8, border: '1px solid #f0f0f0' }}>
-      <ReactECharts option={option} style={{ height: 300 }} />
+    <div className="chart-wrapper" style={chartWrapperStyle}>
+      {built.truncated && <TruncationHint />}
+      <ReactECharts option={option} notMerge lazyUpdate style={{ height: 300 }} />
     </div>
   )
 }
 
-function PieChart({ result, spec }: ChartProps) {
-  const { columns, rows } = result
-  const nameCol = spec?.x?.field
-    ? columns.indexOf(spec.x.field)
-    : findCategoryColumnIndex(result)
+function PieChart({ result, resolved }: { result: SQLResult; resolved: ResolvedSpec }) {
+  const { xField, yFields } = resolved
+  if (!xField || yFields.length === 0) return null
 
-  const valueCol = spec?.y?.[0]?.field
-    ? columns.indexOf(spec.y[0].field)
-    : columns.findIndex((col, ci) =>
-        ci !== nameCol && !isIdentifierColumn(col, rows.map((r) => r[ci])) &&
-        rows.some((row) => isNumeric(row[ci]))
-      )
+  const nameIdx = result.columns.indexOf(xField)
+  const valueIdx = result.columns.indexOf(yFields[0])
+  if (nameIdx < 0 || valueIdx < 0) return null
 
-  if (nameCol < 0 || valueCol < 0) return null
-
-  const data = rows
-    .filter((row) => isNumeric(row[valueCol]))
-    .slice(0, 20) // max 20 slices
+  const data = result.rows
+    .filter((row) => isNumeric(row[valueIdx]))
+    .slice(0, 20)
     .map((row) => ({
-      name: String(row[nameCol] ?? ''),
-      value: Number(row[valueCol]),
+      name: String(row[nameIdx] ?? ''),
+      value: Number(row[valueIdx]),
     }))
-
   if (data.length === 0) return null
 
   const option: any = {
     color: COLORS,
     tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
-    legend: { orient: 'vertical', right: 10, top: 'center', textStyle: { fontSize: 12 } },
+    legend: { orient: 'vertical', right: 10, top: 'center', textStyle: { fontSize: 12 }, type: 'scroll' },
     series: [{
       type: 'pie',
       radius: ['40%', '70%'],
@@ -356,45 +473,54 @@ function PieChart({ result, spec }: ChartProps) {
   }
 
   return (
-    <div className="chart-wrapper" style={{ marginTop: 12, padding: '12px 12px 4px', background: '#fff', borderRadius: 8, border: '1px solid #f0f0f0' }}>
-      <ReactECharts option={option} style={{ height: 300 }} />
+    <div className="chart-wrapper" style={chartWrapperStyle}>
+      <ReactECharts option={option} notMerge lazyUpdate style={{ height: 300 }} />
+    </div>
+  )
+}
+
+function buildYAxis(side: 'left' | 'right') {
+  return {
+    type: 'value' as const,
+    position: side,
+    splitLine: side === 'left'
+      ? { lineStyle: { color: '#f3f4f6', type: 'dashed' as const } }
+      : { show: false },
+    axisLabel: { fontSize: 11, color: '#9ca3af' },
+    axisLine: { show: false },
+    axisTick: { show: false },
+  }
+}
+
+const chartWrapperStyle: React.CSSProperties = {
+  marginTop: 12,
+  padding: '12px 12px 4px',
+  background: '#fff',
+  borderRadius: 8,
+  border: '1px solid #f0f0f0',
+}
+
+function TruncationHint() {
+  return (
+    <div style={{ fontSize: 11, color: '#9ca3af', padding: '0 4px 4px' }}>
+      图例项过多，已截断为前 {LEGEND_MAX} 个
     </div>
   )
 }
 
 // ── 路由入口 ──
 
-function resolveChartType(
-  result: SQLResult,
-  spec?: ChartSpec,
-  override?: 'line' | 'bar' | 'pie' | 'none'
-): string | null {
-  // User override takes precedence
-  if (override === 'none') return null
-  if (override) return override
-  if (spec?.chart_type === 'none') return null
-  if (spec?.chart_type && spec.chart_type !== 'auto') return spec.chart_type
-  // Auto-selection (仅在 spec.chart_type 为 'auto' 或缺失时生效；override 不走这里)
-  if (isTimeSeriesLike(result)) return 'line'
-  if (isCategoricalLike(result)) return 'bar'
-  return null
-}
+export function Chart({ result, spec }: ChartProps) {
+  const resolved = resolveSpec(result, spec)
+  if (resolved.chartType === 'none') return null
 
-export function Chart({
-  result,
-  spec,
-  overrideType,
-}: ChartProps & { overrideType?: 'line' | 'bar' | 'pie' | 'none' }) {
-  const chartType = resolveChartType(result, spec, overrideType)
-  if (!chartType) return null
-
-  switch (chartType) {
+  switch (resolved.chartType) {
     case 'line':
-      return <LineChart result={result} spec={spec} />
+      return <LineChart result={result} resolved={resolved} />
     case 'bar':
-      return <BarChart result={result} spec={spec} />
+      return <BarChart result={result} resolved={resolved} />
     case 'pie':
-      return <PieChart result={result} spec={spec} />
+      return <PieChart result={result} resolved={resolved} />
     default:
       return null
   }

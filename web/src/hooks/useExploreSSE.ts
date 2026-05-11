@@ -218,16 +218,20 @@ export function useExploreSSE({ onUpdate, onDone, onError, onMessageCreated }: U
       case 'chart.recommendation': {
         const spec = event.data
         if (spec) {
-          onUpdate((msg) => ({
-            ...msg,
-            chartSpec: {
-              chart_type: spec.chart_type ?? 'auto',
-              x: spec.x,
-              y: spec.y,
-              display_mode: spec.display_mode ?? 'both',
-              round_index: spec.round_index,
-            },
-          }))
+          onUpdate((msg) => {
+            // 用户改过就不再覆盖
+            if (msg.chartSpec?.user_edited) return msg
+            return {
+              ...msg,
+              chartSpec: {
+                chart_type: spec.chart_type ?? 'auto',
+                x: spec.x,
+                y: spec.y,
+                display_mode: spec.display_mode ?? 'both',
+                round_index: spec.round_index,
+              },
+            }
+          })
         }
         break
       }

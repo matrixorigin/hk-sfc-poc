@@ -10,10 +10,16 @@ export interface ExploreEvent {
 
 export interface ChartSpec {
   chart_type: 'bar' | 'line' | 'pie' | 'auto' | 'none'
-  x?: { field: string; label: string; type: 'category' | 'time' }
-  y?: { field: string; label: string }[]
+  x?: { field: string; label?: string; type?: 'category' | 'time' }
+  y?: { field: string; label?: string }[]
+  // series: 图例分组维度。存在时按该字段把数据透视成多条 series。
+  series?: { field: string; label?: string }
+  // bar_mode: 柱状图多 series 的排列方式，默认 group。
+  bar_mode?: 'group' | 'stack'
   display_mode?: 'chart' | 'table' | 'both'
   round_index?: number
+  // user_edited: 标记用户是否手动改过；前端用它阻止上游推荐覆盖用户选择。
+  user_edited?: boolean
 }
 
 export interface SQLResult {
@@ -37,7 +43,6 @@ export interface Message {
   phaseHistory?: Phase[]
   error?: string
   chartSpec?: ChartSpec
-  chartOverride?: { chartType?: 'line' | 'bar' | 'pie' | 'none' }
   feedbackQuestion?: string
 }
 

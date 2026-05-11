@@ -125,9 +125,14 @@ export function ChatPanel({
 
   const { send, cancel } = useExploreSSE({ onUpdate, onDone, onError, onMessageCreated })
 
+  // 只在「新消息加入」或「文本内容增长」时滚动，避免修改图表配置等非新增变化把页面拽到底
+  const scrollSig = messages
+    .map((m) => `${m.id}:${m.content?.length ?? 0}`)
+    .join('|')
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scrollSig])
 
   const handleSend = async (text?: string) => {
     const question = (text || input).trim()
@@ -205,7 +210,12 @@ export function ChatPanel({
           </div>
         ) : (
           messages.map((msg) => (
-            <MessageBubble key={msg.id} message={msg} onUpdateMessage={handleUpdateMessage} />
+            <MessageBubble
+              key={msg.id}
+              message={msg}
+              conversationId={conversation?.id}
+              onUpdateMessage={handleUpdateMessage}
+            />
           ))
         )}
         <div ref={messagesEndRef} />

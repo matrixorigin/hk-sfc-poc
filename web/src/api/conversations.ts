@@ -1,4 +1,4 @@
-import type { ConversationMeta, StoredMessage } from '../types'
+import type { ChartSpec, ConversationMeta, StoredMessage } from '../types'
 
 const BASE = '/api/conversations'
 
@@ -44,4 +44,22 @@ export async function listMessages(id: string): Promise<StoredMessage[]> {
   const resp = await fetch(`${BASE}/${id}/messages`)
   const data = await parseJSON<{ messages: StoredMessage[] }>(resp)
   return data.messages ?? []
+}
+
+export async function updateMessageChartSpec(
+  conversationId: string,
+  messageId: string,
+  spec: ChartSpec
+): Promise<void> {
+  const resp = await fetch(
+    `${BASE}/${conversationId}/messages/${messageId}/chart-spec`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(spec),
+    }
+  )
+  if (!resp.ok) {
+    throw new Error(`update chart_spec failed: ${resp.status}`)
+  }
 }

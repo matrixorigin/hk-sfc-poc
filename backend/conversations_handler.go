@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 )
@@ -21,12 +22,13 @@ func NewConversationsHandler(db *ConversationsDB, messages *MessagesHandler) *Co
 
 // ServeHTTP 路由分发：
 //
-//	GET    /api/conversations                  → list
-//	POST   /api/conversations                  → create
-//	PATCH  /api/conversations/{id}             → updateTitle
-//	DELETE /api/conversations/{id}             → delete
-//	GET    /api/conversations/{id}/messages    → listMessages
-//	POST   /api/conversations/{id}/messages    → sendMessage (SSE)
+//	GET    /api/conversations                                       → list
+//	POST   /api/conversations                                       → create
+//	PATCH  /api/conversations/{id}                                  → updateTitle
+//	DELETE /api/conversations/{id}                                  → delete
+//	GET    /api/conversations/{id}/messages                         → listMessages
+//	POST   /api/conversations/{id}/messages                         → sendMessage (SSE)
+//	PATCH  /api/conversations/{id}/messages/{mid}/chart-spec        → updateChartSpec
 func (h *ConversationsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	setCORSHeaders(w)
 	if r.Method == http.MethodOptions {
@@ -42,6 +44,7 @@ func (h *ConversationsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 	//   "" → 集合资源 /api/conversations
 	//   "{id}" → 单个会话
 	//   "{id}/messages" → 消息子资源
+	//   "{id}/messages/{mid}/chart-spec" → 单条消息的图表配置
 	var convID, sub string
 	if rest != "" {
 		parts := strings.SplitN(rest, "/", 2)
@@ -83,6 +86,21 @@ func (h *ConversationsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 			h.messages.HandleSend(w, r, convID)
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+
+	case strings.HasPrefix(sub, "messages/"):
+		// /api/conversations/{id}/messages/{mid}/...
+		subParts := strings.SplitN(strings.TrimPrefix(sub, "messages/"), "/", 2)
+		if len(subParts) < 2 {
+			http.NotFound(w, r)
+			return
+		}
+		msgID, action := subParts[0], subParts[1]
+		switch {
+		case action == "chart-spec" && r.Method == http.MethodPatch:
+			h.updateChartSpec(w, r, convID, msgID)
+		default:
+			http.NotFound(w, r)
 		}
 
 	default:
@@ -148,6 +166,41 @@ func (h *ConversationsHandler) listMessages(w http.ResponseWriter, id string) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"messages": msgs})
+}
+
+// updateChartSpec 把用户在前端选的图表配置整体写入 messages.chart_spec。
+// Body 即完整 ChartSpec JSON；后端不解 schema，作为不透明 blob 存储。
+func (h *ConversationsHandler) updateChartSpec(w http.ResponseWriter, r *http.Request, convID, msgID string) {
+	body, err := readBodyLimited(r, 16*1024)
+	if err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	// 必须是合法 JSON object；空 body 视为清空
+	var spec json.RawMessage
+	if len(body) > 0 {
+		if !json.Valid(body) {
+			http.Error(w, "chart_spec must be valid JSON", http.StatusBadRequest)
+			return
+		}
+		spec = body
+	}
+
+	n, err := h.db.UpdateMessageChartSpec(convID, msgID, spec)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("update: %v", err), http.StatusInternalServerError)
+		return
+	}
+	if n == 0 {
+		http.Error(w, "message not found", http.StatusNotFound)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func readBodyLimited(r *http.Request, maxBytes int64) ([]byte, error) {
+	defer r.Body.Close()
+	return io.ReadAll(io.LimitReader(r.Body, maxBytes))
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

@@ -280,6 +280,21 @@ func (c *ConversationsDB) UpdateMessageStatus(id, status string) error {
 	return err
 }
 
+// UpdateMessageChartSpec 只更新 chart_spec 列，要求消息属于指定会话。
+// 返回受影响行数；调用方据此判断 404。
+func (c *ConversationsDB) UpdateMessageChartSpec(conversationID, messageID string, spec json.RawMessage) (int64, error) {
+	specVal := rawOrEmpty(spec)
+	res, err := c.db.Exec(
+		`UPDATE messages SET chart_spec = ? WHERE id = ? AND conversation_id = ?`,
+		specVal, messageID, conversationID,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("update chart_spec: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
 // PersistAssistantMessage 把聚合后的完整字段一次性写回并把 status 设为 done。
 func (c *ConversationsDB) PersistAssistantMessage(msg *StoredMessage) error {
 	sqlStmts := marshalOrEmpty(msg.SQLStatements)

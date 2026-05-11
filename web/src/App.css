@@ -1077,13 +1077,48 @@ body {
   margin-top: 8px;
 }
 
-/* Chart type switcher */
-.chart-type-switcher {
+/* Chart field selector (维度 / 指标 / 图例 / 类型) */
+.chart-field-selector {
   display: flex;
-  gap: 4px;
-  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  align-items: center;
+  padding: 8px 4px;
+  border-bottom: 1px dashed #f0f0f0;
+  margin-bottom: 4px;
 }
-.chart-type-btn {
+.cfs-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.cfs-label {
+  font-size: 11px;
+  color: #6b7280;
+  font-weight: 500;
+}
+.cfs-select {
+  padding: 4px 8px;
+  font-size: 11px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  border-radius: 6px;
+  color: #374151;
+  cursor: pointer;
+  font-family: inherit;
+  min-width: 110px;
+}
+.cfs-select:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.cfs-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.cfs-chip {
   padding: 4px 10px;
   font-size: 11px;
   font-weight: 500;
@@ -1095,15 +1130,25 @@ body {
   transition: all 0.15s ease;
   font-family: inherit;
 }
-.chart-type-btn:hover {
+.cfs-chip:hover {
   background: #f9fafb;
   border-color: #1a73e8;
   color: #1a73e8;
 }
-.chart-type-btn.active {
+.cfs-chip.active {
   background: #1a73e8;
   color: #fff;
   border-color: #1a73e8;
+}
+.cfs-hint {
+  font-size: 11px;
+  color: #9ca3af;
+  font-style: italic;
+}
+.chart-persist-error {
+  font-size: 11px;
+  color: #dc2626;
+  padding: 4px 0;
 }
 
 /* Responsive */
