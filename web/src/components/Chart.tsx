@@ -1,5 +1,6 @@
 import ReactECharts from 'echarts-for-react'
 import type { ChartSpec, ChartType, SQLResult } from '../types'
+import { useT, tpl } from '../i18n'
 import {
   classifyColumns,
   formatColumnName,
@@ -32,10 +33,13 @@ export interface ResolvedYItem {
   subType?: 'bar' | 'line'
 }
 
+// 结构化 reason key，便于 i18n
+export type MissingField = 'dim' | 'metric' | '2-metrics' | 'dim-x' | 'dim-y' | 'ohlc' | 'time'
+
 export type ResolveReason =
   | { kind: 'type-not-set' }
-  | { kind: 'missing-field'; what: string }
-  | { kind: 'data-mismatch'; what: string }
+  | { kind: 'missing-field'; what: MissingField }
+  | { kind: 'data-mismatch'; detail: string }
 
 export interface ResolvedSpec {
   chartType: ResolvedChartType
@@ -94,21 +98,21 @@ export function resolveSpec(result: SQLResult, spec?: ChartSpec): ResolvedSpec {
   } else if (chartType === 'none') {
     // 用户主动隐藏 — 上层直接 null
   } else if (chartType === 'bar' || chartType === 'hbar' || chartType === 'line') {
-    if (!xField) reason = { kind: 'missing-field', what: '维度' }
-    else if (yItems.length === 0) reason = { kind: 'missing-field', what: '指标' }
+    if (!xField) reason = { kind: 'missing-field', what: 'dim' }
+    else if (yItems.length === 0) reason = { kind: 'missing-field', what: 'metric' }
   } else if (chartType === 'pie') {
-    if (!xField) reason = { kind: 'missing-field', what: '维度' }
-    else if (yItems.length === 0) reason = { kind: 'missing-field', what: '指标' }
+    if (!xField) reason = { kind: 'missing-field', what: 'dim' }
+    else if (yItems.length === 0) reason = { kind: 'missing-field', what: 'metric' }
   } else if (chartType === 'combo') {
-    if (!xField) reason = { kind: 'missing-field', what: '维度' }
-    else if (yItems.length < 2) reason = { kind: 'missing-field', what: '至少 2 个指标' }
+    if (!xField) reason = { kind: 'missing-field', what: 'dim' }
+    else if (yItems.length < 2) reason = { kind: 'missing-field', what: '2-metrics' }
   } else if (chartType === 'heatmap') {
-    if (!xField) reason = { kind: 'missing-field', what: '维度 X' }
-    else if (!y2Field) reason = { kind: 'missing-field', what: '维度 Y' }
-    else if (yItems.length === 0) reason = { kind: 'missing-field', what: '指标' }
+    if (!xField) reason = { kind: 'missing-field', what: 'dim-x' }
+    else if (!y2Field) reason = { kind: 'missing-field', what: 'dim-y' }
+    else if (yItems.length === 0) reason = { kind: 'missing-field', what: 'metric' }
   } else if (chartType === 'candlestick') {
-    if (!xField) reason = { kind: 'missing-field', what: '时间维度' }
-    else if (!ohlc) reason = { kind: 'missing-field', what: 'Open / Close / High / Low 4 个字段' }
+    if (!xField) reason = { kind: 'missing-field', what: 'time' }
+    else if (!ohlc) reason = { kind: 'missing-field', what: 'ohlc' }
   }
 
   return {
@@ -254,17 +258,27 @@ function buildSeriesPlain(
 
 // ── Empty state ──
 function EmptyChartState({ reason }: { reason: ResolveReason }) {
+  const { t } = useT()
   let msg = ''
   let hint = ''
   if (reason.kind === 'type-not-set') {
-    msg = '请选择图表类型'
-    hint = '在上方工具栏选择一个图表类型开始'
+    msg = t('chartEmptyTypeNotSet')
+    hint = t('chartEmptyTypeNotSetHint')
   } else if (reason.kind === 'missing-field') {
-    msg = `请绑定${reason.what}`
-    hint = '在上方工具栏对应位置选择字段'
+    const fieldKey: Record<MissingField, string> = {
+      'dim': t('chartMissingDim'),
+      'metric': t('chartMissingMetric'),
+      '2-metrics': t('chartMissing2Metrics'),
+      'dim-x': t('chartMissingDimX'),
+      'dim-y': t('chartMissingDimY'),
+      'ohlc': t('chartMissingOhlc'),
+      'time': t('chartMissingTime'),
+    }
+    msg = tpl(t('chartEmptyMissing'), { what: fieldKey[reason.what] })
+    hint = t('chartEmptyMissingHint')
   } else if (reason.kind === 'data-mismatch') {
-    msg = '字段与数据不匹配'
-    hint = reason.what
+    msg = t('chartEmptyDataMismatch')
+    hint = reason.detail
   }
   return (
     <div className="chart-wrapper chart-empty">

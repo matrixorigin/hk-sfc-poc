@@ -1145,6 +1145,37 @@ body {
 .cfs-chip.disabled {
   opacity: 0.45;
   cursor: not-allowed;
+  /* 关键：不要用 HTML disabled 属性，避免 title tooltip 被吃掉 */
+}
+.cfs-chip.disabled:hover {
+  background: #fff;
+  border-color: #e5e7eb;
+  color: #6b7280;
+}
+
+/* 折叠开关 — 紧贴在 chart type chips 后面，弱化样式 */
+.cfs-toggle {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: #6b7280;
+  cursor: pointer;
+  font-family: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 6px;
+  transition: all 0.15s ease;
+}
+.cfs-toggle:hover {
+  background: #f3f4f6;
+  color: #1a73e8;
+}
+.cfs-toggle-arrow {
+  font-size: 9px;
+  opacity: 0.7;
 }
 .cfs-warn {
   width: 13px;

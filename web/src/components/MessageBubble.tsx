@@ -132,7 +132,7 @@ export function MessageBubble({ message, conversationId, onUpdateMessage }: Mess
                 )}
                 {persistError && (
                   <div className="chart-persist-error">
-                    {t('error')}: chart settings not saved
+                    {t('error')}: {t('chartPersistError')}
                   </div>
                 )}
                 <Chart result={primaryResult} spec={spec} />

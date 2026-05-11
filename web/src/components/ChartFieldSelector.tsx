@@ -1,11 +1,12 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import type { ChartSpec, ChartType, SQLResult } from '../types'
-import { useT } from '../i18n'
+import { useT, tpl } from '../i18n'
 import {
   chartTypeAvailability,
   classifyColumns,
   detectOHLC,
   formatColumnName,
+  type AvailReason,
 } from '../utils/chartFieldRoles'
 
 interface ChartFieldSelectorProps {
@@ -14,23 +15,31 @@ interface ChartFieldSelectorProps {
   onChange: (patch: Partial<ChartSpec>) => void
 }
 
-const CHART_TYPES: { key: ChartType; en: string; zh: string }[] = [
-  { key: 'line', en: 'Line', zh: '折线' },
-  { key: 'bar', en: 'Bar', zh: '柱状' },
-  { key: 'hbar', en: 'H-Bar', zh: '条形' },
-  { key: 'pie', en: 'Pie', zh: '饼图' },
-  { key: 'combo', en: 'Combo', zh: '组合' },
-  { key: 'heatmap', en: 'Heatmap', zh: '热力' },
-  { key: 'candlestick', en: 'Candle', zh: '蜡烛' },
-  { key: 'none', en: 'Hide', zh: '隐藏' },
+const CHART_TYPES: { key: ChartType; tKey: string }[] = [
+  { key: 'line', tKey: 'chartTypeLine' },
+  { key: 'bar', tKey: 'chartTypeBar' },
+  { key: 'hbar', tKey: 'chartTypeHbar' },
+  { key: 'pie', tKey: 'chartTypePie' },
+  { key: 'combo', tKey: 'chartTypeCombo' },
+  { key: 'heatmap', tKey: 'chartTypeHeatmap' },
+  { key: 'candlestick', tKey: 'chartTypeCandlestick' },
+  { key: 'none', tKey: 'chartTypeHide' },
 ]
 
 const NONE_VALUE = '__none__'
 
-export function ChartFieldSelector({ result, spec, onChange }: ChartFieldSelectorProps) {
-  const { lang } = useT()
-  const zh = lang === 'zh'
+function reasonToText(t: (k: any) => string, r: AvailReason): string {
+  switch (r.kind) {
+    case 'empty': return t('chartReasonEmpty')
+    case 'need-metrics': return tpl(t('chartReasonNeedMetrics'), { n: r.n })
+    case 'need-types': return tpl(t('chartReasonNeedTypes'), { n: r.n })
+    case 'need-ohlc': return tpl(t('chartReasonNeedOhlc'), { missing: r.missing.join(' / ') })
+    case 'need-time': return t('chartReasonNeedTime')
+  }
+}
 
+export function ChartFieldSelector({ result, spec, onChange }: ChartFieldSelectorProps) {
+  const { t } = useT()
   const roles = useMemo(() => classifyColumns(result), [result])
   const allCols = result.columns
 
@@ -49,7 +58,14 @@ export function ChartFieldSelector({ result, spec, onChange }: ChartFieldSelecto
   const isCandle = chartType === 'candlestick'
   const isGeneric = !isHidden && !isHeatmap && !isCandle && !isAuto
 
-  // 字段候选过滤（互斥）
+  // 默认折叠；遇到需要绑定字段才能渲染的情况自动展开
+  const [userExpanded, setUserExpanded] = useState(false)
+  const forceExpand =
+    isHeatmap || isCandle ||
+    (!isAuto && !isHidden && (!xField || yFields.length === 0)) ||
+    (chartType === 'combo' && yFields.length < 2)
+  const expanded = userExpanded || forceExpand
+
   const dimensionOptions = useMemo(() => {
     const set = new Set(roles.dimensions)
     yFields.forEach((y) => set.delete(y))
@@ -84,23 +100,19 @@ export function ChartFieldSelector({ result, spec, onChange }: ChartFieldSelecto
     return allCols.filter((c) => set.has(c))
   }, [roles.dimensions, allCols, xField, yFields, y2Field])
 
-  // stack/group toggle 可见条件
   const seriesCount = seriesField ? Infinity : yFields.length
   const showStackToggle =
     (chartType === 'bar' || chartType === 'hbar' || chartType === 'combo') && seriesCount >= 2
 
-  // ── handlers ──
-
-  function handleChartType(t: ChartType) {
-    const patch: Partial<ChartSpec> = { chart_type: t, user_edited: true }
-    if (t === 'pie') {
+  function handleChartType(t2: ChartType) {
+    const patch: Partial<ChartSpec> = { chart_type: t2, user_edited: true }
+    if (t2 === 'pie') {
       patch.series = undefined
       if (yFields.length > 1) {
         patch.y = [{ field: yFields[0], label: formatColumnName(yFields[0]) }]
       }
     }
-    if (t === 'candlestick' && !spec.ohlc) {
-      // 自动检测预填 OHLC 4 字段
+    if (t2 === 'candlestick' && !spec.ohlc) {
       const det = detectOHLC(allCols)
       if (det.open && det.close && det.high && det.low) {
         patch.ohlc = { open: det.open, close: det.close, high: det.high, low: det.low }
@@ -131,7 +143,6 @@ export function ChartFieldSelector({ result, spec, onChange }: ChartFieldSelecto
 
   function handleToggleMetric(field: string) {
     if (yFields.includes(field)) {
-      // 移除（饼图至少保留 1 个；其它无限制）
       if (isPie && yFields.length <= 1) return
       const next = yFields.filter((f) => f !== field)
       onChange({
@@ -247,58 +258,81 @@ export function ChartFieldSelector({ result, spec, onChange }: ChartFieldSelecto
     onChange({ show_data_labels: b, user_edited: true })
   }
 
+  const OHLC_LABEL: Record<'open' | 'close' | 'high' | 'low', string> = {
+    open: t('chartOpen'),
+    close: t('chartClose'),
+    high: t('chartHigh'),
+    low: t('chartLow'),
+  }
+
   // ── render ──
 
   return (
     <div className="chart-field-selector">
 
-      {/* 图表类型 strip — 8 chip + 灰掉 */}
+      {/* Row 1：图表类型 + 折叠开关 */}
       <div className="cfs-row">
-        <span className="cfs-label">{zh ? '图表' : 'Chart'}</span>
+        <span className="cfs-label">{t('chartType')}</span>
         {CHART_TYPES.map((opt) => {
           const isHide = opt.key === 'none'
-          const avail = isHide ? { ok: true } : chartTypeAvailability(result, opt.key as any)
+          const avail = isHide ? { ok: true as const } : chartTypeAvailability(result, opt.key as any)
           const disabled = !avail.ok
           const active = chartType === opt.key
+          const tip = disabled && !avail.ok ? reasonToText(t as any, (avail as any).reason) : ''
           return (
             <button
               key={opt.key}
               type="button"
               className={`cfs-chip ${active ? 'active' : ''} ${disabled ? 'disabled' : ''}`}
               onClick={() => !disabled && handleChartType(opt.key)}
-              title={disabled ? (avail as any).reason : ''}
-              disabled={disabled}
+              title={tip}
+              aria-disabled={disabled}
             >
-              {zh ? opt.zh : opt.en}
+              {t(opt.tKey as any)}
               {disabled && <span className="cfs-warn" aria-hidden>!</span>}
             </button>
           )
         })}
+
+        {/* 折叠开关：非 hidden/auto/forceExpand 时显示 */}
+        {!isHidden && !forceExpand && (
+          <button
+            type="button"
+            className="cfs-toggle"
+            onClick={() => setUserExpanded((v) => !v)}
+            aria-expanded={expanded}
+          >
+            {expanded ? t('chartHideConfig') : t('chartShowConfig')}
+            <span className="cfs-toggle-arrow" aria-hidden>
+              {expanded ? '▲' : '▼'}
+            </span>
+          </button>
+        )}
       </div>
 
-      {/* 字段控制区 — 按 chartType 分支 */}
+      {/* 折叠 / 展开 */}
       {isAuto && (
         <div className="cfs-hint" style={{ padding: '6px 4px' }}>
-          {zh ? '请选择图表类型' : 'Please choose a chart type'}
+          {t('chartEmptyTypeNotSet')}
         </div>
       )}
 
-      {isGeneric && (
+      {expanded && isGeneric && (
         <>
           <div className="cfs-row">
-            <span className="cfs-label">{zh ? '维度' : 'Dimension'}</span>
+            <span className="cfs-label">{t('chartDimension')}</span>
             <select
               className="cfs-select"
               value={xField ?? NONE_VALUE}
               onChange={(e) => handleX(e.target.value)}
             >
-              <option value={NONE_VALUE}>{zh ? '— 未选 —' : '— unset —'}</option>
+              <option value={NONE_VALUE}>{t('chartUnset')}</option>
               {dimensionOptions.map((c) => (
                 <option key={c} value={c}>{formatColumnName(c)}</option>
               ))}
             </select>
 
-            <span className="cfs-label" style={{ marginLeft: 12 }}>{zh ? '指标' : 'Metric'}</span>
+            <span className="cfs-label" style={{ marginLeft: 12 }}>{t('chartMetric')}</span>
             <div className="cfs-mpills">
               {yFields.map((f) => {
                 const axis = yAxisMap.get(f) ?? 'primary'
@@ -310,7 +344,7 @@ export function ChartFieldSelector({ result, spec, onChange }: ChartFieldSelecto
                       <span
                         className="sub"
                         onClick={() => handleToggleSubType(f)}
-                        title={zh ? '切换 柱/线' : 'Toggle bar/line'}
+                        title={t('chartSubtypeToggleTitle')}
                       >
                         {sub === 'bar' ? '▮' : '∿'}
                       </span>
@@ -318,7 +352,7 @@ export function ChartFieldSelector({ result, spec, onChange }: ChartFieldSelecto
                     <span
                       className={`axis ${axis === 'secondary' ? 'r' : ''}`}
                       onClick={() => handleToggleAxis(f)}
-                      title={zh ? '主/副 Y 轴切换' : 'Toggle primary/secondary Y axis'}
+                      title={t('chartAxisToggleTitle')}
                     >
                       {axis === 'secondary' ? 'R' : 'L'}
                     </span>
@@ -344,14 +378,14 @@ export function ChartFieldSelector({ result, spec, onChange }: ChartFieldSelecto
 
           {!isPie && (
             <div className="cfs-row">
-              <span className="cfs-label">{zh ? '图例' : 'Legend'}</span>
+              <span className="cfs-label">{t('chartLegend')}</span>
               <select
                 className="cfs-select"
                 value={seriesField ?? NONE_VALUE}
                 onChange={(e) => handleSeries(e.target.value)}
                 disabled={legendOptions.length === 0}
               >
-                <option value={NONE_VALUE}>{zh ? '（无）' : '(none)'}</option>
+                <option value={NONE_VALUE}>{t('chartNone')}</option>
                 {legendOptions.map((c) => (
                   <option key={c} value={c}>{formatColumnName(c)}</option>
                 ))}
@@ -359,37 +393,38 @@ export function ChartFieldSelector({ result, spec, onChange }: ChartFieldSelecto
 
               {showStackToggle && (
                 <>
-                  <span className="cfs-label" style={{ marginLeft: 12 }}>{zh ? '模式' : 'Mode'}</span>
+                  <span className="cfs-label" style={{ marginLeft: 12 }}>{t('chartMode')}</span>
                   <button
                     type="button"
                     className={`cfs-chip ${(spec.bar_mode ?? 'group') === 'group' ? 'active' : ''}`}
                     onClick={() => handleBarMode('group')}
                   >
-                    {zh ? '分组' : 'Group'}
+                    {t('chartModeGroup')}
                   </button>
                   <button
                     type="button"
                     className={`cfs-chip ${spec.bar_mode === 'stack' ? 'active' : ''}`}
                     onClick={() => handleBarMode('stack')}
                   >
-                    {zh ? '堆叠' : 'Stack'}
+                    {t('chartModeStack')}
                   </button>
                 </>
               )}
             </div>
           )}
 
-          {/* 排序 / TopN / Markers */}
           <div className="cfs-row">
-            <span className="cfs-label">{zh ? '排序' : 'Sort'}</span>
+            <span className="cfs-label">{t('chartSort')}</span>
             <select
               className="cfs-select"
               value={spec.sort?.field ?? NONE_VALUE}
               onChange={(e) => handleSortField(e.target.value)}
             >
-              <option value={NONE_VALUE}>{zh ? '（默认）' : '(default)'}</option>
+              <option value={NONE_VALUE}>{t('chartDefault')}</option>
               {metricOptions.map((c) => (
-                <option key={c} value={c}>{zh ? '按 ' : 'By '}{formatColumnName(c)}</option>
+                <option key={c} value={c}>
+                  {tpl(t('chartSortBy'), { field: formatColumnName(c) })}
+                </option>
               ))}
             </select>
             {spec.sort?.field && (
@@ -406,14 +441,14 @@ export function ChartFieldSelector({ result, spec, onChange }: ChartFieldSelecto
                 >↑</button>
               </>
             )}
-            <span className="cfs-label" style={{ marginLeft: 12 }}>Top N</span>
+            <span className="cfs-label" style={{ marginLeft: 12 }}>{t('chartTopN')}</span>
             <select
               className="cfs-select"
               value={spec.top_n ?? 0}
               onChange={(e) => handleTopN(e.target.value)}
               style={{ minWidth: 70 }}
             >
-              <option value="0">{zh ? '全部' : 'All'}</option>
+              <option value="0">{t('chartTopNAll')}</option>
               <option value="5">5</option>
               <option value="10">10</option>
               <option value="20">20</option>
@@ -428,7 +463,7 @@ export function ChartFieldSelector({ result, spec, onChange }: ChartFieldSelecto
                   onChange={(e) => handleMarker(e.target.checked)}
                 />
                 <span className="box" />
-                {zh ? '显示标记点' : 'Show markers'}
+                {t('chartShowMarkers')}
               </label>
             )}
             <label className="cfs-check" style={{ marginLeft: 12 }}>
@@ -438,31 +473,31 @@ export function ChartFieldSelector({ result, spec, onChange }: ChartFieldSelecto
                 onChange={(e) => handleDataLabel(e.target.checked)}
               />
               <span className="box" />
-              {zh ? '显示数据标签' : 'Show labels'}
+              {t('chartShowLabels')}
             </label>
           </div>
         </>
       )}
 
-      {isHeatmap && (
+      {expanded && isHeatmap && (
         <div className="cfs-row">
-          <span className="cfs-label">{zh ? '维度 X' : 'Axis X'}</span>
+          <span className="cfs-label">{t('chartDimensionX')}</span>
           <select className="cfs-select" value={xField ?? NONE_VALUE} onChange={(e) => handleX(e.target.value)}>
-            <option value={NONE_VALUE}>{zh ? '— 未选 —' : '— unset —'}</option>
+            <option value={NONE_VALUE}>{t('chartUnset')}</option>
             {dimensionOptions.map((c) => (
               <option key={c} value={c}>{formatColumnName(c)}</option>
             ))}
           </select>
 
-          <span className="cfs-label" style={{ marginLeft: 12 }}>{zh ? '维度 Y' : 'Axis Y'}</span>
+          <span className="cfs-label" style={{ marginLeft: 12 }}>{t('chartDimensionY')}</span>
           <select className="cfs-select" value={y2Field ?? NONE_VALUE} onChange={(e) => handleY2(e.target.value)}>
-            <option value={NONE_VALUE}>{zh ? '— 未选 —' : '— unset —'}</option>
+            <option value={NONE_VALUE}>{t('chartUnset')}</option>
             {y2Options.map((c) => (
               <option key={c} value={c}>{formatColumnName(c)}</option>
             ))}
           </select>
 
-          <span className="cfs-label" style={{ marginLeft: 12 }}>{zh ? '指标' : 'Metric'}</span>
+          <span className="cfs-label" style={{ marginLeft: 12 }}>{t('chartMetric')}</span>
           <select
             className="cfs-select"
             value={yFields[0] ?? NONE_VALUE}
@@ -472,7 +507,7 @@ export function ChartFieldSelector({ result, spec, onChange }: ChartFieldSelecto
               else onChange({ y: [{ field: f, label: formatColumnName(f) }], user_edited: true })
             }}
           >
-            <option value={NONE_VALUE}>{zh ? '— 未选 —' : '— unset —'}</option>
+            <option value={NONE_VALUE}>{t('chartUnset')}</option>
             {metricOptions.map((c) => (
               <option key={c} value={c}>{formatColumnName(c)}</option>
             ))}
@@ -480,11 +515,11 @@ export function ChartFieldSelector({ result, spec, onChange }: ChartFieldSelecto
         </div>
       )}
 
-      {isCandle && (
+      {expanded && isCandle && (
         <div className="cfs-row" style={{ flexWrap: 'wrap' }}>
-          <span className="cfs-label">{zh ? '时间' : 'Time'}</span>
+          <span className="cfs-label">{t('chartTime')}</span>
           <select className="cfs-select" value={xField ?? NONE_VALUE} onChange={(e) => handleX(e.target.value)}>
-            <option value={NONE_VALUE}>{zh ? '— 未选 —' : '— unset —'}</option>
+            <option value={NONE_VALUE}>{t('chartUnset')}</option>
             {dimensionOptions.map((c) => (
               <option key={c} value={c}>{formatColumnName(c)}</option>
             ))}
@@ -492,15 +527,13 @@ export function ChartFieldSelector({ result, spec, onChange }: ChartFieldSelecto
 
           {(['open', 'close', 'high', 'low'] as const).map((role) => (
             <span key={role} className="cfs-group">
-              <span className="cfs-label" style={{ marginLeft: 8 }}>
-                {zh ? { open: '开盘', close: '收盘', high: '最高', low: '最低' }[role] : role.toUpperCase()}
-              </span>
+              <span className="cfs-label" style={{ marginLeft: 8 }}>{OHLC_LABEL[role]}</span>
               <select
                 className="cfs-select"
                 value={spec.ohlc?.[role] ?? NONE_VALUE}
                 onChange={(e) => handleOHLC(role, e.target.value)}
               >
-                <option value={NONE_VALUE}>{zh ? '— 未选 —' : '— unset —'}</option>
+                <option value={NONE_VALUE}>{t('chartUnset')}</option>
                 {metricOptions.map((c) => (
                   <option key={c} value={c}>{formatColumnName(c)}</option>
                 ))}

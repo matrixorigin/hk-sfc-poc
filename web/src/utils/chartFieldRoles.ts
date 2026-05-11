@@ -118,13 +118,21 @@ export function detectOHLC(columns: string[]): { open?: string; close?: string; 
   return out
 }
 
-// chartTypeAvailability: 返回当前数据能否画这个图表类型 + 不能的原因
+// 结构化 reason，便于 i18n 翻译
+export type AvailReason =
+  | { kind: 'empty' }
+  | { kind: 'need-metrics'; n: number }
+  | { kind: 'need-types'; n: number }
+  | { kind: 'need-ohlc'; missing: string[] }
+  | { kind: 'need-time' }
+
+// chartTypeAvailability: 返回当前数据能否画这个图表类型 + 结构化 reason
 export function chartTypeAvailability(
   result: SQLResult,
   type: 'bar' | 'hbar' | 'line' | 'pie' | 'combo' | 'heatmap' | 'candlestick'
-): { ok: boolean; reason?: string } {
+): { ok: true } | { ok: false; reason: AvailReason } {
   if (!result || result.rows.length === 0 || result.columns.length < 2) {
-    return { ok: false, reason: '数据为空或列太少' }
+    return { ok: false, reason: { kind: 'empty' } }
   }
   const roles = classifyColumns(result)
 
@@ -132,39 +140,38 @@ export function chartTypeAvailability(
     case 'bar':
     case 'hbar':
     case 'line':
-      if (roles.metrics.length < 1) return { ok: false, reason: '需要 ≥ 1 个数值列' }
+      if (roles.metrics.length < 1) return { ok: false, reason: { kind: 'need-metrics', n: 1 } }
       return { ok: true }
 
     case 'pie':
-      if (roles.metrics.length < 1) return { ok: false, reason: '需要 ≥ 1 个数值列' }
-      if (roles.dimensions.length < 1) return { ok: false, reason: '需要 ≥ 1 个类别列' }
+      if (roles.metrics.length < 1) return { ok: false, reason: { kind: 'need-metrics', n: 1 } }
+      if (roles.dimensions.length < 1) return { ok: false, reason: { kind: 'need-types', n: 1 } }
       return { ok: true }
 
     case 'combo':
-      if (roles.metrics.length < 2) return { ok: false, reason: '需要 ≥ 2 个数值列' }
+      if (roles.metrics.length < 2) return { ok: false, reason: { kind: 'need-metrics', n: 2 } }
       return { ok: true }
 
     case 'heatmap': {
-      // 需要两个低基数类别列 + 一个数值列
       const catDims = result.columns.filter((c, ci) => {
         const vals = result.rows.map((r) => r[ci])
         if (!isIdentifierColumn(c, vals) && !isDateLike(vals.map(String))) return false
         const uniq = new Set(vals.map(String)).size
         return uniq >= 2 && uniq <= 30
       })
-      if (catDims.length < 2) return { ok: false, reason: '需要 ≥ 2 个类别列' }
-      if (roles.metrics.length < 1) return { ok: false, reason: '需要 ≥ 1 个数值列' }
+      if (catDims.length < 2) return { ok: false, reason: { kind: 'need-types', n: 2 } }
+      if (roles.metrics.length < 1) return { ok: false, reason: { kind: 'need-metrics', n: 1 } }
       return { ok: true }
     }
 
     case 'candlestick': {
       const ohlc = detectOHLC(result.columns)
       const missing = (['open', 'close', 'high', 'low'] as const).filter((k) => !ohlc[k])
-      if (missing.length > 0) return { ok: false, reason: `需要 OHLC 4 列（缺 ${missing.join('/')})` }
+      if (missing.length > 0) return { ok: false, reason: { kind: 'need-ohlc', missing: [...missing] } }
       const hasTime = result.columns.some((_c, ci) =>
         isDateLike(result.rows.map((r) => String(r[ci] ?? '')))
       )
-      if (!hasTime) return { ok: false, reason: '需要 1 个时间维度列' }
+      if (!hasTime) return { ok: false, reason: { kind: 'need-time' } }
       return { ok: true }
     }
   }
