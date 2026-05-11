@@ -95,6 +95,81 @@ export interface ColumnRoles {
   legends: string[]
 }
 
+// 蜡烛图 OHLC 列名候选词（小写匹配，处理 open_price / open / 开盘等多种形式）
+const OHLC_PATTERNS = {
+  open: [/(^|[_\s-])open([_\s-]|$)/, /开盘/, /siopne/],
+  close: [/(^|[_\s-])close([_\s-]|$)/, /收盘/, /siclse/],
+  high: [/(^|[_\s-])high([_\s-]|$)/, /最高/, /sihige/],
+  low: [/(^|[_\s-])low([_\s-]|$)/, /最低/, /silowe/],
+}
+
+// detectOHLC: 扫描列名，返回各角色的候选列（按匹配度排序）
+export function detectOHLC(columns: string[]): { open?: string; close?: string; high?: string; low?: string } {
+  const lower = columns.map((c) => c.toLowerCase())
+  const out: { [k: string]: string | undefined } = {}
+  for (const role of ['open', 'close', 'high', 'low'] as const) {
+    for (let i = 0; i < lower.length; i++) {
+      if (OHLC_PATTERNS[role].some((re) => re.test(lower[i]))) {
+        out[role] = columns[i]
+        break
+      }
+    }
+  }
+  return out
+}
+
+// chartTypeAvailability: 返回当前数据能否画这个图表类型 + 不能的原因
+export function chartTypeAvailability(
+  result: SQLResult,
+  type: 'bar' | 'hbar' | 'line' | 'pie' | 'combo' | 'heatmap' | 'candlestick'
+): { ok: boolean; reason?: string } {
+  if (!result || result.rows.length === 0 || result.columns.length < 2) {
+    return { ok: false, reason: '数据为空或列太少' }
+  }
+  const roles = classifyColumns(result)
+
+  switch (type) {
+    case 'bar':
+    case 'hbar':
+    case 'line':
+      if (roles.metrics.length < 1) return { ok: false, reason: '需要 ≥ 1 个数值列' }
+      return { ok: true }
+
+    case 'pie':
+      if (roles.metrics.length < 1) return { ok: false, reason: '需要 ≥ 1 个数值列' }
+      if (roles.dimensions.length < 1) return { ok: false, reason: '需要 ≥ 1 个类别列' }
+      return { ok: true }
+
+    case 'combo':
+      if (roles.metrics.length < 2) return { ok: false, reason: '需要 ≥ 2 个数值列' }
+      return { ok: true }
+
+    case 'heatmap': {
+      // 需要两个低基数类别列 + 一个数值列
+      const catDims = result.columns.filter((c, ci) => {
+        const vals = result.rows.map((r) => r[ci])
+        if (!isIdentifierColumn(c, vals) && !isDateLike(vals.map(String))) return false
+        const uniq = new Set(vals.map(String)).size
+        return uniq >= 2 && uniq <= 30
+      })
+      if (catDims.length < 2) return { ok: false, reason: '需要 ≥ 2 个类别列' }
+      if (roles.metrics.length < 1) return { ok: false, reason: '需要 ≥ 1 个数值列' }
+      return { ok: true }
+    }
+
+    case 'candlestick': {
+      const ohlc = detectOHLC(result.columns)
+      const missing = (['open', 'close', 'high', 'low'] as const).filter((k) => !ohlc[k])
+      if (missing.length > 0) return { ok: false, reason: `需要 OHLC 4 列（缺 ${missing.join('/')})` }
+      const hasTime = result.columns.some((_c, ci) =>
+        isDateLike(result.rows.map((r) => String(r[ci] ?? '')))
+      )
+      if (!hasTime) return { ok: false, reason: '需要 1 个时间维度列' }
+      return { ok: true }
+    }
+  }
+}
+
 export function classifyColumns(result: SQLResult): ColumnRoles {
   const { columns, rows } = result
   const dimensions: string[] = []

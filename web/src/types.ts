@@ -8,14 +8,44 @@ export interface ExploreEvent {
   data: any
 }
 
+export type ChartType =
+  | 'bar'
+  | 'hbar'
+  | 'line'
+  | 'pie'
+  | 'combo'
+  | 'heatmap'
+  | 'candlestick'
+  | 'auto'
+  | 'none'
+
 export interface ChartSpec {
-  chart_type: 'bar' | 'line' | 'pie' | 'auto' | 'none'
+  chart_type: ChartType
+
+  // 通用三要素（bar/hbar/line/pie/combo）
   x?: { field: string; label?: string; type?: 'category' | 'time' }
-  y?: { field: string; label?: string }[]
-  // series: 图例分组维度。存在时按该字段把数据透视成多条 series。
-  series?: { field: string; label?: string }
-  // bar_mode: 柱状图多 series 的排列方式，默认 group。
+  y?: {
+    field: string
+    label?: string
+    axis?: 'primary' | 'secondary'   // 主/副 Y 轴；不设默认 primary
+    sub_type?: 'bar' | 'line'        // combo 用：该指标渲染为 bar 还是 line
+  }[]
+  series?: { field: string; label?: string }   // 图例分组维度
+
+  // 热力图：第二维度
+  y2?: { field: string; label?: string }
+
+  // 蜡烛图：OHLC 4 字段绑定
+  ohlc?: { open: string; close: string; low: string; high: string }
+
+  // 风格
   bar_mode?: 'group' | 'stack'
+  orientation?: 'vertical' | 'horizontal'   // 由 chart_type 决定（hbar=horizontal），保留以备扩展
+  sort?: { field?: string; order?: 'asc' | 'desc' | 'none' }
+  top_n?: number                            // 0 / undefined = 全部
+  show_markers?: boolean                     // line/combo 上是否显示点位
+  show_data_labels?: boolean                 // 柱顶/点位是否显示数值
+
   display_mode?: 'chart' | 'table' | 'both'
   round_index?: number
   // user_edited: 标记用户是否手动改过；前端用它阻止上游推荐覆盖用户选择。
