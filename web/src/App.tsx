@@ -13,9 +13,27 @@ import {
 } from './api/conversations'
 import './App.css'
 
+const LANG_STORAGE_KEY = 'hk-poc.lang'
+
+function initialLang(): Language {
+  try {
+    const saved = localStorage.getItem(LANG_STORAGE_KEY)
+    if (saved === 'zh' || saved === 'en') return saved
+  } catch {
+    // localStorage 不可用时回退
+  }
+  return typeof navigator !== 'undefined' && navigator.language?.toLowerCase().startsWith('zh')
+    ? 'zh'
+    : 'en'
+}
+
 function App() {
-  const [lang, setLang] = useState<Language>('en')
+  const [lang, setLang] = useState<Language>(initialLang)
   const t = getT(lang)
+
+  useEffect(() => {
+    try { localStorage.setItem(LANG_STORAGE_KEY, lang) } catch { /* ignore */ }
+  }, [lang])
 
   const [conversations, setConversations] = useState<ConversationMeta[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
