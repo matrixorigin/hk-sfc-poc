@@ -132,11 +132,13 @@ func (h *MessagesHandler) HandleSend(w http.ResponseWriter, r *http.Request, con
 	}
 
 	// 合并分支
+	// Content 存用户实际输入(req.Question)，而非 clarifier merge 后的整句；
+	// processedQuestion 仅用于发给上游 Catalog。
 	if err := h.db.InsertMessage(&StoredMessage{
 		ID:             userMsgID,
 		ConversationID: conversationID,
 		Role:           "user",
-		Content:        processedQuestion,
+		Content:        req.Question,
 		Status:         "done",
 	}); err != nil {
 		http.Error(w, fmt.Sprintf("insert user message: %v", err), http.StatusInternalServerError)
