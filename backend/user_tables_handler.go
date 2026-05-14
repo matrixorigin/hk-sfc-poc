@@ -88,12 +88,12 @@ func (h *UserTablesHandler) preview(w http.ResponseWriter, r *http.Request) {
 	defer file.Close()
 
 	ext := strings.ToLower(filepath.Ext(header.Filename))
-	if ext != ".xlsx" && ext != ".xls" {
-		http.Error(w, "only .xlsx files are supported", http.StatusBadRequest)
+	if ext != ".xlsx" && ext != ".xls" && ext != ".csv" {
+		http.Error(w, "only .xlsx and .csv files are supported", http.StatusBadRequest)
 		return
 	}
 
-	tmpFile, err := os.CreateTemp("", "user-table-*.xlsx")
+	tmpFile, err := os.CreateTemp("", "user-table-*"+ext)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("create temp file: %v", err), http.StatusInternalServerError)
 		return
@@ -106,7 +106,7 @@ func (h *UserTablesHandler) preview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.svc.PreviewExcel(tmpFile.Name())
+	result, err := h.svc.PreviewFile(tmpFile.Name())
 	if err != nil {
 		os.Remove(tmpFile.Name())
 		http.Error(w, fmt.Sprintf("preview: %v", err), http.StatusBadRequest)

@@ -3,13 +3,20 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/csv"
 	"fmt"
+	"io"
 	"log"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/text/encoding/unicode"
+	"golang.org/x/text/transform"
 
 	"github.com/xuri/excelize/v2"
 )
@@ -154,7 +161,25 @@ func (s *UserTableService) cleanupLoop() {
 	}
 }
 
-// PreviewExcel parses an xlsx file and returns column info with type inference.
+func (s *UserTableService) PreviewFile(filePath string) (*PreviewResult, error) {
+	ext := strings.ToLower(filepath.Ext(filePath))
+	if ext == ".csv" {
+		return s.PreviewCSV(filePath)
+	}
+	return s.PreviewExcel(filePath)
+}
+
+func (s *UserTableService) PreviewCSV(filePath string) (*PreviewResult, error) {
+	rows, err := readCSVRows(filePath)
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) < 1 {
+		return nil, fmt.Errorf("empty CSV: no header row")
+	}
+	return s.buildPreview(rows, filepath.Base(filePath))
+}
+
 func (s *UserTableService) PreviewExcel(filePath string) (*PreviewResult, error) {
 	f, err := excelize.OpenFile(filePath)
 	if err != nil {
@@ -171,29 +196,30 @@ func (s *UserTableService) PreviewExcel(filePath string) (*PreviewResult, error)
 	if err != nil {
 		return nil, fmt.Errorf("read rows: %w", err)
 	}
-	if len(rows) < 1 {
-		return nil, fmt.Errorf("empty sheet: no header row")
-	}
+	return s.buildPreview(rows, sheet)
+}
 
+func (s *UserTableService) buildPreview(rows [][]string, sheetName string) (*PreviewResult, error) {
+	if len(rows) < 1 {
+		return nil, fmt.Errorf("no header row")
+	}
 	headers := rows[0]
 	if len(headers) == 0 {
 		return nil, fmt.Errorf("empty header row")
 	}
 
-	// Collect values per column (up to 1000 data rows)
-	maxRows := 1000
+	maxScan := 1000
 	dataRows := rows[1:]
-	if len(dataRows) > maxRows {
-		dataRows = dataRows[:maxRows]
+	scanRows := dataRows
+	if len(scanRows) > maxScan {
+		scanRows = scanRows[:maxScan]
 	}
 
-	columns := make([]ColumnInfo, len(headers))
 	colValues := make([][]string, len(headers))
 	for i := range headers {
-		colValues[i] = make([]string, 0, len(dataRows))
+		colValues[i] = make([]string, 0, len(scanRows))
 	}
-
-	for _, row := range dataRows {
+	for _, row := range scanRows {
 		for i := range headers {
 			val := ""
 			if i < len(row) {
@@ -203,6 +229,7 @@ func (s *UserTableService) PreviewExcel(filePath string) (*PreviewResult, error)
 		}
 	}
 
+	columns := make([]ColumnInfo, len(headers))
 	for i, h := range headers {
 		colType := inferType(colValues[i])
 		var samples []string
@@ -218,28 +245,75 @@ func (s *UserTableService) PreviewExcel(filePath string) (*PreviewResult, error)
 		}
 	}
 
-	allDataRows := rows[1:]
 	previewLimit := 20
-	if len(allDataRows) < previewLimit {
-		previewLimit = len(allDataRows)
+	if len(dataRows) < previewLimit {
+		previewLimit = len(dataRows)
 	}
 	previewRows := make([][]string, previewLimit)
 	for i := 0; i < previewLimit; i++ {
 		row := make([]string, len(headers))
 		for j := range headers {
-			if j < len(allDataRows[i]) {
-				row[j] = allDataRows[i][j]
+			if j < len(dataRows[i]) {
+				row[j] = dataRows[i][j]
 			}
 		}
 		previewRows[i] = row
 	}
 
 	return &PreviewResult{
-		SheetName:   sheet,
+		SheetName:   sheetName,
 		Columns:     columns,
 		PreviewRows: previewRows,
-		TotalRows:   len(rows) - 1,
+		TotalRows:   len(dataRows),
 	}, nil
+}
+
+func readCSVRows(filePath string) ([][]string, error) {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("open csv: %w", err)
+	}
+	defer f.Close()
+
+	// Detect BOM for UTF-16/UTF-8 BOM
+	buf := make([]byte, 3)
+	n, _ := f.Read(buf)
+	f.Seek(0, 0)
+
+	var reader io.Reader = f
+	if n >= 2 && buf[0] == 0xFF && buf[1] == 0xFE {
+		reader = transform.NewReader(f, unicode.UTF16(unicode.LittleEndian, unicode.UseBOM).NewDecoder())
+	} else if n >= 2 && buf[0] == 0xFE && buf[1] == 0xFF {
+		reader = transform.NewReader(f, unicode.UTF16(unicode.BigEndian, unicode.UseBOM).NewDecoder())
+	} else if n >= 3 && buf[0] == 0xEF && buf[1] == 0xBB && buf[2] == 0xBF {
+		f.Seek(3, 0)
+	}
+
+	r := csv.NewReader(reader)
+	r.LazyQuotes = true
+	r.FieldsPerRecord = -1
+	rows, err := r.ReadAll()
+	if err != nil {
+		return nil, fmt.Errorf("parse csv: %w", err)
+	}
+	return rows, nil
+}
+
+func readFileRows(filePath string) ([][]string, error) {
+	ext := strings.ToLower(filepath.Ext(filePath))
+	if ext == ".csv" {
+		return readCSVRows(filePath)
+	}
+	f, err := excelize.OpenFile(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("open excel: %w", err)
+	}
+	defer f.Close()
+	sheet := f.GetSheetName(0)
+	if sheet == "" {
+		return nil, fmt.Errorf("no sheets found")
+	}
+	return f.GetRows(sheet)
 }
 
 func inferType(values []string) string {
@@ -411,17 +485,10 @@ func (s *UserTableService) CreateTable(ctx context.Context, req *CreateTableRequ
 	return nil
 }
 
-func (s *UserTableService) importData(ctx context.Context, tableName string, columns []ColumnInfo, excelPath string) (int, error) {
-	f, err := excelize.OpenFile(excelPath)
+func (s *UserTableService) importData(ctx context.Context, tableName string, columns []ColumnInfo, filePath string) (int, error) {
+	rows, err := readFileRows(filePath)
 	if err != nil {
-		return 0, fmt.Errorf("open excel: %w", err)
-	}
-	defer f.Close()
-
-	sheet := f.GetSheetName(0)
-	rows, err := f.GetRows(sheet)
-	if err != nil {
-		return 0, fmt.Errorf("read rows: %w", err)
+		return 0, err
 	}
 	if len(rows) < 2 {
 		return 0, nil

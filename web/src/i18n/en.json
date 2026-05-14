@@ -108,7 +108,7 @@
   "tableManagement": "Table Management",
   "tableManagementDesc": "Manage user-uploaded data tables",
   "uploadExcel": "Upload Excel",
-  "uploadDragHint": "Drag & drop .xlsx file here, or click to select",
+  "uploadDragHint": "Drag & drop .xlsx / .csv file here, or click to select",
   "confirmCreate": "Create Table",
   "editMetadata": "Edit Metadata",
   "deleteTable": "Delete",

@@ -17,7 +17,7 @@ const TYPE_OPTIONS = ['VARCHAR', 'BIGINT', 'DECIMAL(18,6)', 'DATE', 'DATETIME', 
 
 function sanitizeTableName(filename: string): string {
   return filename
-    .replace(/\.xlsx?$/i, '')
+    .replace(/\.(xlsx?|csv)$/i, '')
     .toLowerCase()
     .replace(/[^a-z0-9_]/g, '_')
     .replace(/_+/g, '_')
@@ -74,7 +74,7 @@ export function ExcelUploadDialog({ open, onClose, onCreated }: Props) {
     (e: React.DragEvent) => {
       e.preventDefault()
       const file = e.dataTransfer.files[0]
-      if (file && /\.xlsx?$/i.test(file.name)) handleFile(file)
+      if (file && /\.(xlsx?|csv)$/i.test(file.name)) handleFile(file)
     },
     [handleFile]
   )
@@ -145,7 +145,7 @@ export function ExcelUploadDialog({ open, onClose, onCreated }: Props) {
             <input
               ref={fileRef}
               type="file"
-              accept=".xlsx,.xls"
+              accept=".xlsx,.xls,.csv"
               style={{ display: 'none' }}
               onChange={(e) => {
                 const file = e.target.files?.[0]

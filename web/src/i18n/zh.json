@@ -108,7 +108,7 @@
   "tableManagement": "数据表管理",
   "tableManagementDesc": "管理用户上传的数据表",
   "uploadExcel": "上传 Excel",
-  "uploadDragHint": "拖拽 .xlsx 文件到此处，或点击选择",
+  "uploadDragHint": "拖拽 .xlsx / .csv 文件到此处，或点击选择",
   "confirmCreate": "确认建表",
   "editMetadata": "编辑元数据",
   "deleteTable": "删除",
