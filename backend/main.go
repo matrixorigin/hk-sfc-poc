@@ -34,25 +34,6 @@ func main() {
 
 	client := NewExploreClient(cfg.Catalog.URL, cfg.Catalog.APIKey)
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/tables", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		tables := []map[string]string{
-			{"name": "ms_v_stk_hsi_daily", "label": "恒生指数日线 / HSI Daily"},
-			{"name": "ms_t_stk_sis", "label": "个股行情 / Stock Trading"},
-			{"name": "ms_v_stock_capital", "label": "市值数据 / Market Cap"},
-			{"name": "ds_t_int_hsicl_dtl", "label": "行业分类 / Industry Classification"},
-			{"name": "sehknews", "label": "新闻公告 / News"},
-			{"name": "profit_loss", "label": "财务报表 / Financial Statements"},
-			{"name": "ccass_holdings", "label": "CCASS持仓 / CCASS Holdings"},
-		}
-		json.NewEncoder(w).Encode(tables)
-	})
-
-	knowledgeHandler := NewKnowledgeHandler(cfg)
-	mux.Handle("/api/knowledge/", knowledgeHandler)
-	mux.Handle("/api/knowledge", knowledgeHandler)
-
 	// Feedback DB: connect to MatrixOne via workspace account
 	moCfg := buildMOConfig(cfg)
 	feedbackDB, err := NewFeedbackDB(moCfg)
@@ -66,11 +47,58 @@ func main() {
 		log.Fatalf("init conversations db: %v", err)
 	}
 
+	// User table service (Excel upload → MatrixOne)
+	userTableSvc, err := NewUserTableService(feedbackDB.RawDB(), cfg.Explore.DBName)
+	if err != nil {
+		log.Fatalf("init user table service: %v", err)
+	}
+
 	// Clarifier 依赖 ConversationsDB（读 pending_clarify + recent user questions）
 	clarifier := NewClarifier(cfg.Catalog.URL, cfg.Catalog.APIKey, cfg.Catalog.WorkspaceID, cfg.Explore.LLMModel, convDB)
 
+	mux := http.NewServeMux()
+
+	// Dynamic /api/tables: system tables + user-uploaded tables
+	systemTableList := []map[string]string{
+		{"name": "ms_v_stk_hsi_daily", "label": "恒生指数日线 / HSI Daily", "source": "system"},
+		{"name": "ms_t_stk_sis", "label": "个股行情 / Stock Trading", "source": "system"},
+		{"name": "ms_v_stock_capital", "label": "市值数据 / Market Cap", "source": "system"},
+		{"name": "ds_t_int_hsicl_dtl", "label": "行业分类 / Industry Classification", "source": "system"},
+		{"name": "sehknews", "label": "新闻公告 / News", "source": "system"},
+		{"name": "profit_loss", "label": "财务报表 / Financial Statements", "source": "system"},
+		{"name": "ccass_holdings", "label": "CCASS持仓 / CCASS Holdings", "source": "system"},
+	}
+	mux.HandleFunc("/api/tables", func(w http.ResponseWriter, r *http.Request) {
+		setCORSHeaders(w)
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		tables := make([]map[string]string, len(systemTableList))
+		copy(tables, systemTableList)
+		userTables, err := userTableSvc.ListUserTables(r.Context())
+		if err == nil {
+			for _, ut := range userTables {
+				label := ut.DisplayName
+				if label == "" {
+					label = ut.TableName
+				}
+				tables = append(tables, map[string]string{
+					"name":   ut.TableName,
+					"label":  label,
+					"source": "user",
+				})
+			}
+		}
+		writeJSON(w, http.StatusOK, tables)
+	})
+
+	knowledgeHandler := NewKnowledgeHandler(cfg)
+	mux.Handle("/api/knowledge/", knowledgeHandler)
+	mux.Handle("/api/knowledge", knowledgeHandler)
+
 	// 会话消息流 handler
-	messagesHandler := NewMessagesHandler(client, clarifier, convDB, cfg, metrics)
+	messagesHandler := NewMessagesHandler(client, clarifier, convDB, cfg, metrics, userTableSvc)
 	conversationsHandler := NewConversationsHandler(convDB, messagesHandler)
 	mux.Handle("/api/conversations", conversationsHandler)
 	mux.Handle("/api/conversations/", conversationsHandler)
@@ -82,6 +110,10 @@ func main() {
 
 	paginateHandler := NewPaginateHandler(feedbackDB.RawDB())
 	mux.HandleFunc("/api/query/paginate", paginateHandler.ServeHTTP)
+
+	userTablesHandler := NewUserTablesHandler(userTableSvc)
+	mux.Handle("/api/user-tables/", userTablesHandler)
+	mux.Handle("/api/user-tables", userTablesHandler)
 
 	if cfg.Server.StaticDir != "" {
 		absDir, _ := filepath.Abs(cfg.Server.StaticDir)

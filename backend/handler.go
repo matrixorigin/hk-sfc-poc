@@ -19,16 +19,17 @@ type SendMessageRequest struct {
 // MessagesHandler 负责处理某会话下的发送消息（SSE）流程。
 // 它不自己处理 HTTP 路由（由 ConversationsHandler 拆完 path 后调用 HandleSend）。
 type MessagesHandler struct {
-	client  *ExploreClient
-	clarify *Clarifier
-	db      *ConversationsDB
-	cfg     *Config
-	metrics *MetricRegistry
+	client       *ExploreClient
+	clarify      *Clarifier
+	db           *ConversationsDB
+	cfg          *Config
+	metrics      *MetricRegistry
+	userTableSvc *UserTableService
 }
 
 // NewMessagesHandler 构造 MessagesHandler。metrics 可为 nil（未配置 metrics.yaml）。
-func NewMessagesHandler(client *ExploreClient, clarify *Clarifier, db *ConversationsDB, cfg *Config, metrics *MetricRegistry) *MessagesHandler {
-	return &MessagesHandler{client: client, clarify: clarify, db: db, cfg: cfg, metrics: metrics}
+func NewMessagesHandler(client *ExploreClient, clarify *Clarifier, db *ConversationsDB, cfg *Config, metrics *MetricRegistry, userTableSvc *UserTableService) *MessagesHandler {
+	return &MessagesHandler{client: client, clarify: clarify, db: db, cfg: cfg, metrics: metrics, userTableSvc: userTableSvc}
 }
 
 // HandleSend 处理 POST /api/conversations/{id}/messages。
@@ -187,10 +188,16 @@ func (h *MessagesHandler) HandleSend(w http.ResponseWriter, r *http.Request, con
 			Tables: &TableSource{
 				DBName: h.cfg.Explore.DBName,
 				TableList: func() []string {
+					base := h.cfg.Explore.Tables
 					if len(req.Tables) > 0 {
-						return req.Tables
+						base = req.Tables
 					}
-					return h.cfg.Explore.Tables
+					if h.userTableSvc != nil {
+						if userNames, err := h.userTableSvc.GetUserTableNames(r.Context()); err == nil && len(userNames) > 0 {
+							base = append(base, userNames...)
+						}
+					}
+					return base
 				}(),
 			},
 			KnowledgeBases: func() []KnowledgeBaseRef {
