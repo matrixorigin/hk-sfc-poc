@@ -299,9 +299,10 @@ with open('/tmp/_cap_industry.csv', 'w') as out:
                 continue
             dates = [r[0] for r in records]
             idx = bisect_right(dates, ref_date) - 1
-            if idx >= 0:
-                industry = records[idx][1]
-                out.write(f'{stkcd},{ref_date},{industry}\n')
+            if idx < 0:
+                idx = 0
+            industry = records[idx][1]
+            out.write(f'{stkcd},{ref_date},{industry}\n')
 
 import os
 count = sum(1 for _ in open('/tmp/_cap_industry.csv'))
