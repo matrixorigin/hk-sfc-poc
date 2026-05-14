@@ -30,7 +30,7 @@ export function UserTablePanel({ open, onClose }: Props) {
     setLoading(true)
     try {
       const list = await listUserTables()
-      setTables(list)
+      setTables(Array.isArray(list) ? list : [])
     } catch (err) {
       console.error('[UserTablePanel] fetch error:', err)
     } finally {

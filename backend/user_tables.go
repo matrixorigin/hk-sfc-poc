@@ -88,6 +88,15 @@ type UserTableService struct {
 }
 
 func NewUserTableService(db *sql.DB, dbName string) (*UserTableService, error) {
+	// Check if old schema exists (display_name column) and migrate
+	var hasOldSchema bool
+	_ = db.QueryRow(`SELECT 1 FROM information_schema.columns
+		WHERE table_schema = ? AND table_name = 'poc_user_tables' AND column_name = 'display_name'`, dbName).Scan(&hasOldSchema)
+	if hasOldSchema {
+		log.Printf("user_tables: migrating poc_user_tables from old schema")
+		db.Exec("DROP TABLE IF EXISTS poc_user_tables")
+	}
+
 	const ddl = `
 CREATE TABLE IF NOT EXISTS poc_user_tables (
     table_name    VARCHAR(128) PRIMARY KEY,
