@@ -108,7 +108,13 @@ def get_session():
 def fetch_stock_list(date: str, top_n=None):
     date_compact = date.replace("/", "")
     url = f"{STOCKLIST_URL}?sortby=stockcode&shareholdingdate={date_compact}"
-    resp = requests.get(url, headers={**HEADERS, "Referer": SEARCH_URL}, timeout=30)
+    req_headers = {
+        **HEADERS,
+        "Referer": "https://www3.hkexnews.hk/sdw/search/ccass_stock_list.htm",
+        "X-Requested-With": "XMLHttpRequest",
+        "Accept": "application/json, text/javascript, */*; q=0.01",
+    }
+    resp = requests.get(url, headers=req_headers, timeout=30)
     resp.raise_for_status()
     data = resp.json()
     stocks = [(item["c"], item["n"]) for item in data if "c" in item and "n" in item]
@@ -139,7 +145,7 @@ def fetch_broker_holdings(session, vs, vs_gn, stock_code: str, date: str):
     if alert and alert.get("value", "").strip():
         return {}
 
-    table = soup.find("table", {"class": "table"})
+    table = soup.select_one("table.table")
     if not table:
         return {}
 
