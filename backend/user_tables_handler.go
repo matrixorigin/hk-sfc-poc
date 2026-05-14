@@ -117,7 +117,6 @@ func (h *UserTablesHandler) preview(w http.ResponseWriter, r *http.Request) {
 	h.svc.SaveTempFile(fileKey, tmpFile.Name(), header.Filename)
 
 	result.FileKey = fileKey
-	result.FileName = header.Filename
 	writeJSON(w, http.StatusOK, result)
 }
 
@@ -153,7 +152,7 @@ func (h *UserTablesHandler) list(w http.ResponseWriter, r *http.Request) {
 	if tables == nil {
 		tables = []UserTableMeta{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"tables": tables})
+	writeJSON(w, http.StatusOK, tables)
 }
 
 func (h *UserTablesHandler) delete(w http.ResponseWriter, r *http.Request, name string) {
@@ -199,7 +198,7 @@ func (h *UserTablesHandler) columns(w http.ResponseWriter, r *http.Request, name
 	if cols == nil {
 		cols = []ColumnInfo{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"columns": cols})
+	writeJSON(w, http.StatusOK, cols)
 }
 
 func generateFileKey() string {

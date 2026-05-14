@@ -79,9 +79,9 @@ func main() {
 		userTables, err := userTableSvc.ListUserTables(r.Context())
 		if err == nil {
 			for _, ut := range userTables {
-				label := ut.DisplayName
-				if label == "" {
-					label = ut.TableName
+				label := ut.TableName
+				if ut.TableComment != "" {
+					label = ut.TableName + " / " + ut.TableComment
 				}
 				tables = append(tables, map[string]string{
 					"name":   ut.TableName,

@@ -15,46 +15,45 @@ import (
 )
 
 type ColumnInfo struct {
-	Name       string `json:"name"`
-	Type       string `json:"type"`
-	SampleData []any  `json:"sample_data"`
-	Comment    string `json:"comment,omitempty"`
+	Name         string   `json:"name"`
+	InferredType string   `json:"inferred_type,omitempty"`
+	Type         string   `json:"type,omitempty"`
+	Comment      string   `json:"comment,omitempty"`
+	Samples      []string `json:"samples,omitempty"`
 }
 
 type PreviewResult struct {
-	FileName string       `json:"file_name"`
-	FileKey  string       `json:"file_key"`
-	Columns  []ColumnInfo `json:"columns"`
-	RowCount int          `json:"row_count"`
+	FileKey     string       `json:"file_key"`
+	SheetName   string       `json:"sheet_name"`
+	Columns     []ColumnInfo `json:"columns"`
+	PreviewRows [][]string   `json:"preview_rows"`
+	TotalRows   int          `json:"total_rows"`
 }
 
 type UserTableMeta struct {
-	TableName   string `json:"table_name"`
-	DisplayName string `json:"display_name"`
-	Description string `json:"description"`
-	FileName    string `json:"file_name"`
-	RowCount    int    `json:"row_count"`
-	CreatedAt   string `json:"created_at"`
+	TableName    string `json:"table_name"`
+	TableComment string `json:"table_comment"`
+	RowCount     int64  `json:"row_count"`
+	CreatedAt    string `json:"created_at"`
+	Source       string `json:"source"`
 }
 
 type CreateTableRequest struct {
-	TableName   string       `json:"table_name"`
-	DisplayName string       `json:"display_name"`
-	Description string       `json:"description"`
-	FileKey     string       `json:"file_key"`
-	Columns     []ColumnInfo `json:"columns"`
+	FileKey      string       `json:"file_key"`
+	TableName    string       `json:"table_name"`
+	TableComment string       `json:"table_comment"`
+	Columns      []ColumnInfo `json:"columns"`
 }
 
 type UpdateMetadataRequest struct {
-	DisplayName string       `json:"display_name,omitempty"`
-	Description string       `json:"description,omitempty"`
-	Columns     []ColumnInfo `json:"columns,omitempty"`
+	TableComment string       `json:"table_comment,omitempty"`
+	Columns      []ColumnInfo `json:"columns,omitempty"`
 }
 
 type DataPreviewResult struct {
-	Columns []string `json:"columns"`
-	Rows    [][]any  `json:"rows"`
-	Total   int      `json:"total"`
+	Columns []string   `json:"columns"`
+	Rows    [][]string `json:"rows"`
+	Total   int64      `json:"total"`
 }
 
 var validTableName = regexp.MustCompile(`^[a-z0-9_]{1,64}$`)
@@ -91,12 +90,10 @@ type UserTableService struct {
 func NewUserTableService(db *sql.DB, dbName string) (*UserTableService, error) {
 	const ddl = `
 CREATE TABLE IF NOT EXISTS poc_user_tables (
-    table_name   VARCHAR(64) PRIMARY KEY,
-    display_name VARCHAR(200),
-    description  TEXT,
-    file_name    VARCHAR(200),
-    row_count    INT,
-    created_at   VARCHAR(30)
+    table_name    VARCHAR(128) PRIMARY KEY,
+    table_comment VARCHAR(512) DEFAULT '',
+    row_count     BIGINT DEFAULT 0,
+    created_at    DATETIME DEFAULT NOW()
 )`
 	if _, err := db.Exec(ddl); err != nil {
 		return nil, fmt.Errorf("create poc_user_tables: %w", err)
@@ -199,22 +196,40 @@ func (s *UserTableService) PreviewExcel(filePath string) (*PreviewResult, error)
 
 	for i, h := range headers {
 		colType := inferType(colValues[i])
-		samples := make([]any, 0, 5)
+		var samples []string
 		for j := 0; j < len(colValues[i]) && j < 5; j++ {
 			if colValues[i][j] != "" {
 				samples = append(samples, colValues[i][j])
 			}
 		}
 		columns[i] = ColumnInfo{
-			Name:       sanitizeColumnName(h),
-			Type:       colType,
-			SampleData: samples,
+			Name:         sanitizeColumnName(h),
+			InferredType: colType,
+			Samples:      samples,
 		}
 	}
 
+	allDataRows := rows[1:]
+	previewLimit := 20
+	if len(allDataRows) < previewLimit {
+		previewLimit = len(allDataRows)
+	}
+	previewRows := make([][]string, previewLimit)
+	for i := 0; i < previewLimit; i++ {
+		row := make([]string, len(headers))
+		for j := range headers {
+			if j < len(allDataRows[i]) {
+				row[j] = allDataRows[i][j]
+			}
+		}
+		previewRows[i] = row
+	}
+
 	return &PreviewResult{
-		Columns:  columns,
-		RowCount: len(rows) - 1,
+		SheetName:   sheet,
+		Columns:     columns,
+		PreviewRows: previewRows,
+		TotalRows:   len(rows) - 1,
 	}, nil
 }
 
@@ -337,19 +352,22 @@ func (s *UserTableService) CreateTable(ctx context.Context, req *CreateTableRequ
 		return fmt.Errorf("no columns specified")
 	}
 
-	filePath, fileName, ok := s.GetTempFile(req.FileKey)
+	filePath, _, ok := s.GetTempFile(req.FileKey)
 	if !ok {
 		return fmt.Errorf("file not found or expired (key: %s)", req.FileKey)
 	}
 	defer s.removeTempFile(req.FileKey)
 
-	// Build CREATE TABLE DDL
 	var ddl strings.Builder
-	ddl.WriteString(fmt.Sprintf("CREATE TABLE %s (\n", escapeID(req.TableName)))
+	fmt.Fprintf(&ddl, "CREATE TABLE %s (\n", escapeID(req.TableName))
 	for i, col := range req.Columns {
-		ddl.WriteString(fmt.Sprintf("  %s %s", escapeID(col.Name), col.Type))
+		colType := col.Type
+		if colType == "" {
+			colType = col.InferredType
+		}
+		fmt.Fprintf(&ddl, "  %s %s", escapeID(col.Name), colType)
 		if col.Comment != "" {
-			ddl.WriteString(fmt.Sprintf(" COMMENT %s", escapeStr(col.Comment)))
+			fmt.Fprintf(&ddl, " COMMENT %s", escapeStr(col.Comment))
 		}
 		if i < len(req.Columns)-1 {
 			ddl.WriteString(",")
@@ -357,6 +375,9 @@ func (s *UserTableService) CreateTable(ctx context.Context, req *CreateTableRequ
 		ddl.WriteString("\n")
 	}
 	ddl.WriteString(")")
+	if req.TableComment != "" {
+		fmt.Fprintf(&ddl, " COMMENT=%s", escapeStr(req.TableComment))
+	}
 
 	if _, err := s.db.ExecContext(ctx, ddl.String()); err != nil {
 		return fmt.Errorf("create table: %w", err)
@@ -364,27 +385,20 @@ func (s *UserTableService) CreateTable(ctx context.Context, req *CreateTableRequ
 
 	rowCount, err := s.importData(ctx, req.TableName, req.Columns, filePath)
 	if err != nil {
-		// Rollback: drop the table on import failure
 		_, _ = s.db.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", escapeID(req.TableName)))
 		return fmt.Errorf("import data: %w", err)
 	}
 
-	now := time.Now().UTC().Format(time.RFC3339)
-	displayName := req.DisplayName
-	if displayName == "" {
-		displayName = req.TableName
-	}
 	_, err = s.db.ExecContext(ctx,
-		`INSERT INTO poc_user_tables (table_name, display_name, description, file_name, row_count, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-		req.TableName, displayName, req.Description, fileName, rowCount, now,
+		`INSERT INTO poc_user_tables (table_name, table_comment, row_count) VALUES (?, ?, ?)`,
+		req.TableName, req.TableComment, rowCount,
 	)
 	if err != nil {
 		_, _ = s.db.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", escapeID(req.TableName)))
 		return fmt.Errorf("register table: %w", err)
 	}
 
-	log.Printf("user_tables: created %s (%d rows from %s)", req.TableName, rowCount, fileName)
+	log.Printf("user_tables: created %s (%d rows)", req.TableName, rowCount)
 	return nil
 }
 
@@ -456,7 +470,7 @@ func (s *UserTableService) importData(ctx context.Context, tableName string, col
 
 func (s *UserTableService) ListUserTables(ctx context.Context) ([]UserTableMeta, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT table_name, display_name, description, file_name, row_count, created_at
+		`SELECT table_name, table_comment, row_count, created_at
 		 FROM poc_user_tables ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
@@ -466,13 +480,10 @@ func (s *UserTableService) ListUserTables(ctx context.Context) ([]UserTableMeta,
 	var result []UserTableMeta
 	for rows.Next() {
 		var m UserTableMeta
-		var displayName, desc, fileName sql.NullString
-		if err := rows.Scan(&m.TableName, &displayName, &desc, &fileName, &m.RowCount, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.TableName, &m.TableComment, &m.RowCount, &m.CreatedAt); err != nil {
 			return nil, err
 		}
-		m.DisplayName = displayName.String
-		m.Description = desc.String
-		m.FileName = fileName.String
+		m.Source = "user"
 		result = append(result, m)
 	}
 	return result, rows.Err()
@@ -501,38 +512,45 @@ func (s *UserTableService) UpdateMetadata(ctx context.Context, name string, req 
 		return fmt.Errorf("invalid table name")
 	}
 
-	if req.DisplayName != "" || req.Description != "" {
-		sets := []string{}
-		args := []any{}
-		if req.DisplayName != "" {
-			sets = append(sets, "display_name = ?")
-			args = append(args, req.DisplayName)
+	if req.TableComment != "" {
+		if _, err := s.db.ExecContext(ctx,
+			`UPDATE poc_user_tables SET table_comment = ? WHERE table_name = ?`,
+			req.TableComment, name); err != nil {
+			return fmt.Errorf("update table comment: %w", err)
 		}
-		if req.Description != "" {
-			sets = append(sets, "description = ?")
-			args = append(args, req.Description)
-		}
-		args = append(args, name)
-		_, err := s.db.ExecContext(ctx,
-			fmt.Sprintf("UPDATE poc_user_tables SET %s WHERE table_name = ?", strings.Join(sets, ", ")),
-			args...,
-		)
-		if err != nil {
-			return fmt.Errorf("update metadata: %w", err)
+		alterTable := fmt.Sprintf("ALTER TABLE %s COMMENT=%s", escapeID(name), escapeStr(req.TableComment))
+		if _, err := s.db.ExecContext(ctx, alterTable); err != nil {
+			log.Printf("user_tables: alter table comment failed: %v", err)
 		}
 	}
 
 	for _, col := range req.Columns {
-		if col.Comment != "" {
-			alterSQL := fmt.Sprintf("ALTER TABLE %s MODIFY COLUMN %s %s COMMENT %s",
-				escapeID(name), escapeID(col.Name), col.Type, escapeStr(col.Comment))
-			if _, err := s.db.ExecContext(ctx, alterSQL); err != nil {
-				return fmt.Errorf("update column comment %s: %w", col.Name, err)
-			}
+		if col.Comment == "" {
+			continue
+		}
+		colType := col.Type
+		if colType == "" {
+			colType = s.getColumnType(ctx, name, col.Name)
+		}
+		alterCol := fmt.Sprintf("ALTER TABLE %s MODIFY COLUMN %s %s COMMENT %s",
+			escapeID(name), escapeID(col.Name), colType, escapeStr(col.Comment))
+		if _, err := s.db.ExecContext(ctx, alterCol); err != nil {
+			return fmt.Errorf("update column comment %s: %w", col.Name, err)
 		}
 	}
 
 	return nil
+}
+
+func (s *UserTableService) getColumnType(ctx context.Context, table, column string) string {
+	var colType string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COLUMN_TYPE FROM information_schema.columns WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+		s.dbName, table, column).Scan(&colType)
+	if err != nil {
+		return "TEXT"
+	}
+	return colType
 }
 
 func (s *UserTableService) PreviewData(ctx context.Context, name string) (*DataPreviewResult, error) {
@@ -540,8 +558,7 @@ func (s *UserTableService) PreviewData(ctx context.Context, name string) (*DataP
 		return nil, fmt.Errorf("invalid table name")
 	}
 
-	// Get total count
-	var total int
+	var total int64
 	if err := s.db.QueryRowContext(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s", escapeID(name))).Scan(&total); err != nil {
 		return nil, fmt.Errorf("count: %w", err)
 	}
@@ -557,9 +574,9 @@ func (s *UserTableService) PreviewData(ctx context.Context, name string) (*DataP
 		return nil, fmt.Errorf("columns: %w", err)
 	}
 
-	var result [][]any
+	var result [][]string
 	for rows.Next() {
-		vals := make([]any, len(colNames))
+		vals := make([]sql.NullString, len(colNames))
 		ptrs := make([]any, len(colNames))
 		for i := range vals {
 			ptrs[i] = &vals[i]
@@ -567,13 +584,10 @@ func (s *UserTableService) PreviewData(ctx context.Context, name string) (*DataP
 		if err := rows.Scan(ptrs...); err != nil {
 			return nil, fmt.Errorf("scan: %w", err)
 		}
-		// Convert []byte to string for JSON
-		row := make([]any, len(vals))
+		row := make([]string, len(colNames))
 		for i, v := range vals {
-			if b, ok := v.([]byte); ok {
-				row[i] = string(b)
-			} else {
-				row[i] = v
+			if v.Valid {
+				row[i] = v.String
 			}
 		}
 		result = append(result, row)
