@@ -6,6 +6,7 @@ import { ChatPanel } from './components/ChatPanel'
 import { Sidebar } from './components/Sidebar'
 import { KnowledgePanel } from './components/KnowledgePanel'
 import { AnalysisPanel } from './components/AnalysisPanel'
+import { UserTablePanel } from './components/UserTablePanel'
 import {
   listConversations,
   createConversation,
@@ -40,6 +41,7 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [knowledgeOpen, setKnowledgeOpen] = useState(false)
   const [analysisOpen, setAnalysisOpen] = useState(false)
+  const [tableManageOpen, setTableManageOpen] = useState(false)
 
   // 启动时从后端加载会话列表
   useEffect(() => {
@@ -114,6 +116,12 @@ function App() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <button
               className="lang-switch"
+              onClick={() => setTableManageOpen(true)}
+            >
+              {t('tableManagement' as any)}
+            </button>
+            <button
+              className="lang-switch"
               onClick={() => setAnalysisOpen(true)}
             >
               {t('analysisCenter' as any)}
@@ -149,6 +157,7 @@ function App() {
       </div>
       <KnowledgePanel open={knowledgeOpen} onClose={() => setKnowledgeOpen(false)} />
       <AnalysisPanel open={analysisOpen} onClose={() => setAnalysisOpen(false)} />
+      <UserTablePanel open={tableManageOpen} onClose={() => setTableManageOpen(false)} />
     </LangContext.Provider>
   )
 }

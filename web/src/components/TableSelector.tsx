@@ -4,6 +4,7 @@ import { useT } from '../i18n'
 interface TableInfo {
   name: string
   label: string
+  source?: string
 }
 
 interface TableSelectorProps {
@@ -60,9 +61,9 @@ export function TableSelector({ selected, onChange }: TableSelectorProps) {
               key={t.name}
               onClick={() => toggle(t.name)}
               title={t.name}
-              className={`table-chip${isOn ? ' active' : ''}`}
+              className={`table-chip${isOn ? ' active' : ''}${t.source === 'user' ? ' user-table' : ''}`}
             >
-              {t.label.split(' / ')[lang === 'zh' ? 0 : 1] || t.label}
+              {t.source === 'user' ? t.name : (t.label.split(' / ')[lang === 'zh' ? 0 : 1] || t.label)}
             </button>
           )
         })}

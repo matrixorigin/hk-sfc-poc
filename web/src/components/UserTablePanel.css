@@ -1,0 +1,212 @@
+.usertable-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 100;
+  animation: kp-fadeIn 0.2s ease-out;
+}
+
+.usertable-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 700px;
+  max-width: 90vw;
+  height: 100vh;
+  background: #fff;
+  z-index: 101;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.12);
+  animation: kp-slideIn 0.25s ease-out;
+}
+
+.usertable-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e4e7ec;
+  flex-shrink: 0;
+}
+
+.usertable-panel-header h2 {
+  font-size: 17px;
+  font-weight: 600;
+  color: #1a1a2e;
+  margin: 0;
+}
+
+.usertable-panel-header p {
+  font-size: 12px;
+  color: #94a3b8;
+  margin: 2px 0 0 0;
+}
+
+.usertable-panel-close {
+  background: none;
+  border: none;
+  font-size: 20px;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.15s;
+  line-height: 1;
+}
+
+.usertable-panel-close:hover {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.usertable-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 12px 20px;
+  border-bottom: 1px solid #f1f5f9;
+  flex-shrink: 0;
+}
+
+.usertable-upload-btn {
+  padding: 7px 16px;
+  background: linear-gradient(135deg, #0f3460, #1a1a2e);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: opacity 0.15s;
+}
+
+.usertable-upload-btn:hover {
+  opacity: 0.9;
+}
+
+.usertable-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+}
+
+.usertable-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.usertable-list::-webkit-scrollbar-thumb {
+  background: #ddd;
+  border-radius: 2px;
+}
+
+.usertable-empty {
+  text-align: center;
+  color: #94a3b8;
+  font-size: 13px;
+  padding: 40px 0;
+}
+
+.usertable-card {
+  background: #fff;
+  border: 1px solid #e4e7ec;
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  transition: all 0.15s;
+}
+
+.usertable-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.usertable-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.usertable-card-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a1a2e;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.usertable-card-comment {
+  font-size: 13px;
+  color: #475569;
+  margin: 2px 0;
+}
+
+.usertable-card-meta {
+  font-size: 11px;
+  color: #94a3b8;
+  margin: 4px 0 0 0;
+}
+
+.usertable-card-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.usertable-card-actions button {
+  padding: 4px 10px;
+  border: 1px solid #e4e7ec;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 11px;
+  color: #64748b;
+  transition: all 0.15s;
+}
+
+.usertable-card-actions button:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #475569;
+}
+
+.usertable-card-actions button.delete:hover {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #ef4444;
+}
+
+.usertable-preview-section {
+  margin-top: 12px;
+  border: 1px solid #e4e7ec;
+  border-radius: 8px;
+  overflow-x: auto;
+  max-height: 260px;
+}
+
+.usertable-preview-section table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.usertable-preview-section thead tr {
+  background: #f8fafc;
+}
+
+.usertable-preview-section th {
+  padding: 6px 8px;
+  text-align: left;
+  border-bottom: 1px solid #e4e7ec;
+  color: #64748b;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.usertable-preview-section td {
+  padding: 4px 8px;
+  border-bottom: 1px solid #f1f5f9;
+  white-space: nowrap;
+  color: #475569;
+}

@@ -858,6 +858,10 @@ body {
   transform: translateY(-1px);
 }
 
+.table-chip.user-table {
+  border-style: dashed;
+}
+
 /* Input area */
 .input-area {
   padding: 12px 24px 16px;
