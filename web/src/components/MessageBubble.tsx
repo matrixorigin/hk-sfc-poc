@@ -152,7 +152,7 @@ export function MessageBubble({ message, conversationId, onUpdateMessage }: Mess
           )}
 
           {/* SQL toggle — only after done */}
-          {!isUser && isDone && message.sqlStatements.length > 0 && (
+          {!isUser && isDone && message.sqlStatements?.length > 0 && (
             <div className="sql-section">
               <button
                 onClick={() => setShowSQL(!showSQL)}
@@ -189,7 +189,7 @@ export function MessageBubble({ message, conversationId, onUpdateMessage }: Mess
           {!isUser && isDone && primaryResult && (
             <FeedbackButton
               question={message.feedbackQuestion || ''}
-              sql={message.sqlStatements[message.sqlStatements.length - 1] || ''}
+              sql={message.sqlStatements?.[message.sqlStatements.length - 1] || ''}
               sqlResult={primaryResult}
               sessionId=""
             />

@@ -121,7 +121,11 @@ export function fromStoredMessage(m: StoredMessage): Message {
     id: m.id,
     role: m.role,
     content: m.content ?? '',
-    sqlResults: m.sql_results ?? [],
+    sqlResults: (m.sql_results ?? []).map((r) => ({
+      ...r,
+      columns: r.columns ?? [],
+      rows: r.rows ?? [],
+    })),
     sqlStatements: m.sql_statements ?? [],
     isStreaming: m.status === 'pending',
     phase: m.status === 'done' ? 'done' : undefined,
