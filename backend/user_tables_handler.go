@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-const maxUploadSize = 50 << 20 // 50 MB
+const maxUploadSize = 300 << 20 // 300 MB
 
 type UserTablesHandler struct {
 	svc *UserTableService
@@ -76,7 +76,7 @@ func (h *UserTablesHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (h *UserTablesHandler) preview(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
 	if err := r.ParseMultipartForm(maxUploadSize); err != nil {
-		http.Error(w, "file too large (max 50MB)", http.StatusBadRequest)
+		http.Error(w, "file too large (max 300MB)", http.StatusBadRequest)
 		return
 	}
 
