@@ -30,6 +30,8 @@ services:
     volumes:
       - ./config/catalog.toml:/etc/moi-catalog/config.toml:ro
       - poc_catalog_data:/data
+      - ./logs:/app/logs
+    entrypoint: ["sh", "-c", "/usr/local/bin/catalog 2>&1 | tee -a /app/logs/catalog.log"]
     depends_on:
       - mo
     extra_hosts:
