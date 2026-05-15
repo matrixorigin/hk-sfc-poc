@@ -115,6 +115,14 @@ CREATE TABLE IF NOT EXISTS poc_user_tables (
 		return nil, fmt.Errorf("create poc_user_tables: %w", err)
 	}
 
+	var hasUserID int
+	_ = db.QueryRow(`SELECT COUNT(*) FROM information_schema.columns
+		WHERE table_schema = ? AND table_name = 'poc_user_tables' AND column_name = 'user_id'`, dbName).Scan(&hasUserID)
+	if hasUserID == 0 {
+		log.Printf("user_tables: adding user_id column to poc_user_tables")
+		db.Exec("ALTER TABLE poc_user_tables ADD COLUMN user_id VARCHAR(64) DEFAULT ''")
+	}
+
 	svc := &UserTableService{
 		db:     db,
 		dbName: dbName,
@@ -424,7 +432,7 @@ func sanitizeColumnName(name string) string {
 	return result
 }
 
-func (s *UserTableService) CreateTable(ctx context.Context, req *CreateTableRequest) error {
+func (s *UserTableService) CreateTable(ctx context.Context, req *CreateTableRequest, userID string) error {
 	if !validTableName.MatchString(req.TableName) {
 		return fmt.Errorf("invalid table name: must match %s", validTableName.String())
 	}
@@ -473,8 +481,8 @@ func (s *UserTableService) CreateTable(ctx context.Context, req *CreateTableRequ
 	}
 
 	_, err = s.db.ExecContext(ctx,
-		`INSERT INTO poc_user_tables (table_name, table_comment, row_count) VALUES (?, ?, ?)`,
-		req.TableName, req.TableComment, rowCount,
+		`INSERT INTO poc_user_tables (table_name, table_comment, row_count, user_id) VALUES (?, ?, ?, ?)`,
+		req.TableName, req.TableComment, rowCount, userID,
 	)
 	if err != nil {
 		_, _ = s.db.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", escapeID(req.TableName)))
@@ -544,10 +552,10 @@ func (s *UserTableService) importData(ctx context.Context, tableName string, col
 	return total, nil
 }
 
-func (s *UserTableService) ListUserTables(ctx context.Context) ([]UserTableMeta, error) {
+func (s *UserTableService) ListUserTables(ctx context.Context, userID string) ([]UserTableMeta, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT table_name, table_comment, row_count, created_at
-		 FROM poc_user_tables ORDER BY created_at DESC`)
+		 FROM poc_user_tables WHERE user_id = ? ORDER BY created_at DESC`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -565,7 +573,7 @@ func (s *UserTableService) ListUserTables(ctx context.Context) ([]UserTableMeta,
 	return result, rows.Err()
 }
 
-func (s *UserTableService) DeleteTable(ctx context.Context, name string) error {
+func (s *UserTableService) DeleteTable(ctx context.Context, name, userID string) error {
 	if !validTableName.MatchString(name) {
 		return fmt.Errorf("invalid table name")
 	}
@@ -573,25 +581,29 @@ func (s *UserTableService) DeleteTable(ctx context.Context, name string) error {
 		return fmt.Errorf("cannot delete system table")
 	}
 
+	res, err := s.db.ExecContext(ctx, `DELETE FROM poc_user_tables WHERE table_name = ? AND user_id = ?`, name, userID)
+	if err != nil {
+		return fmt.Errorf("unregister: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("table not found or not owned by you")
+	}
 	if _, err := s.db.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", escapeID(name))); err != nil {
 		return fmt.Errorf("drop table: %w", err)
-	}
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM poc_user_tables WHERE table_name = ?`, name); err != nil {
-		return fmt.Errorf("unregister: %w", err)
 	}
 	log.Printf("user_tables: deleted %s", name)
 	return nil
 }
 
-func (s *UserTableService) UpdateMetadata(ctx context.Context, name string, req *UpdateMetadataRequest) error {
+func (s *UserTableService) UpdateMetadata(ctx context.Context, name, userID string, req *UpdateMetadataRequest) error {
 	if !validTableName.MatchString(name) {
 		return fmt.Errorf("invalid table name")
 	}
 
 	if req.TableComment != "" {
 		if _, err := s.db.ExecContext(ctx,
-			`UPDATE poc_user_tables SET table_comment = ? WHERE table_name = ?`,
-			req.TableComment, name); err != nil {
+			`UPDATE poc_user_tables SET table_comment = ? WHERE table_name = ? AND user_id = ?`,
+			req.TableComment, name, userID); err != nil {
 			return fmt.Errorf("update table comment: %w", err)
 		}
 		alterTable := fmt.Sprintf("ALTER TABLE %s COMMENT=%s", escapeID(name), escapeStr(req.TableComment))
@@ -676,8 +688,8 @@ func (s *UserTableService) PreviewData(ctx context.Context, name string) (*DataP
 	}, rows.Err()
 }
 
-func (s *UserTableService) GetUserTableNames(ctx context.Context) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT table_name FROM poc_user_tables ORDER BY created_at`)
+func (s *UserTableService) GetUserTableNames(ctx context.Context, userID string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT table_name FROM poc_user_tables WHERE user_id = ? ORDER BY created_at`, userID)
 	if err != nil {
 		return nil, err
 	}

@@ -184,7 +184,8 @@ func main() {
 		}
 		tables := make([]map[string]string, len(systemTableList))
 		copy(tables, systemTableList)
-		userTables, err := userTableSvc.ListUserTables(r.Context())
+		userID := UserIDFromContext(r.Context())
+		userTables, err := userTableSvc.ListUserTables(r.Context(), userID)
 		if err == nil {
 			for _, ut := range userTables {
 				label := ut.TableName

@@ -131,7 +131,8 @@ func (h *UserTablesHandler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.svc.CreateTable(r.Context(), &req); err != nil {
+	userID := UserIDFromContext(r.Context())
+	if err := h.svc.CreateTable(r.Context(), &req, userID); err != nil {
 		status := http.StatusInternalServerError
 		msg := err.Error()
 		if strings.Contains(msg, "invalid table name") || strings.Contains(msg, "conflicts with") || strings.Contains(msg, "not found or expired") {
@@ -144,7 +145,8 @@ func (h *UserTablesHandler) create(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *UserTablesHandler) list(w http.ResponseWriter, r *http.Request) {
-	tables, err := h.svc.ListUserTables(r.Context())
+	userID := UserIDFromContext(r.Context())
+	tables, err := h.svc.ListUserTables(r.Context(), userID)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("list: %v", err), http.StatusInternalServerError)
 		return
@@ -156,7 +158,8 @@ func (h *UserTablesHandler) list(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *UserTablesHandler) delete(w http.ResponseWriter, r *http.Request, name string) {
-	if err := h.svc.DeleteTable(r.Context(), name); err != nil {
+	userID := UserIDFromContext(r.Context())
+	if err := h.svc.DeleteTable(r.Context(), name, userID); err != nil {
 		status := http.StatusInternalServerError
 		if strings.Contains(err.Error(), "invalid") || strings.Contains(err.Error(), "system table") {
 			status = http.StatusBadRequest
@@ -173,7 +176,8 @@ func (h *UserTablesHandler) updateMetadata(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "invalid body", http.StatusBadRequest)
 		return
 	}
-	if err := h.svc.UpdateMetadata(r.Context(), name, &req); err != nil {
+	userID := UserIDFromContext(r.Context())
+	if err := h.svc.UpdateMetadata(r.Context(), name, userID, &req); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

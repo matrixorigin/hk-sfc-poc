@@ -194,7 +194,7 @@ func (h *MessagesHandler) HandleSend(w http.ResponseWriter, r *http.Request, con
 						base = req.Tables
 					}
 					if h.userTableSvc != nil {
-						if userNames, err := h.userTableSvc.GetUserTableNames(r.Context()); err == nil && len(userNames) > 0 {
+						if userNames, err := h.userTableSvc.GetUserTableNames(r.Context(), userID); err == nil && len(userNames) > 0 {
 							base = append(base, userNames...)
 						}
 					}
