@@ -47,6 +47,11 @@ func main() {
 		log.Fatalf("init conversations db: %v", err)
 	}
 
+	authSvc, err := NewAuthService(feedbackDB.RawDB())
+	if err != nil {
+		log.Fatalf("init auth service: %v", err)
+	}
+
 	// User table service (Excel upload → MatrixOne)
 	userTableSvc, err := NewUserTableService(feedbackDB.RawDB(), cfg.Explore.DBName)
 	if err != nil {
@@ -57,6 +62,109 @@ func main() {
 	clarifier := NewClarifier(cfg.Catalog.URL, cfg.Catalog.APIKey, cfg.Catalog.WorkspaceID, cfg.Explore.LLMModel, convDB)
 
 	mux := http.NewServeMux()
+
+	mux.HandleFunc("/api/auth/register", func(w http.ResponseWriter, r *http.Request) {
+		setCORSHeaders(w)
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			Username string `json:"username"`
+			Password string `json:"password"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+			return
+		}
+		if err := authSvc.Register(req.Username, req.Password); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		token, err := authSvc.Login(req.Username, req.Password)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "registered but login failed"})
+			return
+		}
+		setTokenCookie(w, token)
+		writeJSON(w, http.StatusCreated, map[string]string{"username": req.Username})
+	})
+
+	mux.HandleFunc("/api/auth/login", func(w http.ResponseWriter, r *http.Request) {
+		setCORSHeaders(w)
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			Username string `json:"username"`
+			Password string `json:"password"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+			return
+		}
+		token, err := authSvc.Login(req.Username, req.Password)
+		if err != nil {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
+			return
+		}
+		setTokenCookie(w, token)
+		writeJSON(w, http.StatusOK, map[string]string{"username": req.Username})
+	})
+
+	mux.HandleFunc("/api/auth/logout", func(w http.ResponseWriter, r *http.Request) {
+		setCORSHeaders(w)
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if cookie, err := r.Cookie(cookieName); err == nil {
+			authSvc.Logout(cookie.Value)
+		}
+		clearTokenCookie(w)
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	mux.HandleFunc("/api/auth/me", func(w http.ResponseWriter, r *http.Request) {
+		setCORSHeaders(w)
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		cookie, err := r.Cookie(cookieName)
+		if err != nil || cookie.Value == "" {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+			return
+		}
+		userID, ok := authSvc.ValidateSession(cookie.Value)
+		if !ok {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+			return
+		}
+		username, err := authSvc.GetUsername(userID)
+		if err != nil {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"username": username})
+	})
 
 	// Dynamic /api/tables: system tables + user-uploaded tables
 	systemTableList := []map[string]string{
@@ -135,7 +243,7 @@ func main() {
 	log.Printf("starting server on %s", addr)
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           gzipMiddleware(mux),
+		Handler:           gzipMiddleware(authMiddleware(authSvc, mux)),
 		ReadHeaderTimeout: 10 * time.Second,
 		WriteTimeout:      10 * time.Minute,
 		IdleTimeout:       10 * time.Minute,
