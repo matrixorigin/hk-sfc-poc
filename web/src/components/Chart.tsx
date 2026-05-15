@@ -379,7 +379,7 @@ function LineChart({
     itemStyle: { color: COLORS[idx % COLORS.length] },
     yAxisIndex: hasSecondary && secondaryFieldNames.has(s.name) ? 1 : 0,
     label: showDataLabels
-      ? { show: true, fontSize: 10, color: '#374151', position: 'top' as const }
+      ? { show: true, fontSize: 10, color: '#374151', position: 'top' as const, distance: 8 }
       : { show: false },
   }))
 
@@ -502,6 +502,7 @@ function BarChart({
           fontSize: 10,
           color: '#374151',
           position: (isHorizontal ? 'right' : 'top') as any,
+          distance: 8,
         }
       : { show: false },
   }))
@@ -688,7 +689,7 @@ function ComboChart({
       itemStyle: { color: COLORS[idx % COLORS.length] },
       yAxisIndex: hasSecondary && yi.axis === 'secondary' ? 1 : 0,
       label: showDataLabels
-        ? { show: true, fontSize: 10, color: '#374151', position: 'top' as const }
+        ? { show: true, fontSize: 10, color: '#374151', position: 'top' as const, distance: 8 }
         : { show: false },
     }
   })
