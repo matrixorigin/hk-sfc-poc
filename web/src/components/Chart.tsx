@@ -424,11 +424,11 @@ function LineChart({
       type: 'scroll',
     },
     grid: {
-      left: 60,
-      right: hasSecondary ? 60 : 20,
+      left: 12,
+      right: hasSecondary ? 12 : 12,
       top: 36,
-      bottom: needSlider ? 90 : labelBottom(built.xData.length, xIsDate, maxLabelLen),
-      containLabel: false,
+      bottom: needSlider ? 60 : 12,
+      containLabel: true,
     },
     xAxis: {
       type: 'category',
@@ -559,11 +559,11 @@ function BarChart({
       type: 'scroll',
     },
     grid: {
-      left: isHorizontal ? 120 : 60,
-      right: !isHorizontal && hasSecondary ? 60 : 20,
+      left: 12,
+      right: 12,
       top: 36,
-      bottom: needSlider ? 90 : (isHorizontal ? 36 : labelBottom(built.xData.length, xIsDate, maxLabelLen)),
-      containLabel: false,
+      bottom: needSlider ? 60 : 12,
+      containLabel: true,
     },
     xAxis: isHorizontal ? valAxes : catAxis,
     yAxis: isHorizontal ? catAxis : valAxes,
@@ -709,11 +709,11 @@ function ComboChart({
     tooltip: { trigger: 'axis', backgroundColor: 'rgba(255,255,255,0.96)', borderColor: '#e5e7eb' },
     legend: { data: seriesOpt.map((s) => s.name), top: 4, type: 'scroll' },
     grid: {
-      left: 60,
-      right: hasSecondary ? 60 : 20,
+      left: 12,
+      right: 12,
       top: 36,
-      bottom: labelBottom(built.xData.length, xIsDate, maxLabelLen),
-      containLabel: false,
+      bottom: 12,
+      containLabel: true,
     },
     xAxis: {
       type: 'category',
@@ -793,7 +793,7 @@ function HeatmapChart({
 
   const option: any = {
     tooltip: { position: 'top' },
-    grid: { left: 100, right: 40, top: 60, bottom: 60, containLabel: false },
+    grid: { left: 100, right: 40, top: 60, bottom: 60, containLabel: true },
     xAxis: {
       type: 'category',
       data: xOrder.map((v) => (v.length > 12 ? v.slice(0, 12) + '…' : v)),
@@ -868,7 +868,7 @@ function CandlestickChart({
   const option: any = {
     color: ['#dc2626', '#16a34a'], // 红涨绿跌（HK 习惯）
     tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
-    grid: { left: 60, right: 20, top: 36, bottom: xData.length > 30 ? 70 : 40, containLabel: false },
+    grid: { left: 60, right: 20, top: 36, bottom: xData.length > 30 ? 70 : 40, containLabel: true },
     xAxis: {
       type: 'category',
       data: xData,
