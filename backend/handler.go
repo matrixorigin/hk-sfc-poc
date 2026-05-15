@@ -192,8 +192,7 @@ func (h *MessagesHandler) HandleSend(w http.ResponseWriter, r *http.Request, con
 					base := h.cfg.Explore.Tables
 					if len(req.Tables) > 0 {
 						base = req.Tables
-					}
-					if h.userTableSvc != nil {
+					} else if h.userTableSvc != nil {
 						if userNames, err := h.userTableSvc.GetUserTableNames(r.Context(), userID); err == nil && len(userNames) > 0 {
 							base = append(base, userNames...)
 						}
