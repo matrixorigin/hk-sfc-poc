@@ -37,6 +37,7 @@ export function ExcelUploadDialog({ open, onClose, onCreated }: Props) {
   const [tableComment, setTableComment] = useState('')
   const [columns, setColumns] = useState<ColumnInfo[]>([])
   const [progress, setProgress] = useState<ImportProgress | null>(null)
+  const [uploadPct, setUploadPct] = useState(0)
 
   const reset = useCallback(() => {
     setUploading(false)
@@ -47,6 +48,7 @@ export function ExcelUploadDialog({ open, onClose, onCreated }: Props) {
     setTableComment('')
     setColumns([])
     setProgress(null)
+    setUploadPct(0)
   }, [])
 
   const handleClose = useCallback(() => {
@@ -57,8 +59,9 @@ export function ExcelUploadDialog({ open, onClose, onCreated }: Props) {
   const handleFile = useCallback(async (file: File) => {
     setError('')
     setUploading(true)
+    setUploadPct(0)
     try {
-      const result = await uploadPreview(file)
+      const result = await uploadPreview(file, (pct) => setUploadPct(pct))
       setPreview(result)
       setTableName(sanitizeTableName(file.name))
       setColumns(
@@ -182,8 +185,19 @@ export function ExcelUploadDialog({ open, onClose, onCreated }: Props) {
 
         {uploading && (
           <div style={{ textAlign: 'center', padding: '40px 0', color: '#64748b', fontSize: 13 }}>
-            <div className="phase-spinner" style={{ marginBottom: 12 }} />
-            {t('uploading')}
+            {uploadPct < 100 ? (
+              <>
+                <div style={{ marginBottom: 8 }}>{t('uploading')} {uploadPct}%</div>
+                <div style={{ height: 6, background: '#e2e8f0', borderRadius: 3, overflow: 'hidden', margin: '0 40px' }}>
+                  <div style={{ height: '100%', borderRadius: 3, background: '#3b82f6', transition: 'width 0.3s', width: `${uploadPct}%` }} />
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="phase-spinner" style={{ marginBottom: 12 }} />
+                正在解析文件...
+              </>
+            )}
           </div>
         )}
 

@@ -38,11 +38,31 @@ async function parseJSON<T>(resp: Response): Promise<T> {
   return resp.json() as Promise<T>
 }
 
-export async function uploadPreview(file: File): Promise<PreviewResult> {
+export async function uploadPreview(
+  file: File,
+  onProgress?: (pct: number) => void,
+  signal?: AbortSignal
+): Promise<PreviewResult> {
   const form = new FormData()
   form.append('file', file)
-  const resp = await fetch(`${BASE}/preview`, { method: 'POST', body: form })
-  return parseJSON<PreviewResult>(resp)
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `${BASE}/preview`)
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress?.(Math.round((e.loaded / e.total) * 100))
+    }
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(JSON.parse(xhr.responseText))
+      } else {
+        reject(new Error(`HTTP ${xhr.status}: ${xhr.responseText}`))
+      }
+    }
+    xhr.onerror = () => reject(new Error('network error'))
+    signal?.addEventListener('abort', () => xhr.abort())
+    xhr.onabort = () => reject(new Error('aborted'))
+    xhr.send(form)
+  })
 }
 
 export interface ImportProgress {
