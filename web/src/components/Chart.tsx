@@ -286,6 +286,9 @@ function EmptyChartState({ reason }: { reason: ResolveReason }) {
   )
 }
 
+const GRID_TOP_DEFAULT = 36
+const GRID_TOP_WITH_LABELS = 60
+
 // ── DataZoom helpers ──
 // 当 X 类目数过多时，默认窗口大致只展示 ~TARGET_VISIBLE 根，让初始视图可读；
 // 用户可拖动滑块查看其他区间。
@@ -332,23 +335,20 @@ function buildYAxis(side: 'left' | 'right') {
   }
 }
 
-function dataLabel(show: boolean, position: 'top' | 'right' | 'insideTop' = 'top') {
+function dataLabel(show: boolean) {
   if (!show) return { show: false }
-  const isInside = position === 'insideTop'
   return {
     show: true,
     fontSize: 10,
-    color: isInside ? '#fff' : '#374151',
-    position,
-    distance: isInside ? 4 : 12,
-    overflow: 'truncate' as const,
-    width: 120,
-    textShadowColor: isInside ? 'rgba(0,0,0,0.4)' : undefined,
-    textShadowBlur: isInside ? 2 : 0,
+    color: '#374151',
+    position: 'top' as const,
+    distance: 12,
+    backgroundColor: 'rgba(255,255,255,0.85)',
+    padding: [1, 3] as [number, number],
+    borderRadius: 2,
     formatter: (p: any) => {
       const v = typeof p.value === 'number' ? p.value : (Array.isArray(p.value) ? p.value[1] : p.value)
-      const s = String(v ?? '')
-      return s.length > 14 ? s.slice(0, 12) + '…' : s
+      return String(v ?? '')
     },
   }
 }
@@ -431,15 +431,15 @@ function LineChart({
     },
     grid: {
       left: 12,
-      right: hasSecondary ? 12 : 12,
-      top: 36,
+      right: 12,
+      top: showDataLabels ? GRID_TOP_WITH_LABELS : GRID_TOP_DEFAULT,
       bottom: needSlider ? 60 : 12,
       containLabel: true,
     },
     xAxis: {
       type: 'category',
       data: built.xData,
-      boundaryGap: false,
+      boundaryGap: built.xData.length <= 3,
       axisLabel: {
         fontSize: 11,
         color: '#9ca3af',
@@ -447,19 +447,18 @@ function LineChart({
         interval: xIsDate
           ? Math.max(0, Math.floor(built.xData.length / 12) - 1)
           : 'auto',
-        formatter: (v: string) => {
-          if (xIsDate) {
-            const m = v.match(/^\d{4}-(\d{2}-\d{2})/)
-            return m ? m[1] : v
-          }
-          return v.length > 12 ? v.slice(0, 12) + '…' : v
-        },
+        hideOverlap: true,
+        overflow: 'none' as const,
+        formatter: xIsDate
+          ? (v: string) => { const m = v.match(/^\d{4}-(\d{2}-\d{2})/); return m ? m[1] : v }
+          : undefined,
       },
       axisLine: { lineStyle: { color: '#e5e7eb' } },
       axisTick: { show: false },
     },
     yAxis: hasSecondary ? [buildYAxis('left'), buildYAxis('right')] : buildYAxis('left'),
     series: seriesOpt,
+    labelLayout: { moveOverlap: 'shiftY' as const, hideOverlap: true },
     ...(needSlider
       ? {
           dataZoom: [
@@ -517,13 +516,20 @@ function BarChart({
   const seriesOpt = built.series.map((s, idx) => ({
     name: s.name,
     type: 'bar' as const,
-    data: s.data,
+    data: s.data.map((v) => ({
+      value: v,
+      label: {
+        position: !isHorizontal
+          ? (v !== null && v < 0 ? 'bottom' as const : 'top' as const)
+          : (v !== null && v < 0 ? 'left' as const : 'right' as const),
+      },
+    })),
     barMaxWidth: 80,
     itemStyle: { color: COLORS[idx % COLORS.length] },
     ...(stackKey ? { stack: stackKey } : {}),
     yAxisIndex: !isHorizontal && hasSecondary && secondaryFieldNames.has(s.name) ? 1 : 0,
     xAxisIndex: isHorizontal && hasSecondary && secondaryFieldNames.has(s.name) ? 1 : 0,
-    label: dataLabel(showDataLabels, isHorizontal ? 'right' : 'insideTop'),
+    label: dataLabel(showDataLabels),
   }))
 
   const xIsDate = isDateLike(built.xData)
@@ -541,7 +547,8 @@ function BarChart({
       color: '#9ca3af',
       rotate: isHorizontal ? 0 : labelRotate(built.xData.length, xIsDate, maxLabelLen),
       interval: isHorizontal ? 0 : 'auto',
-      formatter: (v: string) => (v.length > 14 ? v.slice(0, 14) + '…' : v),
+      hideOverlap: true,
+      overflow: 'none' as const,
     },
     axisLine: { lineStyle: { color: '#e5e7eb' } },
     axisTick: { show: false },
@@ -568,13 +575,14 @@ function BarChart({
     grid: {
       left: 12,
       right: 12,
-      top: 36,
+      top: showDataLabels && !isHorizontal ? GRID_TOP_WITH_LABELS : GRID_TOP_DEFAULT,
       bottom: needSlider ? 60 : 12,
       containLabel: true,
     },
     xAxis: isHorizontal ? valAxes : catAxis,
     yAxis: isHorizontal ? catAxis : valAxes,
     series: seriesOpt,
+    labelLayout: { moveOverlap: isHorizontal ? 'shiftX' as const : 'shiftY' as const, hideOverlap: true },
     ...(needSlider
       ? {
           dataZoom: [
@@ -707,7 +715,7 @@ function ComboChart({
         : { barMaxWidth: 80 }),
       itemStyle: { color: COLORS[idx % COLORS.length] },
       yAxisIndex: hasSecondary && yi.axis === 'secondary' ? 1 : 0,
-      label: dataLabel(showDataLabels, isLine ? 'top' : 'insideTop'),
+      label: dataLabel(showDataLabels),
     }
   })
 
@@ -718,7 +726,7 @@ function ComboChart({
     grid: {
       left: 12,
       right: 12,
-      top: 36,
+      top: showDataLabels ? GRID_TOP_WITH_LABELS : GRID_TOP_DEFAULT,
       bottom: 12,
       containLabel: true,
     },
@@ -729,13 +737,15 @@ function ComboChart({
         fontSize: 11,
         color: '#9ca3af',
         rotate: labelRotate(built.xData.length, xIsDate, maxLabelLen),
-        formatter: (v: string) => (v.length > 12 ? v.slice(0, 12) + '…' : v),
+        hideOverlap: true,
+        overflow: 'none' as const,
       },
       axisLine: { lineStyle: { color: '#e5e7eb' } },
       axisTick: { show: false },
     },
     yAxis: hasSecondary ? [buildYAxis('left'), buildYAxis('right')] : buildYAxis('left'),
     series: seriesOpt,
+    labelLayout: { moveOverlap: 'shiftY' as const, hideOverlap: true },
   }
 
   return (

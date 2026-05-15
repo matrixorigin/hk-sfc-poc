@@ -12,12 +12,16 @@ HK SFC POC: NL2SQL system for Hong Kong securities market data analysis. Users a
 # Start all services (mo, catalog, workers, app)
 docker compose up -d
 
-# Rebuild and deploy app only
+# Rebuild and deploy app only (3 steps: local verify → build → deploy)
+cd web && npm run build && cd ..   # 本地先跑，和 Docker 内同一命令，确保 TS 编译通过
 docker compose build app && docker compose up -d --force-recreate app
 
 # Catalog image must be built from moi-core repo:
 # cd /path/to/moi-core && make build-image-catalog
 ```
+
+> **⚠ 前端验证必须用 `npm run build`（即 `tsc -b && vite build`），不要用 `tsc --noEmit`。**
+> 两者严格程度不同，`--noEmit` 通过不代表 Docker 内能编译成功。
 
 ## Testing
 
