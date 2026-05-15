@@ -246,7 +246,7 @@ func main() {
 		Addr:              addr,
 		Handler:           gzipMiddleware(authMiddleware(authSvc, mux)),
 		ReadHeaderTimeout: 10 * time.Second,
-		WriteTimeout:      10 * time.Minute,
+		WriteTimeout:      2 * time.Hour,
 		IdleTimeout:       10 * time.Minute,
 	}
 	if err := srv.ListenAndServe(); err != nil {
