@@ -339,6 +339,15 @@ body {
   flex-direction: row-reverse;
 }
 
+.message-row.user .message-content {
+  flex: none;
+  max-width: 80%;
+}
+
+.message-row.user .message-bubble {
+  width: fit-content;
+}
+
 .message-avatar {
   width: 36px;
   height: 36px;

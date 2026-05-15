@@ -512,6 +512,7 @@ function BarChart({
     name: s.name,
     type: 'bar' as const,
     data: s.data,
+    barMaxWidth: 80,
     itemStyle: { color: COLORS[idx % COLORS.length] },
     ...(stackKey ? { stack: stackKey } : {}),
     yAxisIndex: !isHorizontal && hasSecondary && secondaryFieldNames.has(s.name) ? 1 : 0,
@@ -697,7 +698,7 @@ function ComboChart({
             showSymbol: showMarkers,
             lineStyle: { width: 2 },
           }
-        : {}),
+        : { barMaxWidth: 80 }),
       itemStyle: { color: COLORS[idx % COLORS.length] },
       yAxisIndex: hasSecondary && yi.axis === 'secondary' ? 1 : 0,
       label: dataLabel(showDataLabels, isLine ? 'top' : 'insideTop'),
