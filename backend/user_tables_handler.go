@@ -131,17 +131,25 @@ func (h *UserTablesHandler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID := UserIDFromContext(r.Context())
-	if err := h.svc.CreateTable(r.Context(), &req, userID); err != nil {
-		status := http.StatusInternalServerError
-		msg := err.Error()
-		if strings.Contains(msg, "invalid table name") || strings.Contains(msg, "conflicts with") || strings.Contains(msg, "not found or expired") {
-			status = http.StatusBadRequest
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	flusher, _ := w.(http.Flusher)
+
+	send := func(p ImportProgress) {
+		data, _ := json.Marshal(p)
+		fmt.Fprintf(w, "data: %s\n\n", data)
+		if flusher != nil {
+			flusher.Flush()
 		}
-		http.Error(w, msg, status)
+	}
+
+	userID := UserIDFromContext(r.Context())
+	if err := h.svc.CreateTable(r.Context(), &req, userID, send); err != nil {
+		send(ImportProgress{Phase: "error", Message: err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]string{"table_name": req.TableName})
+	send(ImportProgress{Phase: "done", Message: req.TableName})
 }
 
 func (h *UserTablesHandler) list(w http.ResponseWriter, r *http.Request) {

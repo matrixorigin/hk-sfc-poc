@@ -45,18 +45,55 @@ export async function uploadPreview(file: File): Promise<PreviewResult> {
   return parseJSON<PreviewResult>(resp)
 }
 
-export async function createTable(req: {
-  file_key: string
-  table_name: string
-  table_comment: string
-  columns: ColumnInfo[]
-}): Promise<{ table_name: string; row_count: number }> {
+export interface ImportProgress {
+  phase: 'reading' | 'importing' | 'done' | 'error'
+  current?: number
+  total?: number
+  message?: string
+}
+
+export async function createTable(
+  req: {
+    file_key: string
+    table_name: string
+    table_comment: string
+    columns: ColumnInfo[]
+  },
+  onProgress?: (p: ImportProgress) => void,
+  signal?: AbortSignal
+): Promise<void> {
   const resp = await fetch(`${BASE}/create`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req),
+    signal,
   })
-  return parseJSON<{ table_name: string; row_count: number }>(resp)
+  if (!resp.ok && !resp.headers.get('content-type')?.includes('text/event-stream')) {
+    const text = await resp.text().catch(() => '')
+    throw new Error(`HTTP ${resp.status}: ${text}`)
+  }
+
+  const reader = resp.body?.getReader()
+  if (!reader) throw new Error('no response body')
+
+  const decoder = new TextDecoder()
+  let buf = ''
+
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+
+    const lines = buf.split('\n')
+    buf = lines.pop() || ''
+
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue
+      const p: ImportProgress = JSON.parse(line.slice(6))
+      if (p.phase === 'error') throw new Error(p.message || 'import failed')
+      onProgress?.(p)
+    }
+  }
 }
 
 export async function listUserTables(): Promise<UserTableMeta[]> {

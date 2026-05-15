@@ -23,7 +23,7 @@ func gzipMiddleware(next http.Handler) http.Handler {
 			return
 		}
 		// SSE 端点需要逐事件 flush，不能套 gzip 缓冲
-		if r.URL.Path == "/api/chat" {
+		if r.URL.Path == "/api/chat" || r.URL.Path == "/api/user-tables/create" {
 			next.ServeHTTP(w, r)
 			return
 		}

@@ -5,6 +5,7 @@ import {
   createTable,
   type PreviewResult,
   type ColumnInfo,
+  type ImportProgress,
 } from '../api/userTables'
 
 interface Props {
@@ -27,6 +28,7 @@ function sanitizeTableName(filename: string): string {
 export function ExcelUploadDialog({ open, onClose, onCreated }: Props) {
   const { t } = useT()
   const fileRef = useRef<HTMLInputElement>(null)
+  const abortRef = useRef<AbortController | null>(null)
   const [uploading, setUploading] = useState(false)
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
@@ -34,6 +36,7 @@ export function ExcelUploadDialog({ open, onClose, onCreated }: Props) {
   const [tableName, setTableName] = useState('')
   const [tableComment, setTableComment] = useState('')
   const [columns, setColumns] = useState<ColumnInfo[]>([])
+  const [progress, setProgress] = useState<ImportProgress | null>(null)
 
   const reset = useCallback(() => {
     setUploading(false)
@@ -43,6 +46,7 @@ export function ExcelUploadDialog({ open, onClose, onCreated }: Props) {
     setTableName('')
     setTableComment('')
     setColumns([])
+    setProgress(null)
   }, [])
 
   const handleClose = useCallback(() => {
@@ -89,23 +93,44 @@ export function ExcelUploadDialog({ open, onClose, onCreated }: Props) {
 
   const handleCreate = async () => {
     if (!preview || !tableName.trim()) return
+    const ac = new AbortController()
+    abortRef.current = ac
     setCreating(true)
     setError('')
+    setProgress(null)
     try {
-      await createTable({
-        file_key: preview.file_key,
-        table_name: tableName.trim(),
-        table_comment: tableComment.trim(),
-        columns,
-      })
+      await createTable(
+        {
+          file_key: preview.file_key,
+          table_name: tableName.trim(),
+          table_comment: tableComment.trim(),
+          columns,
+        },
+        (p) => setProgress(p),
+        ac.signal
+      )
       onCreated()
       handleClose()
     } catch (err: any) {
+      if (ac.signal.aborted) return
       setError(err.message || t('createError'))
     } finally {
+      abortRef.current = null
       setCreating(false)
+      setProgress(null)
     }
   }
+
+  const handleCancel = useCallback(() => {
+    if (creating && abortRef.current) {
+      abortRef.current.abort()
+      abortRef.current = null
+      setCreating(false)
+      setProgress(null)
+    } else {
+      handleClose()
+    }
+  }, [creating, handleClose])
 
   const typeOptions = (col: ColumnInfo) => {
     const opts = [...TYPE_OPTIONS]
@@ -117,7 +142,7 @@ export function ExcelUploadDialog({ open, onClose, onCreated }: Props) {
   if (!open) return null
 
   return (
-    <div className="knowledge-modal-overlay" onClick={handleClose}>
+    <div className="knowledge-modal-overlay" onClick={handleCancel}>
       <div
         className="knowledge-modal"
         style={{ width: preview ? 860 : 520 }}
@@ -262,8 +287,37 @@ export function ExcelUploadDialog({ open, onClose, onCreated }: Props) {
               </div>
             </div>
 
+            {creating && progress && (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 12, color: '#64748b', marginBottom: 6 }}>
+                  {progress.phase === 'reading' && '正在读取文件...'}
+                  {progress.phase === 'importing' && progress.total
+                    ? `正在导入 ${(progress.current ?? 0).toLocaleString()} / ${progress.total.toLocaleString()} 行`
+                    : progress.phase === 'importing' ? '正在导入...' : ''}
+                </div>
+                <div style={{ height: 6, background: '#e2e8f0', borderRadius: 3, overflow: 'hidden' }}>
+                  <div
+                    style={{
+                      height: '100%',
+                      borderRadius: 3,
+                      background: '#3b82f6',
+                      transition: 'width 0.3s',
+                      width: progress.phase === 'importing' && progress.total
+                        ? `${Math.round(((progress.current ?? 0) / progress.total) * 100)}%`
+                        : '0%',
+                    }}
+                  />
+                </div>
+                {progress.phase === 'importing' && progress.total ? (
+                  <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4, textAlign: 'right' }}>
+                    {Math.round(((progress.current ?? 0) / progress.total) * 100)}%
+                  </div>
+                ) : null}
+              </div>
+            )}
+
             <div className="knowledge-form-actions">
-              <button className="knowledge-btn-cancel" onClick={handleClose}>
+              <button className="knowledge-btn-cancel" onClick={handleCancel}>
                 {t('cancel')}
               </button>
               <button

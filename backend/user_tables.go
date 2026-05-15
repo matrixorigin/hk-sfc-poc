@@ -216,12 +216,8 @@ func (s *UserTableService) buildPreview(rows [][]string, sheetName string) (*Pre
 		return nil, fmt.Errorf("empty header row")
 	}
 
-	maxScan := 1000
 	dataRows := rows[1:]
 	scanRows := dataRows
-	if len(scanRows) > maxScan {
-		scanRows = scanRows[:maxScan]
-	}
 
 	colValues := make([][]string, len(headers))
 	for i := range headers {
@@ -337,6 +333,7 @@ func inferType(values []string) string {
 		"2006-01-02 15:04:05",
 		"2006/01/02 15:04:05",
 		"2006-01-02T15:04:05",
+		"02Jan2006:15:04:05",
 	}
 
 	for _, v := range values {
@@ -432,7 +429,58 @@ func sanitizeColumnName(name string) string {
 	return result
 }
 
-func (s *UserTableService) CreateTable(ctx context.Context, req *CreateTableRequest, userID string) error {
+var datetimeParseLayouts = []string{
+	"02Jan2006:15:04:05",
+	"2006-01-02 15:04:05",
+	"2006/01/02 15:04:05",
+	"2006-01-02T15:04:05",
+}
+
+var dateParseLayouts = []string{
+	"2006-01-02",
+	"2006/01/02",
+	"20060102",
+}
+
+func normalizeValue(val string, col ColumnInfo) string {
+	colType := strings.ToUpper(col.Type)
+	if colType == "" {
+		colType = strings.ToUpper(col.InferredType)
+	}
+	if colType == "DATETIME" {
+		for _, layout := range datetimeParseLayouts {
+			if t, err := time.Parse(layout, val); err == nil {
+				return t.Format("2006-01-02 15:04:05")
+			}
+		}
+		for _, layout := range dateParseLayouts {
+			if t, err := time.Parse(layout, val); err == nil {
+				return t.Format("2006-01-02 15:04:05")
+			}
+		}
+	} else if colType == "DATE" {
+		for _, layout := range datetimeParseLayouts {
+			if t, err := time.Parse(layout, val); err == nil {
+				return t.Format("2006-01-02")
+			}
+		}
+		for _, layout := range dateParseLayouts {
+			if t, err := time.Parse(layout, val); err == nil {
+				return t.Format("2006-01-02")
+			}
+		}
+	}
+	return val
+}
+
+type ImportProgress struct {
+	Phase   string `json:"phase"`
+	Current int    `json:"current"`
+	Total   int    `json:"total"`
+	Message string `json:"message,omitempty"`
+}
+
+func (s *UserTableService) CreateTable(ctx context.Context, req *CreateTableRequest, userID string, onProgress func(ImportProgress)) error {
 	if !validTableName.MatchString(req.TableName) {
 		return fmt.Errorf("invalid table name: must match %s", validTableName.String())
 	}
@@ -447,7 +495,9 @@ func (s *UserTableService) CreateTable(ctx context.Context, req *CreateTableRequ
 	if !ok {
 		return fmt.Errorf("file not found or expired (key: %s)", req.FileKey)
 	}
-	defer s.removeTempFile(req.FileKey)
+
+	s.db.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", escapeID(req.TableName)))
+	s.db.ExecContext(ctx, `DELETE FROM poc_user_tables WHERE table_name = ?`, req.TableName)
 
 	var ddl strings.Builder
 	fmt.Fprintf(&ddl, "CREATE TABLE %s (\n", escapeID(req.TableName))
@@ -474,7 +524,8 @@ func (s *UserTableService) CreateTable(ctx context.Context, req *CreateTableRequ
 		return fmt.Errorf("create table: %w", err)
 	}
 
-	rowCount, err := s.importData(ctx, req.TableName, req.Columns, filePath)
+	onProgress(ImportProgress{Phase: "reading", Message: "正在读取文件..."})
+	rowCount, err := s.importData(ctx, req.TableName, req.Columns, filePath, onProgress)
 	if err != nil {
 		_, _ = s.db.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", escapeID(req.TableName)))
 		return fmt.Errorf("import data: %w", err)
@@ -489,11 +540,12 @@ func (s *UserTableService) CreateTable(ctx context.Context, req *CreateTableRequ
 		return fmt.Errorf("register table: %w", err)
 	}
 
+	s.removeTempFile(req.FileKey)
 	log.Printf("user_tables: created %s (%d rows)", req.TableName, rowCount)
 	return nil
 }
 
-func (s *UserTableService) importData(ctx context.Context, tableName string, columns []ColumnInfo, filePath string) (int, error) {
+func (s *UserTableService) importData(ctx context.Context, tableName string, columns []ColumnInfo, filePath string, onProgress func(ImportProgress)) (int, error) {
 	rows, err := readFileRows(filePath)
 	if err != nil {
 		return 0, err
@@ -503,15 +555,22 @@ func (s *UserTableService) importData(ctx context.Context, tableName string, col
 	}
 
 	dataRows := rows[1:]
+	totalRows := len(dataRows)
 	colNames := make([]string, len(columns))
 	for i, c := range columns {
 		colNames[i] = escapeID(c.Name)
 	}
 
-	batchSize := 500
+	onProgress(ImportProgress{Phase: "importing", Current: 0, Total: totalRows})
+	log.Printf("user_tables: importing %d rows into %s", totalRows, tableName)
+
+	batchSize := 5000
 	total := 0
 
 	for start := 0; start < len(dataRows); start += batchSize {
+		if ctx.Err() != nil {
+			return total, fmt.Errorf("cancelled")
+		}
 		end := start + batchSize
 		if end > len(dataRows) {
 			end = len(dataRows)
@@ -532,7 +591,7 @@ func (s *UserTableService) importData(ctx context.Context, tableName string, col
 				if val == "" {
 					args = append(args, nil)
 				} else {
-					args = append(args, val)
+					args = append(args, normalizeValue(val, columns[j]))
 				}
 			}
 		}
@@ -547,6 +606,8 @@ func (s *UserTableService) importData(ctx context.Context, tableName string, col
 			return total, fmt.Errorf("batch insert at row %d: %w", start+1, err)
 		}
 		total += len(batch)
+		onProgress(ImportProgress{Phase: "importing", Current: total, Total: totalRows})
+		log.Printf("user_tables: %s progress %d/%d", tableName, total, totalRows)
 	}
 
 	return total, nil
