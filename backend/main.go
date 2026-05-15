@@ -297,6 +297,7 @@ func buildMOConfig(cfg *Config) *mysql.Config {
 	mysqlCfg.Addr = fmt.Sprintf("%s:%s", moHost, moPort)
 	mysqlCfg.DBName = dbName
 	mysqlCfg.AllowNativePasswords = true
+	mysqlCfg.AllowAllFiles = true
 	log.Printf("feedback db: connecting to MO as %s@%s:%s/%s", user, moHost, moPort, dbName)
 	return mysqlCfg
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"database/sql"
 	"encoding/csv"
@@ -15,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-sql-driver/mysql"
 	"golang.org/x/text/encoding/unicode"
 	"golang.org/x/text/transform"
 
@@ -563,59 +565,63 @@ func (s *UserTableService) importData(ctx context.Context, tableName string, col
 		colNames[i] = escapeID(c.Name)
 	}
 
-	onProgress(ImportProgress{Phase: "importing", Current: 0, Total: totalRows})
-	log.Printf("user_tables: importing %d rows into %s", totalRows, tableName)
+	onProgress(ImportProgress{Phase: "importing", Current: 0, Total: totalRows, Message: "正在准备数据..."})
+	log.Printf("user_tables: preparing %d rows for LOAD DATA into %s", totalRows, tableName)
 
-	batchSize := 60000 / len(columns)
-	if batchSize < 500 {
-		batchSize = 500
+	tmpFile, err := os.CreateTemp("", "loaddata-*.tsv")
+	if err != nil {
+		return 0, fmt.Errorf("create temp tsv: %w", err)
 	}
-	total := 0
+	tmpPath := tmpFile.Name()
+	defer os.Remove(tmpPath)
 
-	for start := 0; start < len(dataRows); start += batchSize {
+	w := bufio.NewWriterSize(tmpFile, 256*1024)
+	for i, row := range dataRows {
 		if ctx.Err() != nil {
-			return total, fmt.Errorf("cancelled")
+			tmpFile.Close()
+			return 0, fmt.Errorf("cancelled")
 		}
-		end := start + batchSize
-		if end > len(dataRows) {
-			end = len(dataRows)
-		}
-		batch := dataRows[start:end]
-
-		placeholders := make([]string, len(batch))
-		args := make([]any, 0, len(batch)*len(columns))
-
-		singleRow := "(" + strings.Repeat("?,", len(columns)-1) + "?)"
-		for i, row := range batch {
-			placeholders[i] = singleRow
-			for j := range columns {
-				val := ""
-				if j < len(row) {
-					val = strings.TrimSpace(row[j])
-				}
-				if val == "" {
-					args = append(args, nil)
-				} else {
-					args = append(args, normalizeValue(val, columns[j]))
-				}
+		for j := range columns {
+			if j > 0 {
+				w.WriteByte('\t')
+			}
+			val := ""
+			if j < len(row) {
+				val = strings.TrimSpace(row[j])
+			}
+			if val == "" {
+				w.WriteString("\\N")
+			} else {
+				val = normalizeValue(val, columns[j])
+				val = strings.ReplaceAll(val, "\\", "\\\\")
+				val = strings.ReplaceAll(val, "\t", "\\t")
+				val = strings.ReplaceAll(val, "\n", "\\n")
+				w.WriteString(val)
 			}
 		}
-
-		query := fmt.Sprintf("INSERT INTO %s (%s) VALUES %s",
-			escapeID(tableName),
-			strings.Join(colNames, ","),
-			strings.Join(placeholders, ","),
-		)
-
-		if _, err := s.db.ExecContext(ctx, query, args...); err != nil {
-			return total, fmt.Errorf("batch insert at row %d: %w", start+1, err)
+		w.WriteByte('\n')
+		if (i+1)%200000 == 0 {
+			onProgress(ImportProgress{Phase: "importing", Current: i + 1, Total: totalRows, Message: "正在准备数据..."})
 		}
-		total += len(batch)
-		onProgress(ImportProgress{Phase: "importing", Current: total, Total: totalRows})
-		log.Printf("user_tables: %s progress %d/%d", tableName, total, totalRows)
+	}
+	w.Flush()
+	tmpFile.Close()
+
+	onProgress(ImportProgress{Phase: "importing", Current: totalRows, Total: totalRows, Message: "正在导入数据库..."})
+	log.Printf("user_tables: LOAD DATA %s into %s", tmpPath, tableName)
+
+	mysql.RegisterLocalFile(tmpPath)
+	defer mysql.DeregisterLocalFile(tmpPath)
+
+	query := fmt.Sprintf("LOAD DATA LOCAL INFILE '%s' INTO TABLE %s FIELDS TERMINATED BY '\t' LINES TERMINATED BY '\n' (%s)",
+		tmpPath, escapeID(tableName), strings.Join(colNames, ","))
+
+	if _, err := s.db.ExecContext(ctx, query); err != nil {
+		return 0, fmt.Errorf("load data: %w", err)
 	}
 
-	return total, nil
+	log.Printf("user_tables: LOAD DATA complete, %d rows", totalRows)
+	return totalRows, nil
 }
 
 func (s *UserTableService) ListUserTables(ctx context.Context, userID string) ([]UserTableMeta, error) {
