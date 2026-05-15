@@ -75,6 +75,9 @@ services:
       CATALOG_URL: http://catalog:8081
       STATIC_DIR: /app/web/dist
       SERVER_PORT: "3000"
+    volumes:
+      - ./logs:/app/logs
+    command: sh -c './hk-poc-backend -config config.yaml 2>&1 | tee -a /app/logs/app.log'
     depends_on:
       - catalog
     extra_hosts:
