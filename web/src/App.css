@@ -1376,14 +1376,14 @@ body {
   padding: 4px 8px;
 }
 .cfs-mpill .sub {
-  padding: 4px 6px;
-  background: rgba(255, 255, 255, 0.18);
+  padding: 4px 7px;
+  background: rgba(255, 255, 255, 0.22);
   border-left: 1px solid rgba(255, 255, 255, 0.3);
   cursor: pointer;
   user-select: none;
-  font-size: 10px;
   display: inline-flex;
   align-items: center;
+  gap: 2px;
 }
 .cfs-mpill .axis {
   padding: 4px 6px;
@@ -1425,6 +1425,10 @@ body {
 .cfs-mpill.dashed:hover {
   border-color: #1a73e8;
   color: #1a73e8;
+}
+.cfs-mpill.line {
+  background: #0d9488;
+  border-color: #0d9488;
 }
 .cfs-mpill.dimmed {
   opacity: 0.5;

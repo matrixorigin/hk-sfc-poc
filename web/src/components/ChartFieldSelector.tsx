@@ -328,7 +328,7 @@ export function ChartFieldSelector({ result, spec, onChange }: ChartFieldSelecto
                 return (
                   <span
                     key={f}
-                    className={`cfs-mpill ${dimmed ? 'dimmed' : ''}`}
+                    className={`cfs-mpill ${chartType === 'combo' && sub === 'line' ? 'line' : ''} ${dimmed ? 'dimmed' : ''}`}
                     title={dimmed ? t('chartPieOnlyFirst') : undefined}
                   >
                     <span className="lbl">{formatColumnName(f)}</span>
@@ -338,7 +338,17 @@ export function ChartFieldSelector({ result, spec, onChange }: ChartFieldSelecto
                         onClick={() => handleToggleSubType(f)}
                         title={t('chartSubtypeToggleTitle')}
                       >
-                        {sub === 'bar' ? '▮' : '∿'}
+                        {sub === 'bar' ? (
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+                            <rect x="1" y="6" width="2.5" height="5" rx="0.5" />
+                            <rect x="4.75" y="3" width="2.5" height="8" rx="0.5" />
+                            <rect x="8.5" y="5" width="2.5" height="6" rx="0.5" />
+                          </svg>
+                        ) : (
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="1,9 4,5 7.5,7 11,2" />
+                          </svg>
+                        )}
                       </span>
                     )}
                     {!isPie && (
