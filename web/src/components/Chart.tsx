@@ -297,6 +297,7 @@ function defaultZoomStart(count: number): number {
 
 // ── X 轴 label 旋转 helpers ──
 function labelRotate(count: number, isDate: boolean, maxLen: number): number {
+  if (count <= 4) return 0
   if (isDate) return count > 30 ? 45 : 0
   if (maxLen <= 4 && count <= 12) return 0
   if (maxLen <= 8 && count <= 10) return 30
@@ -304,11 +305,11 @@ function labelRotate(count: number, isDate: boolean, maxLen: number): number {
 }
 
 function labelBottom(count: number, isDate: boolean, maxLen: number): number {
-  const r = labelRotate(count, isDate, maxLen)
+  const displayLen = Math.min(maxLen, 13)
+  const r = labelRotate(count, isDate, displayLen)
   if (r === 0) return 36
   if (r === 30) return 56
-  const truncated = Math.min(maxLen, 13)
-  return Math.min(120, 36 + truncated * 6)
+  return Math.min(100, 36 + displayLen * 5)
 }
 
 function buildYAxis(side: 'left' | 'right') {
@@ -325,16 +326,19 @@ function buildYAxis(side: 'left' | 'right') {
   }
 }
 
-function dataLabel(show: boolean, position: 'top' | 'right' | 'inside' = 'top') {
+function dataLabel(show: boolean, position: 'top' | 'right' | 'insideTop' = 'top') {
   if (!show) return { show: false }
+  const isInside = position === 'insideTop'
   return {
     show: true,
     fontSize: 10,
-    color: '#374151',
+    color: isInside ? '#fff' : '#374151',
     position,
-    distance: 12,
+    distance: isInside ? 4 : 12,
     overflow: 'truncate' as const,
     width: 120,
+    textShadowColor: isInside ? 'rgba(0,0,0,0.4)' : undefined,
+    textShadowBlur: isInside ? 2 : 0,
     formatter: (p: any) => {
       const v = typeof p.value === 'number' ? p.value : (Array.isArray(p.value) ? p.value[1] : p.value)
       const s = String(v ?? '')
@@ -512,7 +516,7 @@ function BarChart({
     ...(stackKey ? { stack: stackKey } : {}),
     yAxisIndex: !isHorizontal && hasSecondary && secondaryFieldNames.has(s.name) ? 1 : 0,
     xAxisIndex: isHorizontal && hasSecondary && secondaryFieldNames.has(s.name) ? 1 : 0,
-    label: dataLabel(showDataLabels, isHorizontal ? 'right' : 'top'),
+    label: dataLabel(showDataLabels, isHorizontal ? 'right' : 'insideTop'),
   }))
 
   const xIsDate = isDateLike(built.xData)
@@ -696,7 +700,7 @@ function ComboChart({
         : {}),
       itemStyle: { color: COLORS[idx % COLORS.length] },
       yAxisIndex: hasSecondary && yi.axis === 'secondary' ? 1 : 0,
-      label: dataLabel(showDataLabels),
+      label: dataLabel(showDataLabels, isLine ? 'top' : 'insideTop'),
     }
   })
 

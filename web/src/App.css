@@ -332,9 +332,6 @@ body {
   gap: 12px;
   margin-bottom: 20px;
   padding: 0 24px;
-  max-width: 900px;
-  margin-left: auto;
-  margin-right: auto;
   width: 100%;
 }
 
@@ -365,7 +362,8 @@ body {
 }
 
 .message-content {
-  max-width: 720px;
+  max-width: none;
+  flex: 1;
   min-width: 0;
 }
 
@@ -790,8 +788,6 @@ body {
 /* Table Selector */
 .table-selector {
   padding: 14px 24px 8px;
-  max-width: 900px;
-  margin: 0 auto;
   width: 100%;
 }
 
@@ -869,8 +865,6 @@ body {
   display: flex;
   gap: 10px;
   align-items: flex-end;
-  max-width: 900px;
-  margin: 0 auto;
   width: 100%;
 }
 
