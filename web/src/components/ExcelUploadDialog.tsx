@@ -195,7 +195,7 @@ export function ExcelUploadDialog({ open, onClose, onCreated }: Props) {
             ) : (
               <>
                 <div className="phase-spinner" style={{ marginBottom: 12 }} />
-                正在解析文件...
+                {t('parsing')}
               </>
             )}
           </div>
@@ -301,13 +301,14 @@ export function ExcelUploadDialog({ open, onClose, onCreated }: Props) {
               </div>
             </div>
 
-            {creating && progress && (
+            {creating && (
               <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 12, color: '#64748b', marginBottom: 6 }}>
-                  {progress.phase === 'reading' && '正在读取文件...'}
-                  {progress.phase === 'importing' && progress.total
+                  {!progress && t('creating')}
+                  {progress?.phase === 'reading' && '正在读取文件...'}
+                  {progress?.phase === 'importing' && progress.total
                     ? `正在导入 ${(progress.current ?? 0).toLocaleString()} / ${progress.total.toLocaleString()} 行`
-                    : progress.phase === 'importing' ? '正在导入...' : ''}
+                    : progress?.phase === 'importing' ? '正在导入...' : ''}
                 </div>
                 <div style={{ height: 6, background: '#e2e8f0', borderRadius: 3, overflow: 'hidden' }}>
                   <div
@@ -316,13 +317,13 @@ export function ExcelUploadDialog({ open, onClose, onCreated }: Props) {
                       borderRadius: 3,
                       background: '#3b82f6',
                       transition: 'width 0.3s',
-                      width: progress.phase === 'importing' && progress.total
+                      width: progress?.phase === 'importing' && progress.total
                         ? `${Math.round(((progress.current ?? 0) / progress.total) * 100)}%`
                         : '0%',
                     }}
                   />
                 </div>
-                {progress.phase === 'importing' && progress.total ? (
+                {progress?.phase === 'importing' && progress.total ? (
                   <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4, textAlign: 'right' }}>
                     {Math.round(((progress.current ?? 0) / progress.total) * 100)}%
                   </div>

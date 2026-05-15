@@ -132,7 +132,8 @@
   "cancel": "Cancel",
   "close": "Close",
   "creating": "Creating...",
-  "uploading": "Parsing...",
+  "uploading": "Uploading",
+  "parsing": "Parsing file...",
 
   "login": "Login",
   "register": "Register",

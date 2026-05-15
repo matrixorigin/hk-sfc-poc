@@ -132,7 +132,8 @@
   "cancel": "取消",
   "close": "关闭",
   "creating": "建表中...",
-  "uploading": "解析中...",
+  "uploading": "上传中",
+  "parsing": "正在解析文件...",
 
   "login": "登录",
   "register": "注册",
