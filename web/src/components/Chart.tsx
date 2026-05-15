@@ -304,13 +304,6 @@ function labelRotate(count: number, isDate: boolean, maxLen: number): number {
   return 45
 }
 
-function labelBottom(count: number, isDate: boolean, maxLen: number): number {
-  const displayLen = Math.min(maxLen, 13)
-  const r = labelRotate(count, isDate, displayLen)
-  if (r === 0) return 36
-  if (r === 30) return 56
-  return Math.min(100, 36 + displayLen * 5)
-}
 
 function compactNumber(v: number): string {
   const abs = Math.abs(v)
