@@ -10,9 +10,10 @@ interface TableInfo {
 interface TableSelectorProps {
   selected: string[]
   onChange: (tables: string[]) => void
+  refreshKey?: number
 }
 
-export function TableSelector({ selected, onChange }: TableSelectorProps) {
+export function TableSelector({ selected, onChange, refreshKey }: TableSelectorProps) {
   const { lang } = useT()
   const [tables, setTables] = useState<TableInfo[]>([])
 
@@ -21,7 +22,7 @@ export function TableSelector({ selected, onChange }: TableSelectorProps) {
       .then((r) => r.json())
       .then(setTables)
       .catch(() => {})
-  }, [])
+  }, [refreshKey])
 
   if (!tables.length) return null
 

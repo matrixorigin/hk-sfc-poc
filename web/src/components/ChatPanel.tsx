@@ -12,6 +12,7 @@ interface ChatPanelProps {
   onEnsureConversation: () => Promise<ConversationMeta>
   onNewChat: () => void
   onConversationTouched: () => void
+  tableRefreshKey?: number
 }
 
 // 客户端临时 id 前缀，便于在收到 message.created 后替换
@@ -22,6 +23,7 @@ export function ChatPanel({
   onEnsureConversation,
   onNewChat,
   onConversationTouched,
+  tableRefreshKey,
 }: ChatPanelProps) {
   const { t } = useT()
   const [messages, setMessages] = useState<Message[]>([])
@@ -222,7 +224,7 @@ export function ChatPanel({
       </div>
 
       <div className="input-section">
-        <TableSelector selected={selectedTables} onChange={setSelectedTables} />
+        <TableSelector selected={selectedTables} onChange={setSelectedTables} refreshKey={tableRefreshKey} />
         <div className="input-area">
           <button onClick={onNewChat} className="btn-new-chat">
             ✦ {t('newChat')}

@@ -14,9 +14,10 @@ import './UserTablePanel.css'
 interface Props {
   open: boolean
   onClose: () => void
+  onTablesChanged?: () => void
 }
 
-export function UserTablePanel({ open, onClose }: Props) {
+export function UserTablePanel({ open, onClose, onTablesChanged }: Props) {
   const { t } = useT()
   const [tables, setTables] = useState<UserTableMeta[]>([])
   const [loading, setLoading] = useState(false)
@@ -63,6 +64,7 @@ export function UserTablePanel({ open, onClose }: Props) {
     try {
       await deleteUserTable(name)
       await fetchTables()
+      onTablesChanged?.()
     } catch (err) {
       console.error('[UserTablePanel] delete error:', err)
     }
@@ -201,6 +203,7 @@ export function UserTablePanel({ open, onClose }: Props) {
         onCreated={() => {
           setShowUpload(false)
           fetchTables()
+          onTablesChanged?.()
         }}
       />
     </>

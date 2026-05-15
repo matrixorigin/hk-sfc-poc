@@ -61,6 +61,7 @@ function App() {
   const [knowledgeOpen, setKnowledgeOpen] = useState(false)
   const [analysisOpen, setAnalysisOpen] = useState(false)
   const [tableManageOpen, setTableManageOpen] = useState(false)
+  const [tableRefreshKey, setTableRefreshKey] = useState(0)
 
   useEffect(() => {
     if (user) {
@@ -187,13 +188,14 @@ function App() {
               onEnsureConversation={handleEnsureConversation}
               onNewChat={handleNewChat}
               onConversationTouched={refreshList}
+              tableRefreshKey={tableRefreshKey}
             />
           </main>
         </div>
       </div>
       <KnowledgePanel open={knowledgeOpen} onClose={() => setKnowledgeOpen(false)} />
       <AnalysisPanel open={analysisOpen} onClose={() => setAnalysisOpen(false)} />
-      <UserTablePanel open={tableManageOpen} onClose={() => setTableManageOpen(false)} />
+      <UserTablePanel open={tableManageOpen} onClose={() => setTableManageOpen(false)} onTablesChanged={() => setTableRefreshKey(k => k + 1)} />
     </LangContext.Provider>
   )
 }
