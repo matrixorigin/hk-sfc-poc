@@ -312,6 +312,15 @@ function labelBottom(count: number, isDate: boolean, maxLen: number): number {
   return Math.min(100, 36 + displayLen * 5)
 }
 
+function compactNumber(v: number): string {
+  const abs = Math.abs(v)
+  const sign = v < 0 ? '-' : ''
+  if (abs >= 1e12) return sign + (abs / 1e12).toFixed(1) + 'T'
+  if (abs >= 1e8) return sign + (abs / 1e8).toFixed(1) + '亿'
+  if (abs >= 1e4) return sign + (abs / 1e4).toFixed(1) + '万'
+  return v.toLocaleString()
+}
+
 function buildYAxis(side: 'left' | 'right') {
   return {
     type: 'value' as const,
@@ -320,7 +329,11 @@ function buildYAxis(side: 'left' | 'right') {
       side === 'left'
         ? { lineStyle: { color: '#f3f4f6', type: 'dashed' as const } }
         : { show: false },
-    axisLabel: { fontSize: 11, color: '#9ca3af' },
+    axisLabel: {
+      fontSize: 11,
+      color: '#9ca3af',
+      formatter: (v: number) => compactNumber(v),
+    },
     axisLine: { show: false },
     axisTick: { show: false },
   }
