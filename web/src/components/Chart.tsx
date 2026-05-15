@@ -325,6 +325,24 @@ function buildYAxis(side: 'left' | 'right') {
   }
 }
 
+function dataLabel(show: boolean, position: 'top' | 'right' | 'inside' = 'top') {
+  if (!show) return { show: false }
+  return {
+    show: true,
+    fontSize: 10,
+    color: '#374151',
+    position,
+    distance: 12,
+    overflow: 'truncate' as const,
+    width: 120,
+    formatter: (p: any) => {
+      const v = typeof p.value === 'number' ? p.value : (Array.isArray(p.value) ? p.value[1] : p.value)
+      const s = String(v ?? '')
+      return s.length > 14 ? s.slice(0, 12) + '…' : s
+    },
+  }
+}
+
 const chartWrapperStyle: React.CSSProperties = {
   marginTop: 12,
   padding: '12px 12px 4px',
@@ -378,9 +396,7 @@ function LineChart({
     lineStyle: { width: 2 },
     itemStyle: { color: COLORS[idx % COLORS.length] },
     yAxisIndex: hasSecondary && secondaryFieldNames.has(s.name) ? 1 : 0,
-    label: showDataLabels
-      ? { show: true, fontSize: 10, color: '#374151', position: 'top' as const, distance: 8 }
-      : { show: false },
+    label: dataLabel(showDataLabels),
   }))
 
   const needSlider = built.xData.length > 60
@@ -496,15 +512,7 @@ function BarChart({
     ...(stackKey ? { stack: stackKey } : {}),
     yAxisIndex: !isHorizontal && hasSecondary && secondaryFieldNames.has(s.name) ? 1 : 0,
     xAxisIndex: isHorizontal && hasSecondary && secondaryFieldNames.has(s.name) ? 1 : 0,
-    label: showDataLabels
-      ? {
-          show: true,
-          fontSize: 10,
-          color: '#374151',
-          position: (isHorizontal ? 'right' : 'top') as any,
-          distance: 8,
-        }
-      : { show: false },
+    label: dataLabel(showDataLabels, isHorizontal ? 'right' : 'top'),
   }))
 
   const xIsDate = isDateLike(built.xData)
@@ -688,9 +696,7 @@ function ComboChart({
         : {}),
       itemStyle: { color: COLORS[idx % COLORS.length] },
       yAxisIndex: hasSecondary && yi.axis === 'secondary' ? 1 : 0,
-      label: showDataLabels
-        ? { show: true, fontSize: 10, color: '#374151', position: 'top' as const, distance: 8 }
-        : { show: false },
+      label: dataLabel(showDataLabels),
     }
   })
 
