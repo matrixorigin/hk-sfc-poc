@@ -132,5 +132,21 @@
   "cancel": "Cancel",
   "close": "Close",
   "creating": "Creating...",
-  "uploading": "Parsing..."
+  "uploading": "Parsing...",
+
+  "login": "Login",
+  "register": "Register",
+  "username": "Username",
+  "password": "Password",
+  "confirmPassword": "Confirm Password",
+  "loginBtn": "Login",
+  "registerBtn": "Register",
+  "loginError": "Invalid username or password",
+  "registerError": "Registration failed",
+  "usernameHint": "3-32 characters, letters, numbers or underscore",
+  "passwordHint": "At least 6 characters",
+  "passwordMismatch": "Passwords do not match",
+  "usernameTaken": "Username already taken",
+  "logout": "Logout",
+  "welcomeUser": "Hi, {name}"
 }

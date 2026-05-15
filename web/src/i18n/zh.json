@@ -132,5 +132,21 @@
   "cancel": "取消",
   "close": "关闭",
   "creating": "建表中...",
-  "uploading": "解析中..."
+  "uploading": "解析中...",
+
+  "login": "登录",
+  "register": "注册",
+  "username": "用户名",
+  "password": "密码",
+  "confirmPassword": "确认密码",
+  "loginBtn": "登录",
+  "registerBtn": "注册",
+  "loginError": "用户名或密码错误",
+  "registerError": "注册失败",
+  "usernameHint": "3-32个字符，字母、数字或下划线",
+  "passwordHint": "至少6个字符",
+  "passwordMismatch": "两次密码不一致",
+  "usernameTaken": "用户名已被占用",
+  "logout": "退出",
+  "welcomeUser": "你好, {name}"
 }

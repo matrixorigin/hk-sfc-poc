@@ -7,6 +7,8 @@ import { Sidebar } from './components/Sidebar'
 import { KnowledgePanel } from './components/KnowledgePanel'
 import { AnalysisPanel } from './components/AnalysisPanel'
 import { UserTablePanel } from './components/UserTablePanel'
+import { LoginPage } from './components/LoginPage'
+import { getMe, logout } from './api/auth'
 import {
   listConversations,
   createConversation,
@@ -36,6 +38,23 @@ function App() {
     try { localStorage.setItem(LANG_STORAGE_KEY, lang) } catch { /* ignore */ }
   }, [lang])
 
+  const [user, setUser] = useState<string | null>(null)
+  const [authChecked, setAuthChecked] = useState(false)
+
+  useEffect(() => {
+    getMe().then(u => {
+      if (u) setUser(u.username)
+      setAuthChecked(true)
+    })
+  }, [])
+
+  const handleLogout = useCallback(async () => {
+    await logout()
+    setUser(null)
+    setConversations([])
+    setActiveId(null)
+  }, [])
+
   const [conversations, setConversations] = useState<ConversationMeta[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -43,12 +62,13 @@ function App() {
   const [analysisOpen, setAnalysisOpen] = useState(false)
   const [tableManageOpen, setTableManageOpen] = useState(false)
 
-  // 启动时从后端加载会话列表
   useEffect(() => {
-    listConversations()
-      .then(setConversations)
-      .catch((err) => console.error('[App] listConversations failed:', err))
-  }, [])
+    if (user) {
+      listConversations()
+        .then(setConversations)
+        .catch((err) => console.error('[App] listConversations failed:', err))
+    }
+  }, [user])
 
   const activeConv = conversations.find((c) => c.id === activeId) || null
 
@@ -96,6 +116,18 @@ function App() {
     return meta
   }, [activeConv])
 
+  if (!authChecked) {
+    return <div style={{ minHeight: '100vh', background: '#f5f6fa' }} />
+  }
+
+  if (!user) {
+    return (
+      <LangContext.Provider value={{ lang, setLang, t }}>
+        <LoginPage onLogin={(username) => setUser(username)} />
+      </LangContext.Provider>
+    )
+  }
+
   return (
     <LangContext.Provider value={{ lang, setLang, t }}>
       <div className="app">
@@ -131,6 +163,10 @@ function App() {
               onClick={() => setKnowledgeOpen(true)}
             >
               {t('knowledge')}
+            </button>
+            <span style={{ fontSize: 13, color: '#d0d5dd' }}>{user}</span>
+            <button className="lang-switch" onClick={handleLogout}>
+              {t('logout' as any)}
             </button>
             <LangSwitch />
           </div>
