@@ -108,11 +108,11 @@ func NewClarifier(catalogURL, apiKey, workspaceID, model string, db *Conversatio
 // 注意：Process 由 MessagesHandler 在「写当前 user message 之前」调用，
 // 因此 db.RecentUserQuestions 返回的历史天然不包含当前问题。
 // handler 负责在反问分支写 pending_clarify、在合并分支清 pending_clarify。
-func (c *Clarifier) Process(ctx context.Context, conversationID, question string) (finalQuestion string, clarifyReply string, err error) {
+func (c *Clarifier) Process(ctx context.Context, conversationID, userID, question string) (finalQuestion string, clarifyReply string, err error) {
 	var pendingQ string
 	var hist []string
 	if c.db != nil {
-		conv, dbErr := c.db.GetConversation(conversationID)
+		conv, dbErr := c.db.GetConversation(conversationID, userID)
 		if dbErr == nil && conv != nil {
 			pendingQ = conv.PendingClarify
 		}

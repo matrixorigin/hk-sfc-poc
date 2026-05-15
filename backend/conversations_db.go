@@ -118,6 +118,10 @@ CREATE TABLE IF NOT EXISTS messages (
 		log.Printf("warning: ensure metric_explanations column: %v (metric persistence will be skipped)", err)
 	}
 
+	if err := c.ensureColumn("conversations", "user_id", "VARCHAR(64) DEFAULT ''"); err != nil {
+		log.Printf("warning: ensure user_id column: %v", err)
+	}
+
 	return nil
 }
 
@@ -147,12 +151,12 @@ func (c *ConversationsDB) ensureColumn(table, column, colType string) error {
 // ---------- Conversation CRUD ----------
 
 // CreateConversation 插入空会话并返回 id。
-func (c *ConversationsDB) CreateConversation() (string, error) {
+func (c *ConversationsDB) CreateConversation(userID string) (string, error) {
 	id := newUUID()
 	now := time.Now().UnixMilli()
 	_, err := c.db.Exec(
-		`INSERT INTO conversations (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)`,
-		id, "", now, now,
+		`INSERT INTO conversations (id, title, user_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+		id, "", userID, now, now,
 	)
 	if err != nil {
 		return "", fmt.Errorf("insert conversation: %w", err)
@@ -160,10 +164,11 @@ func (c *ConversationsDB) CreateConversation() (string, error) {
 	return id, nil
 }
 
-// ListConversations 返回所有会话元信息，按 updated_at DESC。
-func (c *ConversationsDB) ListConversations() ([]ConversationMeta, error) {
+// ListConversations 返回指定用户的会话元信息，按 updated_at DESC。
+func (c *ConversationsDB) ListConversations(userID string) ([]ConversationMeta, error) {
 	rows, err := c.db.Query(
-		`SELECT id, title, created_at, updated_at FROM conversations ORDER BY updated_at DESC`,
+		`SELECT id, title, created_at, updated_at FROM conversations WHERE user_id = ? ORDER BY updated_at DESC`,
+		userID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("query conversations: %w", err)
@@ -184,8 +189,8 @@ func (c *ConversationsDB) ListConversations() ([]ConversationMeta, error) {
 	return out, rows.Err()
 }
 
-// GetConversation 返回单个会话，不存在时返回 (nil, nil)。
-func (c *ConversationsDB) GetConversation(id string) (*Conversation, error) {
+// GetConversation 返回单个会话，不存在或不属于该用户时返回 (nil, nil)。
+func (c *ConversationsDB) GetConversation(id, userID string) (*Conversation, error) {
 	var (
 		conv    Conversation
 		catalog sql.NullString
@@ -193,7 +198,7 @@ func (c *ConversationsDB) GetConversation(id string) (*Conversation, error) {
 	)
 	err := c.db.QueryRow(
 		`SELECT id, title, catalog_session_id, pending_clarify, created_at, updated_at
-		 FROM conversations WHERE id = ?`, id,
+		 FROM conversations WHERE id = ? AND user_id = ?`, id, userID,
 	).Scan(&conv.ID, &conv.Title, &catalog, &pending, &conv.CreatedAt, &conv.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -255,13 +260,18 @@ func (c *ConversationsDB) TouchUpdatedAt(id string) error {
 	return err
 }
 
-// DeleteConversation 级联删除会话及其消息。
-func (c *ConversationsDB) DeleteConversation(id string) error {
+// DeleteConversation 级联删除会话及其消息，需验证归属。
+func (c *ConversationsDB) DeleteConversation(id, userID string) error {
+	res, err := c.db.Exec(`DELETE FROM conversations WHERE id = ? AND user_id = ?`, id, userID)
+	if err != nil {
+		return fmt.Errorf("delete conversation: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("conversation not found")
+	}
 	if _, err := c.db.Exec(`DELETE FROM messages WHERE conversation_id = ?`, id); err != nil {
 		return fmt.Errorf("delete messages: %w", err)
-	}
-	if _, err := c.db.Exec(`DELETE FROM conversations WHERE id = ?`, id); err != nil {
-		return fmt.Errorf("delete conversation: %w", err)
 	}
 	return nil
 }

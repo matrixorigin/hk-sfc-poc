@@ -59,9 +59,9 @@ func (h *ConversationsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		// /api/conversations
 		switch r.Method {
 		case http.MethodGet:
-			h.list(w)
+			h.list(w, r)
 		case http.MethodPost:
-			h.create(w)
+			h.create(w, r)
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -72,7 +72,7 @@ func (h *ConversationsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		case http.MethodPatch:
 			h.updateTitle(w, r, convID)
 		case http.MethodDelete:
-			h.delete(w, convID)
+			h.delete(w, r, convID)
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -81,7 +81,7 @@ func (h *ConversationsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		// /api/conversations/{id}/messages
 		switch r.Method {
 		case http.MethodGet:
-			h.listMessages(w, convID)
+			h.listMessages(w, r, convID)
 		case http.MethodPost:
 			h.messages.HandleSend(w, r, convID)
 		default:
@@ -108,8 +108,9 @@ func (h *ConversationsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 	}
 }
 
-func (h *ConversationsHandler) list(w http.ResponseWriter) {
-	items, err := h.db.ListConversations()
+func (h *ConversationsHandler) list(w http.ResponseWriter, r *http.Request) {
+	userID := UserIDFromContext(r.Context())
+	items, err := h.db.ListConversations(userID)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("list: %v", err), http.StatusInternalServerError)
 		return
@@ -117,8 +118,9 @@ func (h *ConversationsHandler) list(w http.ResponseWriter) {
 	writeJSON(w, http.StatusOK, map[string]any{"conversations": items})
 }
 
-func (h *ConversationsHandler) create(w http.ResponseWriter) {
-	id, err := h.db.CreateConversation()
+func (h *ConversationsHandler) create(w http.ResponseWriter, r *http.Request) {
+	userID := UserIDFromContext(r.Context())
+	id, err := h.db.CreateConversation(userID)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("create: %v", err), http.StatusInternalServerError)
 		return
@@ -127,6 +129,16 @@ func (h *ConversationsHandler) create(w http.ResponseWriter) {
 }
 
 func (h *ConversationsHandler) updateTitle(w http.ResponseWriter, r *http.Request, id string) {
+	userID := UserIDFromContext(r.Context())
+	conv, err := h.db.GetConversation(id, userID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("get: %v", err), http.StatusInternalServerError)
+		return
+	}
+	if conv == nil {
+		http.Error(w, "conversation not found", http.StatusNotFound)
+		return
+	}
 	var req struct {
 		Title string `json:"title"`
 	}
@@ -141,17 +153,22 @@ func (h *ConversationsHandler) updateTitle(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *ConversationsHandler) delete(w http.ResponseWriter, id string) {
-	if err := h.db.DeleteConversation(id); err != nil {
+func (h *ConversationsHandler) delete(w http.ResponseWriter, r *http.Request, id string) {
+	userID := UserIDFromContext(r.Context())
+	if err := h.db.DeleteConversation(id, userID); err != nil {
+		if err.Error() == "conversation not found" {
+			http.Error(w, "conversation not found", http.StatusNotFound)
+			return
+		}
 		http.Error(w, fmt.Sprintf("delete: %v", err), http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *ConversationsHandler) listMessages(w http.ResponseWriter, id string) {
-	// 先确认会话存在
-	conv, err := h.db.GetConversation(id)
+func (h *ConversationsHandler) listMessages(w http.ResponseWriter, r *http.Request, id string) {
+	userID := UserIDFromContext(r.Context())
+	conv, err := h.db.GetConversation(id, userID)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("get: %v", err), http.StatusInternalServerError)
 		return
@@ -171,6 +188,17 @@ func (h *ConversationsHandler) listMessages(w http.ResponseWriter, id string) {
 // updateChartSpec 把用户在前端选的图表配置整体写入 messages.chart_spec。
 // Body 即完整 ChartSpec JSON；后端不解 schema，作为不透明 blob 存储。
 func (h *ConversationsHandler) updateChartSpec(w http.ResponseWriter, r *http.Request, convID, msgID string) {
+	userID := UserIDFromContext(r.Context())
+	conv, err := h.db.GetConversation(convID, userID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("get: %v", err), http.StatusInternalServerError)
+		return
+	}
+	if conv == nil {
+		http.Error(w, "conversation not found", http.StatusNotFound)
+		return
+	}
+
 	body, err := readBodyLimited(r, 16*1024)
 	if err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)

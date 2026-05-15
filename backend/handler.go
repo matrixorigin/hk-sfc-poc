@@ -53,7 +53,8 @@ func (h *MessagesHandler) HandleSend(w http.ResponseWriter, r *http.Request, con
 	}
 
 	// 1. 取 conversation
-	conv, err := h.db.GetConversation(conversationID)
+	userID := UserIDFromContext(r.Context())
+	conv, err := h.db.GetConversation(conversationID, userID)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("get conversation: %v", err), http.StatusInternalServerError)
 		return
@@ -87,7 +88,7 @@ func (h *MessagesHandler) HandleSend(w http.ResponseWriter, r *http.Request, con
 	processedQuestion := req.Question
 	var clarifyReply string
 	if h.clarify != nil {
-		finalQ, reply, err := h.clarify.Process(r.Context(), conversationID, processedQuestion)
+		finalQ, reply, err := h.clarify.Process(r.Context(), conversationID, userID, processedQuestion)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("clarify error: %v", err), http.StatusInternalServerError)
 			return
