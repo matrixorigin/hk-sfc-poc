@@ -566,7 +566,10 @@ func (s *UserTableService) importData(ctx context.Context, tableName string, col
 	onProgress(ImportProgress{Phase: "importing", Current: 0, Total: totalRows})
 	log.Printf("user_tables: importing %d rows into %s", totalRows, tableName)
 
-	batchSize := 50000
+	batchSize := 60000 / len(columns)
+	if batchSize < 500 {
+		batchSize = 500
+	}
 	total := 0
 
 	for start := 0; start < len(dataRows); start += batchSize {
