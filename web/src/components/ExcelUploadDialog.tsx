@@ -305,6 +305,7 @@ export function ExcelUploadDialog({ open, onClose, onCreated }: Props) {
               <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 12, color: '#64748b', marginBottom: 6 }}>
                   {!progress && t('creating')}
+                  {progress?.phase === 'preparing' && '正在准备...'}
                   {progress?.phase === 'reading' && '正在读取文件...'}
                   {progress?.phase === 'importing' && progress.total
                     ? `正在导入 ${(progress.current ?? 0).toLocaleString()} / ${progress.total.toLocaleString()} 行`

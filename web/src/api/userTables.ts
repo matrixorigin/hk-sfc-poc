@@ -66,7 +66,7 @@ export async function uploadPreview(
 }
 
 export interface ImportProgress {
-  phase: 'reading' | 'importing' | 'done' | 'error'
+  phase: 'preparing' | 'reading' | 'importing' | 'done' | 'error'
   current?: number
   total?: number
   message?: string

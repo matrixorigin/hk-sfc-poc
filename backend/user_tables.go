@@ -496,6 +496,8 @@ func (s *UserTableService) CreateTable(ctx context.Context, req *CreateTableRequ
 		return fmt.Errorf("file not found or expired (key: %s)", req.FileKey)
 	}
 
+	onProgress(ImportProgress{Phase: "preparing", Message: "正在准备..."})
+	log.Printf("user_tables: dropping old table %s if exists", req.TableName)
 	s.db.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", escapeID(req.TableName)))
 	s.db.ExecContext(ctx, `DELETE FROM poc_user_tables WHERE table_name = ?`, req.TableName)
 
