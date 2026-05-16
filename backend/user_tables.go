@@ -800,10 +800,18 @@ func (s *UserTableService) GetTableColumnsWithMeta(ctx context.Context, name str
 		if err := rows.Scan(&c.Name, &c.Type, &comment); err != nil {
 			return nil, err
 		}
+		if isInternalColumn(c.Name) {
+			continue
+		}
 		c.Comment = comment.String
 		cols = append(cols, c)
 	}
 	return cols, rows.Err()
+}
+
+func isInternalColumn(name string) bool {
+	name = strings.ToLower(strings.TrimSpace(name))
+	return name == "__mo_fake_pk_col" || strings.HasPrefix(name, "__mo_")
 }
 
 func escapeID(name string) string {

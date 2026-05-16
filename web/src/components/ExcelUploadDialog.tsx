@@ -14,7 +14,8 @@ interface Props {
   onCreated: () => void
 }
 
-const TYPE_OPTIONS = ['VARCHAR', 'BIGINT', 'DECIMAL(18,6)', 'DATE', 'DATETIME', 'TEXT']
+const DEFAULT_VARCHAR_TYPE = 'VARCHAR(255)'
+const TYPE_OPTIONS = [DEFAULT_VARCHAR_TYPE, 'BIGINT', 'DECIMAL(18,6)', 'DATE', 'DATETIME', 'TEXT']
 
 function sanitizeTableName(filename: string): string {
   return filename
@@ -67,7 +68,7 @@ export function ExcelUploadDialog({ open, onClose, onCreated }: Props) {
       setColumns(
         result.columns.map((c) => ({
           ...c,
-          type: c.inferred_type || 'VARCHAR',
+          type: c.inferred_type || DEFAULT_VARCHAR_TYPE,
         }))
       )
     } catch (err: any) {
@@ -247,7 +248,7 @@ export function ExcelUploadDialog({ open, onClose, onCreated }: Props) {
                         </td>
                         <td style={{ padding: '4px 8px' }}>
                           <select
-                            value={col.type || col.inferred_type || 'VARCHAR'}
+                            value={col.type || col.inferred_type || DEFAULT_VARCHAR_TYPE}
                             onChange={(e) => handleColumnType(i, e.target.value)}
                             style={{ padding: '4px 6px', border: '1px solid #e4e7ec', borderRadius: 6, fontSize: 12, background: '#f8fafc' }}
                           >
