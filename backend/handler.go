@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -88,7 +89,7 @@ func (h *MessagesHandler) HandleSend(w http.ResponseWriter, r *http.Request, con
 	processedQuestion := req.Question
 	var clarifyReply string
 	if h.clarify != nil {
-		finalQ, reply, err := h.clarify.Process(r.Context(), conversationID, userID, processedQuestion)
+		finalQ, reply, err := h.clarify.Process(r.Context(), conversationID, userID, processedQuestion, h.buildClarifyContext(r.Context(), req.Tables, userID))
 		if err != nil {
 			http.Error(w, fmt.Sprintf("clarify error: %v", err), http.StatusInternalServerError)
 			return
@@ -293,6 +294,103 @@ func (h *MessagesHandler) HandleSend(w http.ResponseWriter, r *http.Request, con
 		})
 	}
 	_ = h.db.TouchUpdatedAt(conversationID)
+}
+
+func (h *MessagesHandler) buildClarifyContext(ctx context.Context, selectedTables []string, userID string) *ClarifyContext {
+	if h.userTableSvc == nil {
+		return nil
+	}
+
+	scope := "全部表"
+	tableNames := selectedTables
+	if len(tableNames) > 0 {
+		scope = "用户选择的表"
+	} else {
+		tableNames = append([]string{}, h.cfg.Explore.Tables...)
+		if userNames, err := h.userTableSvc.GetUserTableNames(ctx, userID); err == nil {
+			tableNames = append(tableNames, userNames...)
+		}
+	}
+
+	seen := make(map[string]bool, len(tableNames))
+	caps := make([]ClarifyTableCapability, 0, len(tableNames))
+	for _, tableName := range tableNames {
+		tableName = strings.TrimSpace(tableName)
+		if tableName == "" || seen[tableName] {
+			continue
+		}
+		seen[tableName] = true
+
+		cols, err := h.userTableSvc.GetTableColumnsWithMeta(ctx, tableName)
+		if err != nil {
+			log.Printf("clarify: load table columns failed table=%s err=%v", tableName, err)
+			continue
+		}
+
+		entityFields, timeFields, metricFields := summarizeClarifyColumns(cols)
+		caps = append(caps, ClarifyTableCapability{
+			Name:         tableName,
+			Source:       clarifyTableSource(tableName),
+			EntityFields: entityFields,
+			TimeFields:   timeFields,
+			MetricFields: metricFields,
+		})
+	}
+
+	if len(caps) == 0 {
+		return nil
+	}
+	return &ClarifyContext{Scope: scope, Tables: caps}
+}
+
+func clarifyTableSource(tableName string) string {
+	if systemTables[tableName] {
+		return "system"
+	}
+	return "user"
+}
+
+func summarizeClarifyColumns(cols []ColumnInfo) (entityFields, timeFields, metricFields []string) {
+	for _, col := range cols {
+		label := clarifyColumnLabel(col)
+		text := strings.ToLower(col.Name + " " + col.Comment)
+		switch {
+		case clarifyContainsAny(text, []string{"stock", "stk", "sistkc", "security", "code", "company", "name", "participant", "broker", "industry", "sector", "股票", "代码", "证券", "公司", "名称", "简称", "参与者", "券商", "行业", "板块"}):
+			entityFields = appendClarifyLimited(entityFields, label, 8)
+		case clarifyContainsAny(text, []string{"date", "time", "timestamp", "year", "month", "quarter", "yr", "日期", "时间", "年度", "月份", "季度"}):
+			timeFields = appendClarifyLimited(timeFields, label, 6)
+		case clarifyContainsAny(text, []string{"open", "close", "high", "low", "price", "volume", "turnover", "market", "cap", "amount", "value", "holding", "percent", "ratio", "revenue", "profit", "开盘", "收盘", "最高", "最低", "价格", "成交", "市值", "金额", "持仓", "比例", "营收", "利润"}):
+			metricFields = appendClarifyLimited(metricFields, label, 8)
+		}
+	}
+	return entityFields, timeFields, metricFields
+}
+
+func clarifyColumnLabel(col ColumnInfo) string {
+	if strings.TrimSpace(col.Comment) == "" {
+		return col.Name
+	}
+	comment := strings.TrimSpace(col.Comment)
+	if len([]rune(comment)) > 24 {
+		comment = string([]rune(comment)[:24]) + "..."
+	}
+	return fmt.Sprintf("%s(%s)", col.Name, comment)
+}
+
+func clarifyContainsAny(text string, keywords []string) bool {
+	for _, keyword := range keywords {
+		if strings.Contains(text, keyword) {
+			return true
+		}
+	}
+	return false
+}
+
+func appendClarifyLimited(items []string, item string, limit int) []string {
+	if len(items) >= limit {
+		return items
+	}
+	return append(items, item)
 }
 
 // setCORSHeaders 沿用旧逻辑（供 ConversationsHandler 调用）。

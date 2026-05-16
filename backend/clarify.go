@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 )
 
 // followUpCheckPrompt 用于判断新问题是否是对历史问题的追问/修改。
@@ -32,8 +33,8 @@ const followUpCheckPrompt = `你是一个对话意图分类器。判断用户的
 - 是追问：{"is_follow_up": true}
 - 不是追问：{"is_follow_up": false}`
 
-// classifySystemPrompt 用于检查独立问题的参数完整性（不传历史）。
-const classifySystemPrompt = `你是香港证券市场数据分析平台的参数完整性检查器。
+// classifySystemPrompt 用于检查独立问题在当前数据上下文下是否足以进入查询规划。
+const classifySystemPrompt = `你是香港证券市场数据分析平台的查询准备检查器。
 
 系统背景：
 - 本平台专注于港交所（HKEX）上市证券的数据分析
@@ -41,21 +42,41 @@ const classifySystemPrompt = `你是香港证券市场数据分析平台的参�
 - 默认分析对象为恒生指数和港股主板股票
 
 你的职责：
-判断用户的提问是否包含执行查询所需的关键参数。仅在确实缺少必要参数时才反问，一次只问一个最关键的缺失参数。
+结合用户提问和当前数据上下文，判断这个问题是否足以进入查询规划。仅在确实缺少会导致无法形成合理查询计划的信息时才反问，一次只问一个最关键的问题。
 
-需要的关键参数：
-- 时间范围：指数分析、成交量统计、均线筛选、新闻异常检测、行业市值对比等场景需要
-- 股票标识：个股财务数据（营收、利润）查询需要股票代码或名称
-- 具体日期：CCASS持仓变动分析需要
+关键判断：
+- 时间范围：指数分析、成交量统计、均线筛选、新闻异常检测、行业市值对比等场景通常需要
+- 股票标识：可以是股票代码、公司名称、股票简称、英文名或中文名
+- 具体日期：CCASS持仓变动分析通常需要
+
+数据上下文原则：
+- 如果用户已选择数据表，优先依据这些表的字段语义判断
+- 如果当前数据范围中存在公司名称、股票名称、证券名称、英文名、中文名等实体字段，用户提供公司/股票名称就视为已提供股票标识
+- 不要为了把公司名称规范化成股票代码而反问
+- 当前阶段不负责验证实体是否唯一命中；不要因为公司名可能重名、简称可能不完整而提前反问
+- 用户给出了看起来具体的公司/股票名称时，应先放行给 Explore 查询；若查询后为空或多义，再由后续结果阶段处理
+- 只有当对象、时间或必要条件缺失到无法形成查询计划时才反问
+
+必须反问时间范围的需求场景：
+- 市场指数单日跌幅超过某阈值时的全市场成交量
+- 列出收盘价连续N个交易日高于N日移动均线的股票
+- 检测重大新闻公告发布前，成交量超过N日平均值若干倍的股票
+上述三类问题如果用户没有提供时间范围（如最近3个月、2025年全年、指定起止日期等），必须反问时间范围，不要直接放行。
 
 判断规则：
 - "今年"、"最近"、"上半年"、"Q1 2025"等表述视为已提供时间范围
 - "腾讯"、"00700"、"stock 88"等视为已提供股票标识
+- 即使你不认识某个公司名，也不要因为无法确认其股票代码而反问；只要它在问题中像一个具体公司/股票名称，就视为已提供对象
 - "市场指数"、"指数"默认指恒生指数（HSI），不需要追问具体是哪个指数
 - "全市场"、"市场总成交量"默认包含所有港股，不需要追问范围
 - "重大新闻"、"重大公告"已有明确定义（按新闻类型筛选），不需要追问如何定义
 - 闲聊或无法归类的问题视为参数齐全
 - 宁可放行让 Explore 引擎处理，也不要过度反问。只在关键参数明显缺失时才反问
+
+示例：
+- 问题："2025年1月，新华电源每日的开盘价、收盘价、最高价、最低价"，当前数据范围有"公司名称"和价格字段。应返回：{"complete": true}
+- 问题："2025年1月，每日的开盘价、收盘价、最高价、最低价"，没有说明股票、公司或指数对象。可以反问对象。
+- 问题："列出收盘价连续10个交易日高于50日移动均线的股票，并绘制图表。"，没有时间范围。应返回：{"complete": false, "reply": "请问要查询哪个时间范围？例如最近3个月、2025年全年或指定起止日期。"}
 
 仅返回 JSON，不要其他内容：
 - 参数齐全：{"complete": true}
@@ -76,6 +97,19 @@ const mergeSystemPrompt = `你是一个问题合并助手。用户之前问了�
 type ClarifyResult struct {
 	Complete bool   `json:"complete"`
 	Reply    string `json:"reply,omitempty"`
+}
+
+type ClarifyContext struct {
+	Scope  string
+	Tables []ClarifyTableCapability
+}
+
+type ClarifyTableCapability struct {
+	Name         string
+	Source       string
+	EntityFields []string
+	TimeFields   []string
+	MetricFields []string
 }
 
 // Clarifier 通过 Catalog LLM API 判断问题参数是否完整，并管理反问上下文。
@@ -108,7 +142,7 @@ func NewClarifier(catalogURL, apiKey, workspaceID, model string, db *Conversatio
 // 注意：Process 由 MessagesHandler 在「写当前 user message 之前」调用，
 // 因此 db.RecentUserQuestions 返回的历史天然不包含当前问题。
 // handler 负责在反问分支写 pending_clarify、在合并分支清 pending_clarify。
-func (c *Clarifier) Process(ctx context.Context, conversationID, userID, question string) (finalQuestion string, clarifyReply string, err error) {
+func (c *Clarifier) Process(ctx context.Context, conversationID, userID, question string, qctx *ClarifyContext) (finalQuestion string, clarifyReply string, err error) {
 	var pendingQ string
 	var hist []string
 	if c.db != nil {
@@ -138,7 +172,7 @@ func (c *Clarifier) Process(ctx context.Context, conversationID, userID, questio
 	}
 
 	// Step 3: 无状态参数检查（不传历史）
-	result := c.checkParams(ctx, question)
+	result := c.checkParams(ctx, question, qctx)
 	if result == nil {
 		return question, "", nil
 	}
@@ -189,8 +223,8 @@ func (c *Clarifier) isFollowUp(ctx context.Context, question string, history []s
 }
 
 // checkParams 调用 LLM 检查参数完整性（不传历史，独立评估）。
-func (c *Clarifier) checkParams(ctx context.Context, question string) *ClarifyResult {
-	content, err := c.callLLM(ctx, classifySystemPrompt, question)
+func (c *Clarifier) checkParams(ctx context.Context, question string, qctx *ClarifyContext) *ClarifyResult {
+	content, err := c.callLLM(ctx, classifySystemPrompt, buildClarifyUserContent(question, qctx))
 	if err != nil {
 		log.Printf("clarify: param check LLM error: %v", err)
 		return nil // 出错时放行
@@ -214,6 +248,48 @@ func (c *Clarifier) checkParams(ctx context.Context, question string) *ClarifyRe
 
 	log.Printf("clarify: missing params for question=%q, reply=%q", question, result.Reply)
 	return &result
+}
+
+func buildClarifyUserContent(question string, qctx *ClarifyContext) string {
+	if qctx == nil || len(qctx.Tables) == 0 {
+		return question
+	}
+
+	var sb strings.Builder
+	sb.WriteString("用户问题：")
+	sb.WriteString(question)
+	sb.WriteString("\n\n当前数据上下文：\n")
+	if qctx.Scope != "" {
+		sb.WriteString("查询范围：")
+		sb.WriteString(qctx.Scope)
+		sb.WriteString("\n")
+	}
+	for _, table := range qctx.Tables {
+		sb.WriteString("- ")
+		sb.WriteString(table.Name)
+		if table.Source != "" {
+			sb.WriteString("（")
+			sb.WriteString(table.Source)
+			sb.WriteString("）")
+		}
+		sb.WriteString("\n")
+		if len(table.EntityFields) > 0 {
+			sb.WriteString("  实体字段：")
+			sb.WriteString(strings.Join(table.EntityFields, "，"))
+			sb.WriteString("\n")
+		}
+		if len(table.TimeFields) > 0 {
+			sb.WriteString("  时间字段：")
+			sb.WriteString(strings.Join(table.TimeFields, "，"))
+			sb.WriteString("\n")
+		}
+		if len(table.MetricFields) > 0 {
+			sb.WriteString("  指标字段：")
+			sb.WriteString(strings.Join(table.MetricFields, "，"))
+			sb.WriteString("\n")
+		}
+	}
+	return sb.String()
 }
 
 // callLLM 调用 Catalog LLM chat completions API。
