@@ -13,6 +13,7 @@ services:
   mo:
     image: matrixorigin/matrixone:3.0.8
     container_name: hk-poc-mo
+    hostname: hk-poc-mo
     ports:
       - "16002:6001"
     volumes:

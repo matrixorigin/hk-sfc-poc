@@ -230,6 +230,10 @@ curl -s -N -X POST http://localhost:8083/api/chat \
 3. **不要手动 `ALTER ACCOUNT` 改密码** — 会导致 Catalog 连不上 workspace
 4. **不要用 sys 租户 (dump) 导入 hk_sfc 数据** — Explore 引擎看不到
 
+### MatrixOne hostname
+
+`docker-compose.yaml` 中 `mo` 服务必须保留固定的 `hostname: hk-poc-mo`。MatrixOne/Dragonboat 会把节点身份写入数据卷，断电或重建容器后如果容器内 hostname 变化，可能出现 `shard not bootstrapped` panic，导致 MO 无法用原 named volume 启动。
+
 ### 重启服务的正确方式
 
 ```bash
