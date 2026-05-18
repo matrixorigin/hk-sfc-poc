@@ -67,7 +67,7 @@ CREATE TABLE ms_v_stock_capital (
     STTNIS  BIGINT           NULL     COMMENT 'Total shares in issue (outstanding).',
     SICAP   DECIMAL(24,4)    NULL     COMMENT 'Market capitalization = SLCSE * STTNIS.',
     ref_date DATE             NULL     COMMENT 'Month-end reference date (standardized from SIRXDT). Use this column for date filtering and comparison.',
-    industry_name VARCHAR(100) NULL    COMMENT 'Industry classification at this month-end (carry-forward from ds_t_int_hsicl_dtl). Pre-computed.'
+    industry_name VARCHAR(100) NULL    COMMENT 'Industry classification at this month-end (strict as-of carry-forward from ds_t_int_hsicl_dtl where MODIFIED_DATE <= ref_date). NULL when no prior classification exists. Pre-computed.'
 );
 
 -- ============================================================

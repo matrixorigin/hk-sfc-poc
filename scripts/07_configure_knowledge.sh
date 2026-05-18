@@ -113,7 +113,7 @@ log "配置业务约束..."
 
 # --- 行业分类 ---
 add "logic" "industry_carry_forward" "Industry classification is pre-computed on ms_v_stock_capital" \
-  '"ms_v_stock_capital.industry_name is pre-computed from ds_t_int_hsicl_dtl (carry-forward: latest classification as of each month-end). For industry-level market cap analysis, use ms_v_stock_capital.industry_name directly — do NOT join ds_t_int_hsicl_dtl yourself."' \
+  '"ms_v_stock_capital.industry_name is pre-computed from ds_t_int_hsicl_dtl using strict as-of carry-forward: for each stock and month-end, it uses the latest classification with MODIFIED_DATE <= ref_date. If no prior classification exists, industry_name is NULL; do NOT use future classifications to fill earlier months. For industry-level market cap analysis, use ms_v_stock_capital.industry_name directly and add industry_name IS NOT NULL — do NOT join ds_t_int_hsicl_dtl yourself."' \
   '"ms_v_stock_capital","ds_t_int_hsicl_dtl"'
 
 add "logic" "industry_market_cap_metric_semantics" "Industry market cap means aggregate industry total unless average is explicit" \
