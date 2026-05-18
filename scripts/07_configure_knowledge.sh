@@ -116,6 +116,10 @@ add "logic" "industry_carry_forward" "Industry classification is pre-computed on
   '"ms_v_stock_capital.industry_name is pre-computed from ds_t_int_hsicl_dtl (carry-forward: latest classification as of each month-end). For industry-level market cap analysis, use ms_v_stock_capital.industry_name directly — do NOT join ds_t_int_hsicl_dtl yourself."' \
   '"ms_v_stock_capital","ds_t_int_hsicl_dtl"'
 
+add "logic" "industry_market_cap_metric_semantics" "Industry market cap means aggregate industry total unless average is explicit" \
+  '"For industry-level market cap analysis on ms_v_stock_capital, \"industry market cap / 行业市值 / total market cap by industry / aggregate market cap\" means the total market capitalization of all stocks in the industry: SUM(SICAP) grouped by industry_name. Use AVG(SICAP) only when the user explicitly asks for average market cap / 平均市值 / average stock market cap within each industry. Growth rate or change rate between two periods means endpoint comparison: (end_metric - start_metric) / start_metric using the two relevant month-end snapshots; do NOT compute a month-by-month LAG average unless the user explicitly asks for monthly average change."' \
+  '"ms_v_stock_capital"'
+
 # --- 新闻公告 ---
 add "logic" "material_news_typeid" "Material news typeid definition" \
   '"Material news (重大新闻/重大公告) in sehknews is defined as typeid IN (0, 3, 7, 8, 10, 14, 18, 21, 25, 26, 28, 32)."' \
@@ -239,9 +243,15 @@ log ""
 log "配置 fewshot 示例..."
 
 add "case_library" \
-  "哪些行业在某个时间段内的（平均）市值增长率最高/下降幅度最大？增长率=期末行业总市值vs期初总市值，取两个端点月末日期" \
+  "哪些行业在某个时间段内的总市值增长率最高/下降幅度最大？行业市值=行业内股票SICAP总和；增长率=期末行业总市值vs期初总市值，取两个端点月末日期" \
   "Industry market cap period comparison on ms_v_stock_capital" \
   '"SELECT industry_name, market_cap_start, market_cap_end, market_cap_change, ROUND(market_cap_change / market_cap_start * 100, 2) AS change_pct FROM (SELECT industry_name, SUM(CASE WHEN ref_date = '\''{{period_start}}'\'' THEN SICAP ELSE 0 END) AS market_cap_start, SUM(CASE WHEN ref_date = '\''{{period_end}}'\'' THEN SICAP ELSE 0 END) AS market_cap_end, SUM(CASE WHEN ref_date = '\''{{period_end}}'\'' THEN SICAP ELSE 0 END) - SUM(CASE WHEN ref_date = '\''{{period_start}}'\'' THEN SICAP ELSE 0 END) AS market_cap_change FROM ms_v_stock_capital WHERE ref_date IN ('\''{{period_start}}'\'', '\''{{period_end}}'\'') AND industry_name IS NOT NULL GROUP BY industry_name HAVING market_cap_start > 0 AND market_cap_end > 0) t ORDER BY change_pct DESC"' \
+  '"ms_v_stock_capital"'
+
+add "case_library" \
+  "哪些行业在某个时间段内的平均市值增长率最高/下降幅度最大？仅当用户明确说平均市值时使用；平均市值=行业内股票SICAP平均值；增长率=期末行业平均市值vs期初行业平均市值，取两个端点月末日期" \
+  "Industry average market cap period comparison on ms_v_stock_capital" \
+  '"SELECT industry_name, avg_market_cap_start, avg_market_cap_end, avg_market_cap_change, ROUND(avg_market_cap_change / avg_market_cap_start * 100, 2) AS change_pct FROM (SELECT industry_name, AVG(CASE WHEN ref_date = '\''{{period_start}}'\'' THEN SICAP END) AS avg_market_cap_start, AVG(CASE WHEN ref_date = '\''{{period_end}}'\'' THEN SICAP END) AS avg_market_cap_end, AVG(CASE WHEN ref_date = '\''{{period_end}}'\'' THEN SICAP END) - AVG(CASE WHEN ref_date = '\''{{period_start}}'\'' THEN SICAP END) AS avg_market_cap_change FROM ms_v_stock_capital WHERE ref_date IN ('\''{{period_start}}'\'', '\''{{period_end}}'\'') AND industry_name IS NOT NULL GROUP BY industry_name HAVING avg_market_cap_start IS NOT NULL AND avg_market_cap_end IS NOT NULL) t ORDER BY change_pct DESC"' \
   '"ms_v_stock_capital"'
 
 add "case_library" \
