@@ -191,6 +191,11 @@ add "logic" "consecutive_ma_dedup" "Deduplicate consecutive_above_ma queries to 
   '"When querying consecutive_above_ma3/ma20/ma50 columns, ALWAYS use ROW_NUMBER() OVER (PARTITION BY SISTKC ORDER BY consecutive_above_maX DESC, trade_date DESC) to deduplicate. Return only one row per stock (the peak streak). Without ROW_NUMBER, consecutive streak queries return one row per stock per day, causing massive result inflation."' \
   '"ms_t_stk_sis"'
 
+# --- 连续均线滚动窗口口径 ---
+add "logic" "consecutive_ma_recent_window_start" "Recent rolling-window MA streaks must start inside the window" \
+  '"For consecutive moving-average streak queries on ms_t_stk_sis (consecutive_above_ma3/ma20/ma50), when the user uses a recent/rolling time phrase such as 最近N天/最近N个月/近N日/过去N个月, the requested streak should be treated as a streak that starts within that recent window. Add consecutive_above_maX_start >= {{DATE_START}} in addition to trade_date between {{DATE_START}} and {{DATE_END}} and consecutive_above_maX >= threshold. This avoids returning streaks that began before the recent window but merely remained active inside it. For explicit broad fixed ranges such as 2025年3月至2026年3月, keep the standard peak-streak-in-range template unless the user explicitly says 起止都在/完整位于/形成于/发生在该区间内."' \
+  '"ms_t_stk_sis"'
+
 # --- 时间序列排序 ---
 add "logic" "time_series_order_by" "Time series SQL must ORDER BY the temporal column ASC" \
   '"When the SELECT list contains a date/time column (trade_date, fin_yr, holding_date, ref_date, announcement_date, timestamp, ym, month, year, etc.) AND the query returns multiple rows across time, the SQL MUST include ORDER BY <temporal_column> ASC as the final clause. This is NOT optional. A time series without ORDER BY returns rows in arbitrary/engine-dependent order, producing wrong visual trends in charts and confusing left-to-right reading in data tables. This is a correctness requirement, not an optimization. For comparison queries (self-JOIN, YoY, MoM), order by the CURRENT period'\''s temporal column (e.g. ORDER BY a.fin_yr ASC when a is the current row and b is the prior-period row). Note: this rule governs temporal sort. Whether to rank by a non-temporal metric and LIMIT is decided by list_vs_rank_semantics — if that rule says LIMIT N with ORDER BY metric DESC, that sort takes precedence and this rule does not apply."' \
