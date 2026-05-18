@@ -138,8 +138,8 @@ add "logic" "avg_vol_30d_definition" "avg_vol_30d matches customer Avg_Vol_30_Pr
   '"ms_t_stk_sis"'
 
 # --- CCASS ---
-add "logic" "ccass_participant_granularity" "CCASS must compare at participant level" \
-  '"ccass_holdings is at (holding_date, stock_code, participant_id) granularity. When analyzing broker movement or changes, always compare at participant_id level between two dates. Do NOT aggregate participants into stock-level totals."' \
+add "logic" "ccass_holding_change_dates" "CCASS holding changes compare available disclosure snapshots" \
+  '"ccass_holdings is snapshot data by available CCASS disclosure dates. holding_date values are discrete dates loaded in the table, not a continuous calendar. When analyzing broker holding changes or movements, compare snapshots at (stock_code, participant_id) granularity; do NOT aggregate participants into stock-level totals. If the user explicitly provides two dates, use those exact two dates as current and previous snapshots. If the user provides only one target date and asks for change/movement, resolve current_date as SELECT MAX(holding_date) FROM ccass_holdings WHERE holding_date <= target_date, and resolve previous_date as SELECT MAX(holding_date) FROM ccass_holdings WHERE holding_date < current_date. Do NOT use DATE_SUB(target_date, INTERVAL 1 DAY), and do NOT assume weekends, holidays, or non-loaded dates exist in ccass_holdings."' \
   '"ccass_holdings"'
 
 # --- 利润表 ---
@@ -245,9 +245,15 @@ add "case_library" \
   '"ms_v_stock_capital"'
 
 add "case_library" \
-  "CCASS broker holding change: compare date_T vs date_T_minus_1 at participant level, replace date placeholders with user-specified dates" \
-  "CCASS broker-level holding change between two dates" \
-  '"SELECT a.stock_code, a.participant_id, a.shareholding AS shares_day2, b.shareholding AS shares_day1, (a.shareholding - b.shareholding) / b.shareholding AS change_ratio FROM ccass_holdings a JOIN ccass_holdings b ON a.stock_code = b.stock_code AND a.participant_id = b.participant_id WHERE a.holding_date = '\''{{date_T}}'\'' AND b.holding_date = '\''{{date_T_minus_1}}'\'' AND b.shareholding > 0 AND ABS(a.shareholding - b.shareholding) / b.shareholding > 0.5"' \
+  "CCASS holding change when user provides one target date only. Resolve current snapshot as latest available holding_date <= target date, and previous snapshot as latest available holding_date before current snapshot. Replace {{target_date}} and {{threshold}} from the question." \
+  "CCASS broker-level holding change for one target date using previous available snapshot" \
+  '"WITH current_snapshot AS (SELECT MAX(holding_date) AS holding_date FROM ccass_holdings WHERE holding_date <= '\''{{target_date}}'\''), previous_snapshot AS (SELECT MAX(h.holding_date) AS holding_date FROM ccass_holdings h JOIN current_snapshot c ON h.holding_date < c.holding_date) SELECT a.stock_code, a.stock_name, a.participant_id, a.shareholding AS shares_day2, b.shareholding AS shares_day1, (a.shareholding - b.shareholding) / b.shareholding AS change_ratio FROM current_snapshot c JOIN previous_snapshot p ON p.holding_date IS NOT NULL JOIN ccass_holdings a ON a.holding_date = c.holding_date JOIN ccass_holdings b ON b.holding_date = p.holding_date AND a.stock_code = b.stock_code AND a.participant_id = b.participant_id WHERE b.shareholding > 0 AND ABS(a.shareholding - b.shareholding) / b.shareholding > {{threshold}}"' \
+  '"ccass_holdings"'
+
+add "case_library" \
+  "CCASS holding change when user explicitly provides two comparison dates using words like 相比/compare to/between. Replace {{current_date}}, {{previous_date}}, and {{threshold}} from the question. Use this template only when two concrete dates are present in the user question." \
+  "CCASS broker-level holding change between explicitly specified dates" \
+  '"SELECT a.stock_code, a.stock_name, a.participant_id, a.shareholding AS shares_day2, b.shareholding AS shares_day1, (a.shareholding - b.shareholding) / b.shareholding AS change_ratio FROM ccass_holdings a JOIN ccass_holdings b ON a.stock_code = b.stock_code AND a.participant_id = b.participant_id WHERE a.holding_date = '\''{{current_date}}'\'' AND b.holding_date = '\''{{previous_date}}'\'' AND b.shareholding > 0 AND ABS(a.shareholding - b.shareholding) / b.shareholding > {{threshold}}"' \
   '"ccass_holdings"'
 
 add "case_library" \
