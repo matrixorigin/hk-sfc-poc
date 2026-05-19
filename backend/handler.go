@@ -179,6 +179,7 @@ func (h *MessagesHandler) HandleSend(w http.ResponseWriter, r *http.Request, con
 	})
 
 	// 6. 构造上游 ExploreRequest
+	presentationContext := h.buildPresentationContext(conversationID)
 	exploreReq := &ExploreRequest{
 		Query: QueryDomain{Question: processedQuestion},
 		Session: SessionDomain{
@@ -216,7 +217,8 @@ func (h *MessagesHandler) HandleSend(w http.ResponseWriter, r *http.Request, con
 				EnableSummary:       true,
 			},
 		},
-		Trace: TraceOptions{Enabled: true},
+		Trace:               TraceOptions{Enabled: true},
+		PresentationContext: presentationContext,
 	}
 	if h.cfg.Explore.LLMModel != "" {
 		exploreReq.Options.LLM = &LLMConfig{Model: h.cfg.Explore.LLMModel}
@@ -242,6 +244,7 @@ func (h *MessagesHandler) HandleSend(w http.ResponseWriter, r *http.Request, con
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
 	var eventBuf strings.Builder
+	var presentationSourceMessageID string
 	for scanner.Scan() {
 		line := scanner.Text()
 		eventBuf.WriteString(line)
@@ -250,6 +253,9 @@ func (h *MessagesHandler) HandleSend(w http.ResponseWriter, r *http.Request, con
 		if strings.TrimSpace(line) == "" {
 			for _, parsed := range ParseSSEBlock(eventBuf.String()) {
 				for _, out := range ep.ProcessEvent(parsed) {
+					if sourceID := presentationSourceFromEvent(out); sourceID != "" {
+						presentationSourceMessageID = sourceID
+					}
 					_, _ = io.WriteString(w, FormatSSEEvent(out))
 					if canFlush {
 						flusher.Flush()
@@ -262,6 +268,9 @@ func (h *MessagesHandler) HandleSend(w http.ResponseWriter, r *http.Request, con
 	if eventBuf.Len() > 0 {
 		for _, parsed := range ParseSSEBlock(eventBuf.String()) {
 			for _, out := range ep.ProcessEvent(parsed) {
+				if sourceID := presentationSourceFromEvent(out); sourceID != "" {
+					presentationSourceMessageID = sourceID
+				}
 				_, _ = io.WriteString(w, FormatSSEEvent(out))
 				if canFlush {
 					flusher.Flush()
@@ -281,6 +290,15 @@ func (h *MessagesHandler) HandleSend(w http.ResponseWriter, r *http.Request, con
 	final.ID = assistantMsgID
 	final.ConversationID = conversationID
 	final.Role = "assistant"
+	if presentationSourceMessageID != "" {
+		if source, err := h.findMessage(conversationID, presentationSourceMessageID); err != nil {
+			log.Printf("presentation: load source message %s failed: %v", presentationSourceMessageID, err)
+		} else if source != nil {
+			final.SQLStatements = append([]string(nil), source.SQLStatements...)
+			final.SQLResults = append([]json.RawMessage(nil), source.SQLResults...)
+			final.MetricExplanations = append([]MetricDef(nil), source.MetricExplanations...)
+		}
+	}
 	// Status 已由 Finalize 根据事件推导
 	if err := h.db.PersistAssistantMessage(final); err != nil {
 		log.Printf("messages: persist assistant %s failed: %v", assistantMsgID, err)
@@ -294,6 +312,81 @@ func (h *MessagesHandler) HandleSend(w http.ResponseWriter, r *http.Request, con
 		})
 	}
 	_ = h.db.TouchUpdatedAt(conversationID)
+}
+
+func (h *MessagesHandler) buildPresentationContext(conversationID string) *PresentationContext {
+	msgs, err := h.db.ListMessages(conversationID)
+	if err != nil {
+		log.Printf("presentation: list messages failed: %v", err)
+		return nil
+	}
+	for i := len(msgs) - 1; i >= 0; i-- {
+		m := msgs[i]
+		if m.Role != "assistant" || len(m.SQLResults) == 0 {
+			continue
+		}
+		for j := len(m.SQLResults) - 1; j >= 0; j-- {
+			var result struct {
+				Columns       []string `json:"columns"`
+				Rows          [][]any  `json:"rows"`
+				TotalCount    int      `json:"total_count"`
+				RoundIndex    int      `json:"round_index"`
+				RoundQuestion string   `json:"round_question"`
+			}
+			if err := json.Unmarshal(m.SQLResults[j], &result); err != nil || len(result.Columns) == 0 {
+				continue
+			}
+			rowCount := result.TotalCount
+			if rowCount == 0 {
+				rowCount = len(result.Rows)
+			}
+			return &PresentationContext{
+				SupportedChartTypes: []string{"line", "bar", "hbar", "pie", "combo", "heatmap", "candlestick", "auto", "none"},
+				CurrentResult: &PresentationResultContext{
+					MessageID:     m.ID,
+					RoundIndex:    result.RoundIndex,
+					Columns:       result.Columns,
+					Rows:          result.Rows,
+					RowCount:      rowCount,
+					RoundQuestion: result.RoundQuestion,
+				},
+				CurrentChartSpec: m.ChartSpec,
+			}
+		}
+	}
+	return nil
+}
+
+func presentationSourceFromEvent(evt SSEEvent) string {
+	var wrapper struct {
+		Data struct {
+			SourceMessageID string `json:"source_message_id"`
+			TargetMessageID string `json:"target_message_id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(evt.Data), &wrapper); err != nil {
+		return ""
+	}
+	if evt.EventType == "presentation.result" {
+		return wrapper.Data.SourceMessageID
+	}
+	if evt.EventType == "presentation.patch" {
+		return wrapper.Data.TargetMessageID
+	}
+	return ""
+}
+
+func (h *MessagesHandler) findMessage(conversationID, messageID string) (*StoredMessage, error) {
+	msgs, err := h.db.ListMessages(conversationID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range msgs {
+		if msgs[i].ID == messageID {
+			return &msgs[i], nil
+		}
+	}
+	return nil, nil
 }
 
 func (h *MessagesHandler) buildClarifyContext(ctx context.Context, selectedTables []string, userID string) *ClarifyContext {

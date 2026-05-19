@@ -13,31 +13,6 @@ type SSEEvent struct {
 	Data      string
 }
 
-// ChartRecommendation is the chart.recommendation event payload.
-type ChartRecommendation struct {
-	ChartType   string          `json:"chart_type"`
-	X           *ChartAxisSpec  `json:"x,omitempty"`
-	Y           []ChartAxisSpec `json:"y,omitempty"`
-	DisplayMode string          `json:"display_mode,omitempty"`
-	RoundIndex  int             `json:"round_index"`
-}
-
-// ChartAxisSpec describes a chart axis.
-type ChartAxisSpec struct {
-	Field string `json:"field"`
-	Label string `json:"label"`
-	Type  string `json:"type,omitempty"`
-}
-
-// PresentationSpec mirrors the moi-core PresentationSpec.
-type PresentationSpec struct {
-	ChartType   string   `json:"chart_type"`
-	XField      string   `json:"x_field,omitempty"`
-	YFields     []string `json:"y_fields,omitempty"`
-	SeriesField string   `json:"series_field,omitempty"`
-	DisplayMode string   `json:"display_mode,omitempty"`
-}
-
 // SQLResultMeta stores metadata from sql.result events.
 type SQLResultMeta struct {
 	RoundIndex int
@@ -48,7 +23,7 @@ type SQLResultMeta struct {
 // 同时，EventProcessor 内嵌一个 MessageAggregate，在转发事件的同时把 assistant
 // message 的最终态聚合起来，供 handler 在 synthesis.done 之后落库。
 type EventProcessor struct {
-	presentation *PresentationSpec
+	presentation json.RawMessage
 	sqlResults   []SQLResultMeta
 	chartSent    bool
 	nextSeq      int
@@ -112,9 +87,8 @@ func (ep *EventProcessor) ProcessEvent(evt SSEEvent) []SSEEvent {
 }
 
 // extractChartFromSynthesis reads the grounded chart directive the synthesizer
-// emits in the synthesis.done payload. The synthesizer is the only source of
-// truth for chart recommendations: it sees the real SQL columns and picks
-// y_fields from them, so column-name mismatches cannot happen here.
+// emits in the synthesis.done payload. The backend keeps it as opaque JSON so
+// moi owns chart semantics and HK_POC only renders the agreed ChartSpec.
 func (ep *EventProcessor) extractChartFromSynthesis(data string) {
 	var wrapper struct {
 		Data json.RawMessage `json:"data"`
@@ -124,17 +98,15 @@ func (ep *EventProcessor) extractChartFromSynthesis(data string) {
 		return
 	}
 	var synthesis struct {
-		Chart *PresentationSpec `json:"chart"`
+		Chart json.RawMessage `json:"chart"`
 	}
 	if err := json.Unmarshal(wrapper.Data, &synthesis); err != nil {
 		log.Printf("[chart-debug] extractChartFromSynthesis: inner unmarshal failed: %v", err)
 		return
 	}
-	if synthesis.Chart != nil {
+	if len(synthesis.Chart) > 0 && string(synthesis.Chart) != "null" {
 		ep.presentation = synthesis.Chart
-		log.Printf("[chart-debug] extractChartFromSynthesis: chart_type=%s x=%s y=%v display=%s",
-			synthesis.Chart.ChartType, synthesis.Chart.XField,
-			synthesis.Chart.YFields, synthesis.Chart.DisplayMode)
+		log.Printf("[chart-debug] extractChartFromSynthesis: chart=%s", string(synthesis.Chart))
 	} else {
 		log.Printf("[chart-debug] extractChartFromSynthesis: synthesis.chart is nil (no directive emitted)")
 	}
@@ -161,31 +133,17 @@ func (ep *EventProcessor) buildChartRecommendation() *SSEEvent {
 		return nil
 	}
 
-	spec := ep.presentation
-	if spec == nil {
-		spec = &PresentationSpec{ChartType: "auto", DisplayMode: "both"}
+	var rec map[string]any
+	if len(ep.presentation) > 0 {
+		_ = json.Unmarshal(ep.presentation, &rec)
 	}
-	if spec.ChartType == "none" {
-		// Explicitly no chart — still send to tell frontend to suppress auto-chart
-		rec := ChartRecommendation{
-			ChartType:  "none",
-			RoundIndex: ep.sqlResults[len(ep.sqlResults)-1].RoundIndex,
+	if rec == nil {
+		rec = map[string]any{
+			"chart_type":   "auto",
+			"display_mode": "both",
 		}
-		dataBytes, _ := json.Marshal(rec)
-		return &SSEEvent{EventType: "chart.recommendation", Data: string(dataBytes)}
 	}
-
-	rec := ChartRecommendation{
-		ChartType:   spec.ChartType,
-		DisplayMode: spec.DisplayMode,
-		RoundIndex:  ep.sqlResults[len(ep.sqlResults)-1].RoundIndex,
-	}
-	if spec.XField != "" {
-		rec.X = &ChartAxisSpec{Field: spec.XField, Label: spec.XField, Type: "category"}
-	}
-	for _, yf := range spec.YFields {
-		rec.Y = append(rec.Y, ChartAxisSpec{Field: yf, Label: yf})
-	}
+	rec["round_index"] = ep.sqlResults[len(ep.sqlResults)-1].RoundIndex
 
 	envelope := map[string]any{
 		"event": "chart.recommendation",

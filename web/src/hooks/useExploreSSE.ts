@@ -1,5 +1,6 @@
 import { useRef, useCallback } from 'react'
-import type { ExploreEvent, SQLResult, Message, Phase } from '../types'
+import type { ExploreEvent, SQLResult, Message, Phase, ChartSpec } from '../types'
+import { normalizeChartSpec } from '../types'
 
 /**
  * Strip JSON wrapper from synthesis output.
@@ -46,9 +47,11 @@ interface UseExploreSSEOptions {
   onDone: () => void
   onError: (error: string) => void
   onMessageCreated: (userMsgId: string, assistantMsgId: string) => void
+  onMessageRemoved?: (assistantMsgId: string) => void
+  onPresentationResult?: (sourceMessageId: string, content: string, chartSpec: ChartSpec) => void
 }
 
-export function useExploreSSE({ onUpdate, onDone, onError, onMessageCreated }: UseExploreSSEOptions) {
+export function useExploreSSE({ onUpdate, onDone, onError, onMessageCreated, onMessageRemoved, onPresentationResult }: UseExploreSSEOptions) {
   const abortControllerRef = useRef<AbortController | null>(null)
 
   const send = useCallback(
@@ -109,7 +112,7 @@ export function useExploreSSE({ onUpdate, onDone, onError, onMessageCreated }: U
         onError(err?.message ?? 'Unknown error')
       }
     },
-    [onUpdate, onDone, onError, onMessageCreated]
+    [onUpdate, onDone, onError, onMessageCreated, onMessageRemoved, onPresentationResult]
   )
 
   /** Update phase and append to history (dedup) */
@@ -137,6 +140,13 @@ export function useExploreSSE({ onUpdate, onDone, onError, onMessageCreated }: U
       }
       case 'message.persisted': {
         // 后端已落库，前端无额外处理（日志即可）
+        break
+      }
+      case 'message.removed': {
+        const assistantId: string = event.data?.assistant_message_id ?? ''
+        if (assistantId && onMessageRemoved) {
+          onMessageRemoved(assistantId)
+        }
         break
       }
       case 'run.started': {
@@ -234,22 +244,25 @@ export function useExploreSSE({ onUpdate, onDone, onError, onMessageCreated }: U
         break
       }
       case 'chart.recommendation': {
-        const spec = event.data
+        const spec = normalizeChartSpec(event.data)
         if (spec) {
           onUpdate((msg) => {
             // 用户改过就不再覆盖
             if (msg.chartSpec?.user_edited) return msg
             return {
               ...msg,
-              chartSpec: {
-                chart_type: spec.chart_type ?? 'auto',
-                x: spec.x,
-                y: spec.y,
-                display_mode: spec.display_mode ?? 'both',
-                round_index: spec.round_index,
-              },
+              chartSpec: { ...spec, chart_type: spec.chart_type ?? 'auto', display_mode: spec.display_mode ?? 'both' },
             }
           })
+        }
+        break
+      }
+      case 'presentation.result': {
+        const sourceMessageId: string = event.data?.source_message_id ?? ''
+        const content: string = event.data?.content ?? ''
+        const chartSpec: ChartSpec | undefined = normalizeChartSpec(event.data?.chart_spec)
+        if (sourceMessageId && chartSpec && onPresentationResult) {
+          onPresentationResult(sourceMessageId, content, chartSpec)
         }
         break
       }

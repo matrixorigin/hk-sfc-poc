@@ -322,6 +322,11 @@ func (c *ConversationsDB) UpdateMessageStatus(id, status string) error {
 	return err
 }
 
+func (c *ConversationsDB) DeleteMessage(conversationID, messageID string) error {
+	_, err := c.db.Exec(`DELETE FROM messages WHERE id = ? AND conversation_id = ?`, messageID, conversationID)
+	return err
+}
+
 // UpdateMessageChartSpec 只更新 chart_spec 列，要求消息属于指定会话。
 // 返回受影响行数；调用方据此判断 404。
 func (c *ConversationsDB) UpdateMessageChartSpec(conversationID, messageID string, spec json.RawMessage) (int64, error) {

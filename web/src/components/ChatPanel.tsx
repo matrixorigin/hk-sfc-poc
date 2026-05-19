@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import type { Message, ConversationMeta } from '../types'
+import type { Message, ConversationMeta, ChartSpec } from '../types'
 import { fromStoredMessage } from '../types'
 import { useT } from '../i18n'
 import { useExploreSSE } from '../hooks/useExploreSSE'
@@ -17,6 +17,28 @@ interface ChatPanelProps {
 
 // 客户端临时 id 前缀，便于在收到 message.created 后替换
 const CLIENT_TEMP_PREFIX = 'client-temp-'
+
+function shouldDisplayMessage(message: Message): boolean {
+  if (message.role === 'user') return true
+  if (
+    message.content.trim() === 'Chart updated.' &&
+    !message.error &&
+    !message.isStreaming &&
+    message.sqlResults.length === 0 &&
+    message.sqlStatements.length === 0 &&
+    !message.chartSpec
+  ) {
+    return false
+  }
+  return Boolean(
+    message.content ||
+    message.error ||
+    message.isStreaming ||
+    message.sqlResults.length > 0 ||
+    message.sqlStatements.length > 0 ||
+    message.chartSpec
+  )
+}
 
 export function ChatPanel({
   conversation,
@@ -55,7 +77,7 @@ export function ChatPanel({
     listMessages(id)
       .then((stored) => {
         if (cancelled) return
-        setMessages(stored.map(fromStoredMessage))
+        setMessages(stored.map(fromStoredMessage).filter(shouldDisplayMessage))
         setIsLoading(false)
         streamingMsgIdRef.current = null
       })
@@ -125,7 +147,38 @@ export function ChatPanel({
     []
   )
 
-  const { send, cancel } = useExploreSSE({ onUpdate, onDone, onError, onMessageCreated })
+  const removeAssistantMessage = useCallback((assistantMsgId: string) => {
+    setMessages((prev) => prev.filter((m) => m.id !== assistantMsgId))
+  }, [])
+
+  const onPresentationResult = useCallback((sourceMessageId: string, content: string, chartSpec: ChartSpec) => {
+    const currentId = streamingMsgIdRef.current
+    if (!currentId) return
+    setMessages((prev) => {
+      const source = prev.find((m) => m.id === sourceMessageId)
+      return prev.map((m) =>
+        m.id === currentId
+          ? {
+              ...m,
+              content,
+              sqlResults: source?.sqlResults ? [...source.sqlResults] : m.sqlResults,
+              sqlStatements: source?.sqlStatements ? [...source.sqlStatements] : m.sqlStatements,
+              metricExplanations: source?.metricExplanations ? [...source.metricExplanations] : m.metricExplanations,
+              chartSpec: { ...chartSpec, user_edited: false },
+            }
+          : m
+      )
+    })
+  }, [])
+
+  const { send, cancel } = useExploreSSE({
+    onUpdate,
+    onDone,
+    onError,
+    onMessageCreated,
+    onMessageRemoved: removeAssistantMessage,
+    onPresentationResult,
+  })
 
   // 只在「新消息加入」或「文本内容增长」时滚动，避免修改图表配置等非新增变化把页面拽到底
   const scrollSig = messages

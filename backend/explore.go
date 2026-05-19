@@ -12,11 +12,12 @@ import (
 // --- 请求结构体（匹配 Catalog Explore API） ---
 
 type ExploreRequest struct {
-	Query       QueryDomain      `json:"query"`
-	Session     SessionDomain    `json:"session"`
-	DataSources DataSourceDomain `json:"data_sources"`
-	Options     ExploreOptions   `json:"options,omitempty"`
-	Trace       TraceOptions     `json:"trace,omitempty"`
+	Query               QueryDomain          `json:"query"`
+	Session             SessionDomain        `json:"session"`
+	DataSources         DataSourceDomain     `json:"data_sources"`
+	Options             ExploreOptions       `json:"options,omitempty"`
+	Trace               TraceOptions         `json:"trace,omitempty"`
+	PresentationContext *PresentationContext `json:"presentation_context,omitempty"`
 }
 
 type QueryDomain struct {
@@ -61,6 +62,21 @@ type LLMConfig struct {
 
 type TraceOptions struct {
 	Enabled bool `json:"enabled"`
+}
+
+type PresentationContext struct {
+	SupportedChartTypes []string                   `json:"supported_chart_types,omitempty"`
+	CurrentResult       *PresentationResultContext `json:"current_result,omitempty"`
+	CurrentChartSpec    json.RawMessage            `json:"current_chart_spec,omitempty"`
+}
+
+type PresentationResultContext struct {
+	MessageID     string   `json:"message_id,omitempty"`
+	RoundIndex    int      `json:"round_index,omitempty"`
+	Columns       []string `json:"columns,omitempty"`
+	Rows          [][]any  `json:"rows,omitempty"`
+	RowCount      int      `json:"row_count,omitempty"`
+	RoundQuestion string   `json:"round_question,omitempty"`
 }
 
 // --- 客户端 ---

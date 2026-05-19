@@ -34,6 +34,8 @@ func (a *MessageAggregate) Apply(evt SSEEvent) {
 		a.handleSQLResult(evt.Data)
 	case "chart.recommendation":
 		a.handleChartRecommendation(evt.Data)
+	case "presentation.result":
+		a.handlePresentationResult(evt.Data)
 	case "metric.explanations":
 		a.handleMetricExplanations(evt.Data)
 	case "synthesis.done":
@@ -87,8 +89,8 @@ func (a *MessageAggregate) handleSQLResult(data string) {
 		return
 	}
 	var payload struct {
-		SQL     string          `json:"sql"`
-		Columns []string        `json:"columns"`
+		SQL     string   `json:"sql"`
+		Columns []string `json:"columns"`
 	}
 	if err := json.Unmarshal(wrapper.Data, &payload); err != nil {
 		return
@@ -165,6 +167,25 @@ func (a *MessageAggregate) handleChartRecommendation(data string) {
 	}
 	if len(wrapper.Data) > 0 {
 		a.chartSpec = wrapper.Data
+	}
+}
+
+func (a *MessageAggregate) handlePresentationResult(data string) {
+	var wrapper struct {
+		Data struct {
+			Content   string          `json:"content"`
+			ChartSpec json.RawMessage `json:"chart_spec"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(data), &wrapper); err != nil {
+		log.Printf("[aggregate] presentation.result: unmarshal failed: %v", err)
+		return
+	}
+	if wrapper.Data.Content != "" {
+		a.content = wrapper.Data.Content
+	}
+	if len(wrapper.Data.ChartSpec) > 0 && string(wrapper.Data.ChartSpec) != "null" {
+		a.chartSpec = wrapper.Data.ChartSpec
 	}
 }
 

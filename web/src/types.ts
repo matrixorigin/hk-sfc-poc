@@ -50,6 +50,10 @@ export interface ChartSpec {
   round_index?: number
   // user_edited: 标记用户是否手动改过；前端用它阻止上游推荐覆盖用户选择。
   user_edited?: boolean
+
+  // Legacy shape emitted by older moi builds. Normalize at the boundary.
+  x_field?: string
+  y_fields?: string[]
 }
 
 export interface SQLResult {
@@ -131,8 +135,36 @@ export function fromStoredMessage(m: StoredMessage): Message {
     phase: m.status === 'done' ? 'done' : undefined,
     phaseHistory: m.phase_history as Phase[] | undefined,
     error: m.error,
-    chartSpec: m.chart_spec,
+    chartSpec: normalizeChartSpec(m.chart_spec),
     feedbackQuestion: m.feedback_question,
     metricExplanations: m.metric_explanations,
   }
+}
+
+export function normalizeChartSpec(spec?: ChartSpec): ChartSpec | undefined {
+  if (!spec) return undefined
+  const legacy = spec as ChartSpec & { x_field?: string; y_fields?: string[] }
+  const { x_field, y_fields, ...rest } = legacy
+  const normalized: ChartSpec = { ...rest }
+
+  if (!normalized.x && x_field) {
+    normalized.x = {
+      field: x_field,
+      label: x_field,
+      type: inferAxisType(x_field),
+    }
+  }
+  if ((!normalized.y || normalized.y.length === 0) && y_fields?.length) {
+    normalized.y = y_fields
+      .filter((field) => !!field)
+      .map((field) => ({ field, label: field, axis: 'primary' }))
+  }
+  return normalized
+}
+
+function inferAxisType(field: string): 'category' | 'time' {
+  const f = field.toLowerCase()
+  return f.includes('date') || f.includes('time') || f.includes('month') || f.includes('year')
+    ? 'time'
+    : 'category'
 }
