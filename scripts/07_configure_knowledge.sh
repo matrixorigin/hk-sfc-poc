@@ -3,7 +3,8 @@
 # 用法: bash scripts/07_configure_knowledge.sh
 #
 # 前置条件: Catalog 已启动, .env 中有 MOI_SYSTEM_API_KEY 和 POC_WORKSPACE_ID
-# 幂等: 先删除旧条目再重建
+# 幂等: 默认只删除本脚本托管的固定 knowledge_key 后重建，保留手工知识。
+# 如需完全重置知识库，显式执行: RESET_ALL=1 bash scripts/07_configure_knowledge.sh
 
 set -euo pipefail
 
@@ -15,6 +16,49 @@ CATALOG="http://localhost:8084"
 WS="$POC_WORKSPACE_ID"
 KEY="$MOI_SYSTEM_API_KEY"
 KB_ID=10001
+RESET_ALL="${RESET_ALL:-0}"
+
+MANAGED_KEYS=(
+  data_coverage_hsi
+  data_coverage_sis
+  data_coverage_capital
+  data_coverage_industry
+  data_coverage_news
+  data_coverage_profit
+  data_coverage_ccass
+  industry_carry_forward
+  industry_market_cap_metric_semantics
+  material_news_typeid
+  news_trade_date
+  news_dedup
+  news_volume_event_granularity
+  avg_vol_30d_definition
+  ccass_holding_change_dates
+  profit_loss_stock_code
+  profit_loss_period_comparison
+  hsi_daily_usage
+  date_boundary_constraint
+  date_boundary_capital_monthly
+  list_vs_rank_semantics
+  directional_filter_constraint
+  aggregate_with_filter_dimensions
+  consecutive_ma_dedup
+  consecutive_ma_recent_window_start
+  time_series_order_by
+  sql_dialect_matrixone
+  hk_stock_terminology
+  profit_loss_show_all_periods
+  profit_loss_currency
+  "哪些行业在某个时间段内的总市值增长率最高/下降幅度最大？行业市值=行业内股票SICAP总和；增长率=期末行业总市值vs期初总市值，取两个端点月末日期"
+  "哪些行业在某个时间段内的平均市值增长率最高/下降幅度最大？仅当用户明确说平均市值时使用；平均市值=行业内股票SICAP平均值；增长率=期末行业平均市值vs期初行业平均市值，取两个端点月末日期"
+  "CCASS holding change when user provides one target date only. Resolve current snapshot as latest available holding_date <= target date, and previous snapshot as latest available holding_date before current snapshot. Replace {{target_date}} and {{threshold}} from the question."
+  "CCASS holding change when user explicitly provides two comparison dates using words like 相比/compare to/between. Replace {{current_date}}, {{previous_date}}, and {{threshold}} from the question. Use this template only when two concrete dates are present in the user question."
+  "Annual YoY revenue/profit comparison (DEFAULT template — annual reports only). Replace {{company_name_column}} with company_name_sc / company_name_tc / company_name_en based on input language. Replace {{company}} with the company keyword from the question. Always use LIKE for fuzzy matching — never guess the full company name. Example: '360 LUDASHI HOLDINGS LIMITED' → company_name_en LIKE '%LUDASHI%'. Replace {{start_fin_yr}} with the first year's December in fin_yr format (e.g. 2022 → '202212') and {{end_fin_yr}} with the last year's December (e.g. 2024 → '202412'); both bounds are REQUIRED whenever the user specifies a year range, to avoid returning years the user did not ask about. IMPORTANT: this template filters quarter = 'Final' on both sides, which is the default for year/annual/yearly questions. If the user explicitly asks about interim/H1/半年/中期, change both quarter filters to 'Interim' instead."
+  "Detect abnormal volume on material news days — avg_vol_30d is previous up-to-30 trading days, current day excluded, min 20 valid observations; replace {{date_start}} and {{date_end}} with user-specified range"
+  "Monthly closing value and MoM change for an index — replace {{year_start}} and {{year_end}} with user-specified year range"
+  "Find ALL stocks whose peak consecutive days above MA reach a threshold (no LIMIT) — replace {{MA}} with 3/20/50, {{STREAK_THRESHOLD}} with minimum consecutive days (e.g. 10), {{DATE_START}} and {{DATE_END}} with the user-specified date range. {{STREAK_THRESHOLD}} is a filter threshold, NOT a result count limit. Do NOT add LIMIT unless the user explicitly asks for top N."
+  "Top K stocks by longest consecutive days above MA — use ONLY when user explicitly asks for top N / 前N / 排名前N / 最长的N只. Replace {{MA}} with 3/20/50, {{K}} with the requested count, {{DATE_START}}/{{DATE_END}} with the date range."
+)
 
 # DB 连接（自动获取 workspace 账号）
 MO_HOST="${MO_HOST:-127.0.0.1}"
@@ -56,14 +100,42 @@ add() {
 # ============================================================
 # Step 1: 清理旧条目
 # ============================================================
-log "清理旧条目..."
-existing=$(curl -s -X POST "$CATALOG/api/v1/workspaces/$WS/nl2sql-knowledge/list" \
+if [ "$RESET_ALL" = "1" ]; then
+  log "清理旧条目: RESET_ALL=1，删除知识库中所有条目..."
+else
+  log "清理旧条目: 仅删除本脚本托管的 ${#MANAGED_KEYS[@]} 个 knowledge_key，保留手工配置..."
+fi
+
+managed_keys_json=$(printf '%s\n' "${MANAGED_KEYS[@]}" | python3 -c "import sys,json; print(json.dumps([line.rstrip('\n') for line in sys.stdin]))")
+
+existing_resp=$(curl -s -X POST "$CATALOG/api/v1/workspaces/$WS/nl2sql-knowledge/list" \
   -H "X-API-Key: $KEY" -H "Content-Type: application/json" \
-  -d '{"page_size":100}' | python3 -c "
+  -d '{"page_size":100}')
+
+existing=$(MANAGED_KEYS_JSON="$managed_keys_json" RESET_ALL="$RESET_ALL" python3 -c "
+import json, os, sys
+data = json.load(sys.stdin)
+items = data.get('data', {}).get('items', [])
+managed = set(json.loads(os.environ.get('MANAGED_KEYS_JSON', '[]')))
+reset_all = os.environ.get('RESET_ALL') == '1'
+for item in items:
+    key = item.get('knowledge_key', '')
+    if reset_all or key in managed:
+        print(item['id'])
+" <<< "$existing_resp")
+
+preserved=$(MANAGED_KEYS_JSON="$managed_keys_json" RESET_ALL="$RESET_ALL" python3 -c "
 import sys,json
-items=json.load(sys.stdin).get('data',{}).get('items',[])
-for i in items: print(i['id'])
-" 2>/dev/null)
+import os
+data=json.load(sys.stdin)
+items=data.get('data',{}).get('items',[])
+managed=set(json.loads(os.environ.get('MANAGED_KEYS_JSON','[]')))
+reset_all=os.environ.get('RESET_ALL') == '1'
+if reset_all:
+    print(0)
+else:
+    print(sum(1 for item in items if item.get('knowledge_key','') not in managed))
+" <<< "$existing_resp")
 
 count=0
 for id in $existing; do
@@ -71,7 +143,11 @@ for id in $existing; do
     -H "X-API-Key: $KEY" > /dev/null
   count=$((count+1))
 done
-log "已删除 $count 条旧条目"
+if [ "$RESET_ALL" = "1" ]; then
+  log "已删除 $count 条旧条目"
+else
+  log "已删除 $count 条脚本托管旧条目，保留 $preserved 条手工条目"
+fi
 
 # ============================================================
 # Step 2: 数据范围（从数据库实时查询）

@@ -45,6 +45,49 @@ metrics:
       ) AS DATE)
     source: scripts/02_import_data.sh#L215-L217
 
+  - column: ms_v_stk_hsi_daily.trade_date
+    name: 恒指日线交易日期
+    explain: |
+      恒指日线表是从恒生指数原始行情表加工出的每日快照表。
+      每个交易日保留一行日线数据，日期来自原始恒指行情解析后的交易日期。
+      查询某一天、某个月或某个时间段的恒指日线数据时，会直接使用这张日线表。
+    code: |
+      CREATE TABLE ms_v_stk_hsi_daily AS
+      SELECT trade_date, HSHSI, HSFIN, HSUTL, HSPROP, HSCANI,
+             (HSHSI - LAG(HSHSI) OVER (ORDER BY trade_date))
+             / LAG(HSHSI) OVER (ORDER BY trade_date) * 100 AS hsi_pct_change
+      FROM ms_t_stk_hsi
+      WHERE CLOSING = 9
+      ORDER BY trade_date
+    source: scripts/02_import_data.sh#L474-L485
+
+  - column: ms_v_stk_hsi_daily.HSHSI
+    name: 恒指日线收盘值
+    explain: |
+      本列来自恒生指数原始行情表中的每日收盘记录。
+      导入时先把原始恒指行情日期解析为交易日期，再筛选每日收盘记录，
+      生成一张一日一行的恒指日线表，方便直接查询某天的恒生指数主指数。
+    code: |
+      CREATE TABLE ms_v_stk_hsi_daily AS
+      SELECT trade_date, HSHSI, HSFIN, HSUTL, HSPROP, HSCANI,
+             (HSHSI - LAG(HSHSI) OVER (ORDER BY trade_date))
+             / LAG(HSHSI) OVER (ORDER BY trade_date) * 100 AS hsi_pct_change
+      FROM ms_t_stk_hsi
+      WHERE CLOSING = 9
+      ORDER BY trade_date
+    source: scripts/02_import_data.sh#L474-L485
+
+  - column: ms_v_stk_hsi_daily.hsi_pct_change
+    name: 恒指日涨跌幅
+    explain: |
+      在恒指日线表中，按交易日期顺序计算当天恒生指数收盘值相对前一交易日的涨跌幅。
+      负数表示下跌，例如 -2.5 表示较前一交易日下跌 2.5%。
+      这让「恒指单日跌幅超过 2%」这类问题可以直接筛选本列。
+    code: |
+      (HSHSI - LAG(HSHSI) OVER (ORDER BY trade_date))
+      / LAG(HSHSI) OVER (ORDER BY trade_date) * 100 AS hsi_pct_change
+    source: scripts/02_import_data.sh#L478-L480
+
   - column: sehknews.trade_date
     name: 公告影响交易日
     explain: |

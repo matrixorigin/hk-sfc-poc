@@ -71,11 +71,12 @@ func LoadMetrics(path string) (*MetricRegistry, error) {
 	// 构建索引（指向 reg.all 的元素）
 	for i := range reg.all {
 		def := &reg.all[i]
-		reg.byFull[def.Column] = def
+		reg.byFull[strings.ToLower(def.Column)] = def
 		bare := def.Column
 		if idx := strings.LastIndex(bare, "."); idx >= 0 {
 			bare = bare[idx+1:]
 		}
+		bare = strings.ToLower(bare)
 		reg.byBare[bare] = append(reg.byBare[bare], def)
 		bareSet[bare] = true
 	}
@@ -101,6 +102,7 @@ func (r *MetricRegistry) MatchSQL(sql string) []MetricDef {
 	if r == nil || r.bareRegex == nil {
 		return nil
 	}
+	tables, aliases := extractSQLTables(sql)
 	hits := map[string]*MetricDef{}
 
 	// 第一遍：按 table.column 精确匹配，优先级最高
@@ -111,28 +113,34 @@ func (r *MetricRegistry) MatchSQL(sql string) []MetricDef {
 		}
 	}
 
-	// 第二遍：按 bare column 一次性正则扫
+	// 第二遍：按 alias.column / table.column 匹配，解决 SELECT t.ma_50 这类写法。
+	qualifiedRegex := regexp.MustCompile(`(?i)\b([a-z_][a-z0-9_]*)\.([a-z_][a-z0-9_]*)\b`)
+	for _, m := range qualifiedRegex.FindAllStringSubmatch(sql, -1) {
+		tableOrAlias := strings.ToLower(m[1])
+		column := strings.ToLower(m[2])
+		table := tableOrAlias
+		if resolved, ok := aliases[tableOrAlias]; ok {
+			table = resolved
+		}
+		if def, ok := r.byFull[table+"."+column]; ok {
+			hits[def.Column] = def
+		}
+	}
+
+	// 第三遍：按 bare column 扫，但只保留本 SQL 实际引用表上的定义。
+	// 这避免 trade_date 一命中就把个股、恒指、公告三张表的解释都展示出来。
 	matches := r.bareRegex.FindAllString(sql, -1)
 	for _, m := range matches {
 		bare := strings.ToLower(m)
-		// byBare 的 key 与原始 yaml 中的列名（已小写）保持一致
-		// 但 yaml 列名大小写敏感，因此先用原大小写查；找不到则统一小写再查
-		defs, ok := r.byBare[m]
-		if !ok {
-			// 按原始 key 大小写匹配（如 ma_3）
-			for k, v := range r.byBare {
-				if strings.EqualFold(k, bare) {
-					defs = v
-					ok = true
-					break
-				}
-			}
-		}
+		defs, ok := r.byBare[bare]
 		if !ok {
 			continue
 		}
-		// 同名列出现在多个表时，全部加入（无法从 SQL 文本判定具体哪张表，保守取并集）
-		for _, d := range defs {
+		scoped := filterDefsByTables(defs, tables)
+		if len(scoped) == 0 {
+			continue
+		}
+		for _, d := range scoped {
 			hits[d.Column] = d
 		}
 	}
@@ -146,23 +154,19 @@ func (r *MetricRegistry) MatchColumns(cols []string) []MetricDef {
 	if r == nil {
 		return nil
 	}
+	return r.matchColumnsScoped(cols, nil)
+}
+
+func (r *MetricRegistry) matchColumnsScoped(cols []string, tables map[string]bool) []MetricDef {
 	hits := map[string]*MetricDef{}
 	for _, c := range cols {
 		// 优先精确 bare 匹配
-		if defs, ok := r.byBare[c]; ok {
-			for _, d := range defs {
-				hits[d.Column] = d
+		if defs, ok := r.byBare[strings.ToLower(c)]; ok {
+			scoped := filterDefsByTables(defs, tables)
+			if len(scoped) == 1 {
+				hits[scoped[0].Column] = scoped[0]
 			}
 			continue
-		}
-		// 不区分大小写
-		for k, v := range r.byBare {
-			if strings.EqualFold(k, c) {
-				for _, d := range v {
-					hits[d.Column] = d
-				}
-				break
-			}
 		}
 	}
 	return collectSorted(hits)
@@ -173,11 +177,12 @@ func (r *MetricRegistry) MatchSQLAndColumns(sql string, cols []string) []MetricD
 	if r == nil {
 		return nil
 	}
+	tables, _ := extractSQLTables(sql)
 	merged := map[string]MetricDef{}
 	for _, m := range r.MatchSQL(sql) {
 		merged[m.Column] = m
 	}
-	for _, m := range r.MatchColumns(cols) {
+	for _, m := range r.matchColumnsScoped(cols, tables) {
 		merged[m.Column] = m
 	}
 	if len(merged) == 0 {
@@ -205,4 +210,53 @@ func collectSorted(hits map[string]*MetricDef) []MetricDef {
 
 func containsFold(s, sub string) bool {
 	return strings.Contains(strings.ToLower(s), strings.ToLower(sub))
+}
+
+func metricTable(column string) string {
+	if idx := strings.LastIndex(column, "."); idx >= 0 {
+		return strings.ToLower(column[:idx])
+	}
+	return ""
+}
+
+func filterDefsByTables(defs []*MetricDef, tables map[string]bool) []*MetricDef {
+	if len(defs) == 0 {
+		return nil
+	}
+	if len(tables) == 0 {
+		if len(defs) == 1 {
+			return defs
+		}
+		return nil
+	}
+	out := make([]*MetricDef, 0, len(defs))
+	for _, d := range defs {
+		if tables[metricTable(d.Column)] {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+func extractSQLTables(sql string) (map[string]bool, map[string]string) {
+	tables := map[string]bool{}
+	aliases := map[string]string{}
+	re := regexp.MustCompile(`(?i)\b(from|join|update|into)\s+([a-z_][a-z0-9_]*)(?:\s+(?:as\s+)?([a-z_][a-z0-9_]*))?`)
+	stopWords := map[string]bool{
+		"where": true, "join": true, "on": true, "group": true, "order": true,
+		"having": true, "limit": true, "left": true, "right": true, "inner": true,
+		"outer": true, "cross": true, "full": true, "set": true, "values": true,
+	}
+	for _, m := range re.FindAllStringSubmatch(sql, -1) {
+		table := strings.ToLower(m[2])
+		tables[table] = true
+		aliases[table] = table
+		if len(m) > 3 && m[3] != "" {
+			alias := strings.ToLower(m[3])
+			if !stopWords[alias] {
+				aliases[alias] = table
+			}
+		}
+	}
+	return tables, aliases
 }

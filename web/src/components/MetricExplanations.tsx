@@ -23,7 +23,7 @@ export function MetricExplanations({ items }: Props) {
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M9 18l6-6-6-6"/>
         </svg>
-        本次查询涉及 {items.length} 个预计算字段
+        本次查询使用了 {items.length} 项数据加工
         <span className={`metric-toggle-arrow ${open ? 'open' : ''}`}>▾</span>
       </button>
 
@@ -54,12 +54,12 @@ export function MetricExplanations({ items }: Props) {
                 </div>
 
                 <div className="metric-section">
-                  <div className="metric-section-label">📖 怎么算</div>
+                  <div className="metric-section-label">计算口径</div>
                   <div className="metric-explain">{it.explain}</div>
                 </div>
 
                 <div className="metric-section">
-                  <div className="metric-section-label">🧩 核心代码</div>
+                  <div className="metric-section-label">核心代码</div>
                   <pre className="metric-code"><code>{it.code}</code></pre>
                 </div>
               </div>
