@@ -12,7 +12,7 @@
   "welcomeTitle": "Hong Kong Market Data Explorer",
   "welcomeDesc": "Ask questions about stock prices, market indices, industry classifications, news, and financial statements in natural language.",
   "example1": "In H1 2025, on days when HSI dropped over 2%, what was the total market trading volume?",
-  "example2": "Which 3 industries saw the largest market cap decline in H1 2025?",
+  "example2": "In H1 2025, list the 3 industries with the lowest aggregate market cap change.",
   "example3": "List stocks that closed above their 50-day moving average for 10 consecutive days in Q1 2025",
   "example4": "Detect stocks with volume exceeding 3x Avg_Vol_30_Pre on material-news event trading days in Q1 2025",
   "noConversations": "No conversations yet",

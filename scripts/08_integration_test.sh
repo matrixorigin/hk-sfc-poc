@@ -154,7 +154,7 @@ log "========== Batch 3: 前端示例-英文 (并发) =========="
 # ============================================================
 
 fire "fe-en-1" "In April 2025, which top 20 stocks had the highest volume when HSI dropped over 2%?" &
-fire "fe-en-2" "Which 3 industries saw the largest market cap decline in H1 2025?" &
+fire "fe-en-2" "In H1 2025, list the 3 industries with the lowest aggregate market cap change." &
 fire "fe-en-3" "List stocks above 50-day moving average for 10 consecutive days in Q1 2025" &
 fire "fe-en-4" "Show revenue growth of stock 88 from 2023 to 2025" &
 
@@ -163,7 +163,7 @@ wait
 log "Batch 3 完成"
 
 check "FE-EN-1: HSI volume" "fe-en-1" "" && PASS=$((PASS+1)) || FAIL=$((FAIL+1))
-check "FE-EN-2: Industry decline" "fe-en-2" "" && PASS=$((PASS+1)) || FAIL=$((FAIL+1))
+check "FE-EN-2: Industry market cap change" "fe-en-2" "" && PASS=$((PASS+1)) || FAIL=$((FAIL+1))
 check "FE-EN-3: 50-day MA" "fe-en-3" "" && PASS=$((PASS+1)) || FAIL=$((FAIL+1))
 check "FE-EN-4: Revenue" "fe-en-4" "" && PASS=$((PASS+1)) || FAIL=$((FAIL+1))
 
@@ -173,7 +173,7 @@ log "========== Batch 4: 前端示例-中文 (并发) =========="
 # ============================================================
 
 fire "fe-cn-1" "2025年4月恒指跌幅超过2%时，成交量最大的20只股票是哪些？" &
-fire "fe-cn-2" "2025年上半年哪三个行业的总市值下降幅度最大？" &
+fire "fe-cn-2" "2025年上半年，按总市值变化量升序排列，前三个行业是哪些？" &
 fire "fe-cn-3" "2025年一季度有哪些股票连续10天收盘价高于50日均线？" &
 fire "fe-cn-4" "股票88从2023年到2025年的营收增长情况" &
 
@@ -182,7 +182,7 @@ wait
 log "Batch 4 完成"
 
 check "FE-CN-1: 恒指成交量" "fe-cn-1" "" && PASS=$((PASS+1)) || FAIL=$((FAIL+1))
-check "FE-CN-2: 行业下降" "fe-cn-2" "" && PASS=$((PASS+1)) || FAIL=$((FAIL+1))
+check "FE-CN-2: 行业市值变化" "fe-cn-2" "" && PASS=$((PASS+1)) || FAIL=$((FAIL+1))
 check "FE-CN-3: 均线" "fe-cn-3" "" && PASS=$((PASS+1)) || FAIL=$((FAIL+1))
 check "FE-CN-4: 营收" "fe-cn-4" "" && PASS=$((PASS+1)) || FAIL=$((FAIL+1))
 
