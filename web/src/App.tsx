@@ -17,6 +17,10 @@ import {
 import './App.css'
 
 const LANG_STORAGE_KEY = 'hk-poc.lang'
+const USER_MANUAL_URLS: Record<Language, string> = {
+  zh: '/docs/hk-market-data-explorer-user-manual-zh.pdf',
+  en: '/docs/hk-market-data-explorer-user-manual-en.pdf',
+}
 
 function initialLang(): Language {
   try {
@@ -146,7 +150,7 @@ function App() {
               <div className="header-subtitle">{t('subtitle')}</div>
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div className="header-actions">
             <button
               className="lang-switch"
               onClick={() => setTableManageOpen(true)}
@@ -165,6 +169,15 @@ function App() {
             >
               {t('knowledge')}
             </button>
+            <a
+              className="lang-switch header-download-link"
+              href={USER_MANUAL_URLS[lang]}
+              download={t('userManualFileName')}
+              aria-label={t('downloadUserManual')}
+              title={t('downloadUserManual')}
+            >
+              {t('userManual')}
+            </a>
             <span style={{ fontSize: 13, color: '#d0d5dd' }}>{user}</span>
             <button className="lang-switch" onClick={handleLogout}>
               {t('logout' as any)}
