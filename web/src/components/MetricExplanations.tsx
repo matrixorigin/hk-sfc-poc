@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { tpl, useT } from '../i18n'
 import type { MetricExplainItem } from '../types'
 
 interface Props {
@@ -6,6 +7,7 @@ interface Props {
 }
 
 export function MetricExplanations({ items }: Props) {
+  const { t } = useT()
   const [open, setOpen] = useState(false)
   const [activeColumn, setActiveColumn] = useState<string | null>(
     items.length > 0 ? items[0].column : null,
@@ -23,7 +25,7 @@ export function MetricExplanations({ items }: Props) {
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M9 18l6-6-6-6"/>
         </svg>
-        本次查询使用了 {items.length} 项数据加工
+        {tpl(t('metricToggle'), { count: items.length })}
         <span className={`metric-toggle-arrow ${open ? 'open' : ''}`}>▾</span>
       </button>
 
@@ -54,12 +56,12 @@ export function MetricExplanations({ items }: Props) {
                 </div>
 
                 <div className="metric-section">
-                  <div className="metric-section-label">计算口径</div>
+                  <div className="metric-section-label">{t('metricMethodology')}</div>
                   <div className="metric-explain">{it.explain}</div>
                 </div>
 
                 <div className="metric-section">
-                  <div className="metric-section-label">核心代码</div>
+                  <div className="metric-section-label">{t('metricCoreCode')}</div>
                   <pre className="metric-code"><code>{it.code}</code></pre>
                 </div>
               </div>
