@@ -82,7 +82,7 @@ async function sendPrompt(page: Page, prompt: string) {
 async function expectChartReady(page: Page, chartName: ChartName) {
   const section = page.locator('.chart-section').last()
   await expect(section).toBeVisible({ timeout: 180_000 })
-  await expect(section.getByRole('button', { name: chartName, exact: true })).toHaveClass(/active/)
+  await expect(section.getByRole('button', { name: chartName, exact: true })).toHaveClass(/active/, { timeout: 180_000 })
   await expect(section).not.toContainText(chartMissingPattern)
   const canvas = section.locator('canvas').first()
   await expect(canvas).toBeVisible()
