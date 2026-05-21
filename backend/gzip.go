@@ -30,11 +30,6 @@ func gzipMiddleware(next http.Handler) http.Handler {
 		gz, _ := gzip.NewWriterLevel(w, gzip.BestCompression)
 		defer gz.Close()
 
-		// 带 hash 的静态资源缓存 1 年，第二次访问秒开
-		if strings.HasPrefix(r.URL.Path, "/assets/") {
-			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-		}
-
 		w.Header().Set("Content-Encoding", "gzip")
 		w.Header().Del("Content-Length")
 		next.ServeHTTP(&gzipResponseWriter{Writer: gz, ResponseWriter: w}, r)

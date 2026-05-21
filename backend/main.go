@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/go-sql-driver/mysql"
 	"path/filepath"
@@ -231,8 +232,12 @@ func main() {
 		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 			filePath := filepath.Join(absDir, r.URL.Path)
 			if info, err := os.Stat(filePath); err != nil || info.IsDir() {
+				w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 				http.ServeFile(w, r, filepath.Join(absDir, "index.html"))
 				return
+			}
+			if strings.HasPrefix(r.URL.Path, "/assets/") {
+				w.Header().Set("Cache-Control", "no-cache, must-revalidate")
 			}
 			fs.ServeHTTP(w, r)
 		})
