@@ -13,6 +13,7 @@ export default defineConfig({
     baseURL,
     channel: process.env.PLAYWRIGHT_CHANNEL ?? 'chrome',
     headless: process.env.PLAYWRIGHT_HEADED !== '1',
+    locale: 'zh-CN',
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
     video: 'retain-on-failure',
