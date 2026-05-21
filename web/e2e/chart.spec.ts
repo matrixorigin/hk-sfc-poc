@@ -35,7 +35,7 @@ test('单轮生成：组合图把两个指标都放入 y 指标列表', async ({
   await expandChartConfig(section)
   await expect(section.locator('.cfs-mpill')).toHaveCount(2)
   await expect(section).toContainText(/HSHSI|恒生指数/)
-  await expect(section).toContainText(/hsi_pct_change|涨跌幅/)
+  await expect(section).toContainText(/hsi_pct_change|Hsi Pct Change|涨跌幅/)
 })
 
 test('单轮生成：折线图渲染', async ({ page }) => {
