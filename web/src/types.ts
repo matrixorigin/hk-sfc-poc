@@ -143,8 +143,15 @@ export function fromStoredMessage(m: StoredMessage): Message {
 
 export function normalizeChartSpec(spec?: ChartSpec): ChartSpec | undefined {
   if (!spec) return undefined
-  const legacy = spec as ChartSpec & { x_field?: string; y_fields?: string[] }
-  const { x_field, y_fields, ...rest } = legacy
+  const legacy = spec as ChartSpec & {
+    x_field?: string
+    y_fields?: string[]
+    open?: string
+    close?: string
+    high?: string
+    low?: string
+  }
+  const { x_field, y_fields, open, close, high, low, ...rest } = legacy
   const normalized: ChartSpec = { ...rest }
 
   if (!normalized.x && x_field) {
@@ -159,7 +166,44 @@ export function normalizeChartSpec(spec?: ChartSpec): ChartSpec | undefined {
       .filter((field) => !!field)
       .map((field) => ({ field, label: field, axis: 'primary' }))
   }
+  if (normalized.chart_type === 'candlestick' && !normalized.ohlc) {
+    normalized.ohlc = inferOHLCFromChartSpec(normalized, { open, close, high, low })
+  }
   return normalized
+}
+
+function inferOHLCFromChartSpec(
+  spec: ChartSpec,
+  legacy: { open?: string; close?: string; high?: string; low?: string },
+): ChartSpec['ohlc'] {
+  const fromLegacy = {
+    open: legacy.open ?? '',
+    close: legacy.close ?? '',
+    high: legacy.high ?? '',
+    low: legacy.low ?? '',
+  }
+  if (fromLegacy.open && fromLegacy.close && fromLegacy.high && fromLegacy.low) {
+    return fromLegacy
+  }
+
+  const ohlc = { open: '', close: '', high: '', low: '' }
+  for (const item of spec.y ?? []) {
+    const field = item.field
+    const role = inferOHLCRole(`${item.field} ${item.label ?? ''}`)
+    if (role && !ohlc[role]) {
+      ohlc[role] = field
+    }
+  }
+  return ohlc.open && ohlc.close && ohlc.high && ohlc.low ? ohlc : undefined
+}
+
+function inferOHLCRole(text: string): keyof NonNullable<ChartSpec['ohlc']> | undefined {
+  const s = text.toLowerCase()
+  if (s.includes('开盘') || s.includes('open')) return 'open'
+  if (s.includes('收盘') || s.includes('close')) return 'close'
+  if (s.includes('最高') || s.includes('high')) return 'high'
+  if (s.includes('最低') || s.includes('low')) return 'low'
+  return undefined
 }
 
 function inferAxisType(field: string): 'category' | 'time' {
