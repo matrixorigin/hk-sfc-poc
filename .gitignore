@@ -9,3 +9,5 @@ backend/hk-poc-backend
 images/
 data/ccass_cache/
 logs/
+web/playwright-report/
+web/test-results/
