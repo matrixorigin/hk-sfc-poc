@@ -221,6 +221,10 @@ func main() {
 	paginateHandler := NewPaginateHandler(feedbackDB.RawDB())
 	mux.HandleFunc("/api/query/paginate", paginateHandler.ServeHTTP)
 
+	featureReproductionHandler := NewFeatureReproductionHandler(metrics)
+	mux.HandleFunc("/api/feature-reproduction/package", featureReproductionHandler.ServeHTTP)
+	mux.HandleFunc("/api/feature-reproduction/script", featureReproductionHandler.ServeHTTP)
+
 	userTablesHandler := NewUserTablesHandler(userTableSvc)
 	mux.Handle("/api/user-tables/", userTablesHandler)
 	mux.Handle("/api/user-tables", userTablesHandler)

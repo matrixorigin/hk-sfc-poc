@@ -521,31 +521,39 @@ body {
   margin-top: 12px;
 }
 
+.metric-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .metric-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  background: #fef9c3;
-  border: 1px solid #fde68a;
+  gap: 8px;
+  padding: 8px 14px;
+  background: #fff;
+  border: 1px solid #f59e0b;
   border-radius: 8px;
   cursor: pointer;
-  font-size: 12px;
-  font-weight: 500;
-  color: #854d0e;
+  font-size: 13px;
+  font-weight: 700;
+  color: #7c2d12;
+  box-shadow: 0 1px 2px rgba(120, 53, 15, 0.1);
   transition: all 0.2s;
 }
 
 .metric-toggle:hover {
-  background: #fef3c7;
-  border-color: #fcd34d;
-  color: #713f12;
+  background: #fff7ed;
+  border-color: #ea580c;
+  color: #7c2d12;
 }
 
 .metric-toggle.open {
-  background: #fef3c7;
-  border-color: #f59e0b;
-  color: #713f12;
+  background: #fff7ed;
+  border-color: #ea580c;
+  color: #7c2d12;
 }
 
 .metric-toggle svg {
@@ -562,42 +570,275 @@ body {
   transform: rotate(0deg);
 }
 
+.metric-package-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  color: #3730a3;
+  transition: all 0.2s;
+}
+
+.metric-package-btn:hover:not(:disabled) {
+  background: #e0e7ff;
+  border-color: #a5b4fc;
+  color: #312e81;
+}
+
+.metric-package-btn:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.metric-script-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 7px 12px;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  color: #1e293b;
+  transition: all 0.2s;
+}
+
+.metric-script-btn:hover:not(:disabled) {
+  background: #eef2ff;
+  border-color: #94a3b8;
+  color: #0f172a;
+}
+
+.metric-script-btn.primary {
+  background: #2563eb;
+  border-color: #1d4ed8;
+  color: #fff;
+}
+
+.metric-script-btn.primary:hover:not(:disabled) {
+  background: #1d4ed8;
+  border-color: #1e40af;
+  color: #fff;
+}
+
+.metric-script-btn.download {
+  background: #ecfdf5;
+  border-color: #86efac;
+  color: #166534;
+}
+
+.metric-script-btn.download:hover:not(:disabled) {
+  background: #dcfce7;
+  border-color: #4ade80;
+  color: #14532d;
+}
+
+.metric-script-btn:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.metric-script-panel {
+  margin-top: 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #0f172a;
+  overflow: hidden;
+}
+
+.metric-script-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  background: #1e293b;
+  color: #cbd5e1;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.metric-script-code {
+  max-height: 420px;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  color: #e2e8f0;
+  font-size: 12px;
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  line-height: 1.55;
+  white-space: pre;
+}
+
+.metric-item-script-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.metric-item-script-panel {
+  margin-top: 8px;
+}
+
+.metric-used-list {
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.metric-used-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 240px) minmax(0, 1fr);
+  gap: 14px;
+  padding: 10px 12px;
+  border-top: 1px solid #fef3c7;
+}
+
+.metric-used-row:first-child {
+  border-top: none;
+}
+
+.metric-used-key {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.metric-used-key code {
+  width: fit-content;
+  max-width: 100%;
+  padding: 4px 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.metric-used-key span {
+  color: #78350f;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.metric-used-explain {
+  color: #3f2a16;
+  font-size: 13px;
+  line-height: 1.65;
+  white-space: pre-line;
+}
+
+.metric-detail-toggle {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid #d8dee9;
+  border-radius: 8px;
+  background: #fff;
+  color: #475569;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.metric-detail-toggle:hover {
+  border-color: #94a3b8;
+  background: #f8fafc;
+  color: #1e293b;
+}
+
+.metric-detail-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.metric-detail-item {
+  padding: 10px 0;
+  border-top: 1px solid #fde68a;
+}
+
+.metric-detail-item:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+
+.metric-detail-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+  color: #78350f;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.metric-detail-title code {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+@media (max-width: 720px) {
+  .metric-used-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}
+
 .metric-panel {
   margin-top: 8px;
   border: 1px solid #fde68a;
   border-radius: 10px;
-  background: #fffbeb;
+  background: #fffdf3;
   overflow: hidden;
 }
 
 .metric-tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  padding: 8px 10px;
-  background: #fef3c7;
+  gap: 6px;
+  padding: 10px 12px;
+  background: #fffbeb;
   border-bottom: 1px solid #fde68a;
 }
 
 .metric-tab {
-  padding: 4px 10px;
+  padding: 6px 10px;
   font-size: 12px;
   border-radius: 6px;
-  border: 1px solid transparent;
-  background: transparent;
+  border: 1px solid #fde68a;
+  background: #fff;
   color: #92400e;
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .metric-tab:hover {
-  background: rgba(255,255,255,0.6);
+  border-color: #f59e0b;
+  background: #fff7ed;
 }
 
 .metric-tab.active {
-  background: #fff;
-  border-color: #fcd34d;
-  color: #713f12;
+  background: #7c2d12;
+  border-color: #7c2d12;
+  color: #fff;
   font-weight: 600;
 }
 

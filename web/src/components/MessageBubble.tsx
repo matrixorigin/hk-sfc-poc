@@ -146,11 +146,6 @@ export function MessageBubble({ message, conversationId, onUpdateMessage }: Mess
             <DataTable result={primaryResult} />
           )}
 
-          {/* 预计算字段说明 — 介于数据表和 SQL 之间 */}
-          {!isUser && isDone && message.metricExplanations && message.metricExplanations.length > 0 && (
-            <MetricExplanations items={message.metricExplanations} />
-          )}
-
           {/* SQL toggle — only after done */}
           {!isUser && isDone && message.sqlStatements?.length > 0 && (
             <div className="sql-section">
@@ -183,6 +178,13 @@ export function MessageBubble({ message, conversationId, onUpdateMessage }: Mess
                 </div>
               )}
             </div>
+          )}
+
+          {/* Data transformation reproduction — after SQL */}
+          {!isUser && isDone && message.metricExplanations && message.metricExplanations.length > 0 && (
+            <MetricExplanations
+              items={message.metricExplanations}
+            />
           )}
 
           {/* Feedback button — only after done with results */}
