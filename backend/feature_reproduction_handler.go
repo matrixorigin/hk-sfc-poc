@@ -322,6 +322,14 @@ func pythonScriptAsset(column string, body string) featureScriptAsset {
 	}
 }
 
+func textScriptAsset(name string, body string) featureScriptAsset {
+	return featureScriptAsset{
+		Body:        strings.TrimSpace(body) + "\n",
+		Filename:    scriptFilename(name, ".txt"),
+		ContentType: "text/plain; charset=utf-8",
+	}
+}
+
 func splitColumns(raw string) []string {
 	parts := strings.Split(raw, ",")
 	out := make([]string, 0, len(parts))
@@ -355,7 +363,7 @@ func featureScriptForTable(table string, columns []string) featureScriptAsset {
 		return sqlScriptAsset(normalized, hsiTradeDateScript())
 	case "ms_v_stock_capital":
 		if hasAnyColumn(columns, "industry_name") {
-			return pythonScriptAsset(normalized, industryNameScript())
+			return textScriptAsset(normalized, capitalIndustryPreparationScript())
 		}
 		return sqlScriptAsset(normalized, capitalRefDateScript())
 	case "sehknews":
@@ -367,7 +375,7 @@ func featureScriptForTable(table string, columns []string) featureScriptAsset {
 			"consecutive_above_ma20", "consecutive_above_ma20_start",
 			"consecutive_above_ma50", "consecutive_above_ma50_start",
 			"avg_vol_30d") {
-			return pythonScriptAsset(normalized, sisPrecomputeScript(strings.Join(columns, ", ")))
+			return textScriptAsset(normalized, sisFeaturePreparationScript(strings.Join(columns, ", ")))
 		}
 		return sqlScriptAsset(normalized, sisTradeDateScript())
 	default:
@@ -391,13 +399,13 @@ func featureScriptForColumn(column string) featureScriptAsset {
 	case "sehknews.trade_date":
 		return sqlScriptAsset(column, newsTradeDateScript())
 	case "ms_v_stock_capital.industry_name":
-		return pythonScriptAsset(column, industryNameScript())
+		return textScriptAsset(column, capitalIndustryPreparationScript())
 	case "ms_t_stk_sis.ma_3", "ms_t_stk_sis.ma_20", "ms_t_stk_sis.ma_50", "ms_t_stk_sis.ma_100",
 		"ms_t_stk_sis.consecutive_above_ma3", "ms_t_stk_sis.consecutive_above_ma3_start",
 		"ms_t_stk_sis.consecutive_above_ma20", "ms_t_stk_sis.consecutive_above_ma20_start",
 		"ms_t_stk_sis.consecutive_above_ma50", "ms_t_stk_sis.consecutive_above_ma50_start",
 		"ms_t_stk_sis.avg_vol_30d":
-		return pythonScriptAsset(column, sisPrecomputeScript(column))
+		return textScriptAsset(column, sisFeaturePreparationScript(column))
 	case "ms_v_stk_hsi_daily.trade_date", "ms_v_stk_hsi_daily.hshsi", "ms_v_stk_hsi_daily.hsi_pct_change":
 		return sqlScriptAsset("ms_v_stk_hsi_daily", hsiDailyScript())
 	default:
@@ -514,6 +522,10 @@ WHERE n.trade_date IS NULL;
 `
 }
 
+func capitalIndustryPreparationScript() string {
+	return strings.TrimSpace(capitalRefDateScript()) + "\n\n" + strings.TrimSpace(industryNameScript())
+}
+
 func industryNameScript() string {
 	return `# ms_v_stock_capital.industry_name
 # Inputs:
@@ -547,6 +559,10 @@ def compute_industry_name(classification_rows, capital_rows):
                 "industry_name": records[idx][1],
             }
 `
+}
+
+func sisFeaturePreparationScript(column string) string {
+	return strings.TrimSpace(sisTradeDateScript()) + "\n\n" + strings.TrimSpace(sisPrecomputeScript(column))
 }
 
 func sisPrecomputeScript(column string) string {

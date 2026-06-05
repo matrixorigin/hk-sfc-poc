@@ -5,6 +5,7 @@ import { localizeMetric } from '../utils/metricLocalization'
 
 interface Props {
   items: MetricExplainItem[]
+  sqlStatements?: string[]
 }
 
 interface MetricTableGroup {
@@ -13,30 +14,29 @@ interface MetricTableGroup {
   items: MetricExplainItem[]
 }
 
+type ChainSection = 'preparation' | 'query' | 'calculation'
+
+const DEFAULT_OPEN_SECTIONS: ChainSection[] = ['preparation', 'query', 'calculation']
+
 function tableNameOf(column: string) {
   const parts = column.split('.')
   if (parts.length <= 1) return column
   return parts.slice(0, -1).join('.')
 }
 
-function columnNameOf(column: string) {
-  const parts = column.split('.')
-  return parts[parts.length - 1] || column
-}
-
 function labelForTable(table: string, lang: Language) {
   const zh = lang === 'zh'
   switch (table) {
     case 'ms_v_stk_hsi_daily':
-      return zh ? '恒指日线加工表' : 'HSI daily derived table'
+      return zh ? '恒指日线计算' : 'HSI daily calculation'
     case 'ms_t_stk_sis':
-      return zh ? '个股行情加工列' : 'Stock trading derived columns'
+      return zh ? '个股行情计算' : 'Stock trading calculation'
     case 'ms_t_stk_hsi':
-      return zh ? '恒指行情加工列' : 'HSI trading derived columns'
+      return zh ? '恒指行情计算' : 'HSI trading calculation'
     case 'ms_v_stock_capital':
-      return zh ? '市值数据加工列' : 'Market cap derived columns'
+      return zh ? '市值数据计算' : 'Market cap calculation'
     case 'sehknews':
-      return zh ? '公告数据加工列' : 'Announcement derived columns'
+      return zh ? '公告数据计算' : 'Announcement date calculation'
     default:
       return table
   }
@@ -57,16 +57,31 @@ function groupByTable(items: MetricExplainItem[], lang: Language): MetricTableGr
     .sort((a, b) => a.table.localeCompare(b.table))
 }
 
-function filenameFromDisposition(disposition: string | null, fallback: string) {
-  const match = (disposition ?? '').match(/filename="([^"]+)"/)
-  return match?.[1] ?? fallback
-}
-
 function fallbackTableFilename(table: string) {
   return `${table.replace(/[^a-zA-Z0-9_]+/g, '_').replace(/^_+|_+$/g, '') || 'feature'}.txt`
 }
 
-export function MetricExplanations({ items }: Props) {
+function buildChainText(group: MetricTableGroup, preparationScript: string, querySQL: string, t: ReturnType<typeof useT>['t']) {
+  const lines: string[] = []
+  lines.push(`${group.label} (${group.table})`)
+  lines.push('')
+  lines.push(t('metricDataPreparation'))
+  lines.push(preparationScript.trim() || t('metricNoPreparationScript'))
+  lines.push('')
+  lines.push(t('metricDataQuery'))
+  lines.push(querySQL.trim() || t('metricNoQueryScript'))
+  lines.push('')
+  lines.push(t('metricFieldCalculation'))
+  for (const item of group.items) {
+    lines.push('')
+    lines.push(`${item.name} (${item.column})`)
+    if (item.explain) lines.push(item.explain)
+    if (item.code) lines.push(item.code)
+  }
+  return lines.join('\n')
+}
+
+export function MetricExplanations({ items, sqlStatements = [] }: Props) {
   const { lang, t } = useT()
   const localizedItems = items.map((item) => localizeMetric(item, lang))
   const groups = groupByTable(localizedItems, lang)
@@ -74,15 +89,14 @@ export function MetricExplanations({ items }: Props) {
   const [activeTable, setActiveTable] = useState<string | null>(groups[0]?.table ?? null)
   const [scriptOpenTable, setScriptOpenTable] = useState<string | null>(null)
   const [scriptTexts, setScriptTexts] = useState<Record<string, string>>({})
-  const [scriptFiles, setScriptFiles] = useState<Record<string, string>>({})
-  const [scriptTypes, setScriptTypes] = useState<Record<string, string>>({})
   const [scriptLoadingTable, setScriptLoadingTable] = useState<string | null>(null)
-  const [detailOpenTable, setDetailOpenTable] = useState<string | null>(null)
+  const [openSections, setOpenSections] = useState<Record<string, ChainSection[]>>({})
 
   if (groups.length === 0) return null
 
   const selectedTable = groups.some((group) => group.table === activeTable) ? activeTable : groups[0].table
   const selectedGroup = groups.find((group) => group.table === selectedTable) ?? groups[0]
+  const querySQL = sqlStatements.join('\n\n')
 
   async function fetchTableScript(group: MetricTableGroup) {
     const cached = scriptTexts[group.table]
@@ -95,37 +109,54 @@ export function MetricExplanations({ items }: Props) {
       )
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
       const text = await response.text()
-      const filename = filenameFromDisposition(response.headers.get('Content-Disposition'), fallbackTableFilename(group.table))
       setScriptTexts((prev) => ({ ...prev, [group.table]: text }))
-      setScriptFiles((prev) => ({ ...prev, [group.table]: filename }))
-      setScriptTypes((prev) => ({ ...prev, [group.table]: response.headers.get('Content-Type') ?? 'text/plain;charset=utf-8' }))
       return text
     } finally {
       setScriptLoadingTable(null)
     }
   }
 
+  async function buildTableChain(group: MetricTableGroup) {
+    const preparationScript = await fetchTableScript(group)
+    return buildChainText(group, preparationScript, querySQL, t)
+  }
+
   async function toggleTableScript(group: MetricTableGroup) {
     if (scriptOpenTable !== group.table) {
       await fetchTableScript(group)
+      setOpenSections((prev) => ({ ...prev, [group.table]: prev[group.table] ?? DEFAULT_OPEN_SECTIONS }))
       setScriptOpenTable(group.table)
       return
     }
     setScriptOpenTable(null)
   }
 
+  function isSectionOpen(table: string, section: ChainSection) {
+    return (openSections[table] ?? DEFAULT_OPEN_SECTIONS).includes(section)
+  }
+
+  function toggleSection(table: string, section: ChainSection) {
+    setOpenSections((prev) => {
+      const current = prev[table] ?? DEFAULT_OPEN_SECTIONS
+      const next = current.includes(section)
+        ? current.filter((item) => item !== section)
+        : [...current, section]
+      return { ...prev, [table]: next }
+    })
+  }
+
   async function copyTableScript(group: MetricTableGroup) {
-    const text = await fetchTableScript(group)
+    const text = await buildTableChain(group)
     await navigator.clipboard.writeText(text)
   }
 
   async function downloadTableScript(group: MetricTableGroup) {
-    const text = await fetchTableScript(group)
-    const blob = new Blob([text], { type: scriptTypes[group.table] ?? 'text/plain;charset=utf-8' })
+    const text = await buildTableChain(group)
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = scriptFiles[group.table] ?? fallbackTableFilename(group.table)
+    a.download = fallbackTableFilename(group.table)
     document.body.appendChild(a)
     a.click()
     a.remove()
@@ -172,21 +203,6 @@ export function MetricExplanations({ items }: Props) {
             </div>
 
             <div className="metric-section">
-              <div className="metric-section-label">{t('metricUsedColumns')}</div>
-              <div className="metric-used-list">
-                {selectedGroup.items.map((item) => (
-                  <div key={item.column} className="metric-used-row">
-                    <div className="metric-used-key">
-                      <code>{columnNameOf(item.column)}</code>
-                      <span>{item.name}</span>
-                    </div>
-                    <div className="metric-used-explain">{item.explain}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="metric-section">
               <div className="metric-section-label">{t('metricItemScript')}</div>
               <div className="metric-item-script-actions">
                 <button
@@ -216,37 +232,64 @@ export function MetricExplanations({ items }: Props) {
               </div>
               {scriptOpenTable === selectedGroup.table && (
                 <div className="metric-script-panel metric-item-script-panel">
-                  <div className="metric-script-header">
-                    <span>{t('metricItemScript')}</span>
-                    <span>{scriptLoadingTable === selectedGroup.table ? t('metricScriptLoading') : (scriptFiles[selectedGroup.table] ?? fallbackTableFilename(selectedGroup.table))}</span>
+                  <div className="metric-detail-list">
+                    <div className="metric-detail-item">
+                      <button
+                        type="button"
+                        className="metric-detail-title metric-detail-title-button"
+                        onClick={() => toggleSection(selectedGroup.table, 'preparation')}
+                      >
+                        <span>{t('metricDataPreparation')}</span>
+                        <span className={`metric-detail-arrow ${isSectionOpen(selectedGroup.table, 'preparation') ? 'open' : ''}`}>›</span>
+                      </button>
+                      {isSectionOpen(selectedGroup.table, 'preparation') && (
+                        <pre className="metric-code"><code>{scriptTexts[selectedGroup.table] ?? ''}</code></pre>
+                      )}
+                    </div>
+
+                    <div className="metric-detail-item">
+                      <button
+                        type="button"
+                        className="metric-detail-title metric-detail-title-button"
+                        onClick={() => toggleSection(selectedGroup.table, 'query')}
+                      >
+                        <span>{t('metricDataQuery')}</span>
+                        <span className={`metric-detail-arrow ${isSectionOpen(selectedGroup.table, 'query') ? 'open' : ''}`}>›</span>
+                      </button>
+                      {isSectionOpen(selectedGroup.table, 'query') && (
+                        <pre className="metric-code"><code>{querySQL || t('metricNoQueryScript')}</code></pre>
+                      )}
+                    </div>
+
+                    <div className="metric-detail-item">
+                      <button
+                        type="button"
+                        className="metric-detail-title metric-detail-title-button"
+                        onClick={() => toggleSection(selectedGroup.table, 'calculation')}
+                      >
+                        <span>{t('metricFieldCalculation')}</span>
+                        <span className={`metric-detail-arrow ${isSectionOpen(selectedGroup.table, 'calculation') ? 'open' : ''}`}>›</span>
+                      </button>
+                      {isSectionOpen(selectedGroup.table, 'calculation') && (
+                        <>
+                          {selectedGroup.items.map((item) => (
+                            <div key={item.column} className="metric-detail-block">
+                              <div className="metric-detail-subtitle">
+                                <span>{item.name}</span>
+                                <code>{item.column}</code>
+                              </div>
+                              <div className="metric-detail-explain">{item.explain}</div>
+                              <pre className="metric-code"><code>{item.code}</code></pre>
+                            </div>
+                          ))}
+                        </>
+                      )}
+                    </div>
                   </div>
-                  <pre className="metric-script-code"><code>{scriptTexts[selectedGroup.table] ?? ''}</code></pre>
                 </div>
               )}
             </div>
 
-            <div className="metric-section">
-              <button
-                type="button"
-                className="metric-detail-toggle"
-                onClick={() => setDetailOpenTable((current) => current === selectedGroup.table ? null : selectedGroup.table)}
-              >
-                {detailOpenTable === selectedGroup.table ? t('metricHideTechnicalDetails') : t('metricViewTechnicalDetails')}
-              </button>
-              {detailOpenTable === selectedGroup.table && (
-                <div className="metric-detail-list">
-                  {selectedGroup.items.map((item) => (
-                    <div key={item.column} className="metric-detail-item">
-                      <div className="metric-detail-title">
-                        <span>{item.name}</span>
-                        <code>{item.column}</code>
-                      </div>
-                      <pre className="metric-code"><code>{item.code}</code></pre>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
           </div>
         </div>
       )}

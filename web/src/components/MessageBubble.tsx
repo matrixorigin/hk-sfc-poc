@@ -29,6 +29,7 @@ export function MessageBubble({ message, conversationId, onUpdateMessage }: Mess
   const [persistError, setPersistError] = useState<string | null>(null)
   const isUser = message.role === 'user'
   const isDone = !message.isStreaming || message.phase === 'done'
+  const hasMetricExplanations = !!message.metricExplanations && message.metricExplanations.length > 0
 
   const primaryResult = !isUser ? selectPrimaryResult(message) : undefined
 
@@ -146,8 +147,8 @@ export function MessageBubble({ message, conversationId, onUpdateMessage }: Mess
             <DataTable result={primaryResult} />
           )}
 
-          {/* SQL toggle — only after done */}
-          {!isUser && isDone && message.sqlStatements?.length > 0 && (
+          {/* SQL toggle for answers without a calculation chain */}
+          {!isUser && isDone && !hasMetricExplanations && message.sqlStatements?.length > 0 && (
             <div className="sql-section">
               <button
                 onClick={() => setShowSQL(!showSQL)}
@@ -180,10 +181,11 @@ export function MessageBubble({ message, conversationId, onUpdateMessage }: Mess
             </div>
           )}
 
-          {/* Data transformation reproduction — after SQL */}
-          {!isUser && isDone && message.metricExplanations && message.metricExplanations.length > 0 && (
+          {/* Calculation chain */}
+          {!isUser && isDone && hasMetricExplanations && (
             <MetricExplanations
-              items={message.metricExplanations}
+              items={message.metricExplanations ?? []}
+              sqlStatements={message.sqlStatements}
             />
           )}
 

@@ -111,10 +111,13 @@ func TestFeatureReproductionHandlerServesColumnScript(t *testing.T) {
 	if !strings.Contains(body, "compute_sis_features") {
 		t.Fatalf("column script did not return SIS feature implementation")
 	}
+	if !strings.Contains(body, "UPDATE ms_t_stk_sis") || !strings.Contains(body, "SET trade_date") {
+		t.Fatalf("column script should include SIS trade_date preparation before Python precompute")
+	}
 	if strings.Contains(body, "def run_one_click") {
 		t.Fatalf("column script should not return the full reproduction script")
 	}
-	if got := rec.Header().Get("Content-Disposition"); !strings.Contains(got, "ms_t_stk_sis_avg_vol_30d.py") {
+	if got := rec.Header().Get("Content-Disposition"); !strings.Contains(got, "ms_t_stk_sis_avg_vol_30d.txt") {
 		t.Fatalf("unexpected content disposition: %s", got)
 	}
 }
@@ -179,7 +182,10 @@ func TestFeatureReproductionHandlerServesTableScript(t *testing.T) {
 	if !strings.Contains(body, "compute_sis_features") || !strings.Contains(body, "avg_vol_30d") {
 		t.Fatalf("table script should return table-level SIS precompute script")
 	}
-	if got := rec.Header().Get("Content-Disposition"); !strings.Contains(got, "ms_t_stk_sis.py") {
+	if !strings.Contains(body, "UPDATE ms_t_stk_sis") || !strings.Contains(body, "SET trade_date") {
+		t.Fatalf("table script should include SIS trade_date preparation before Python precompute")
+	}
+	if got := rec.Header().Get("Content-Disposition"); !strings.Contains(got, "ms_t_stk_sis.txt") {
 		t.Fatalf("unexpected content disposition: %s", got)
 	}
 }
