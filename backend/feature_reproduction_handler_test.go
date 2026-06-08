@@ -189,3 +189,34 @@ func TestFeatureReproductionHandlerServesTableScript(t *testing.T) {
 		t.Fatalf("unexpected content disposition: %s", got)
 	}
 }
+
+func TestFeatureReproductionHandlerServesStructuredTableScript(t *testing.T) {
+	handler := NewFeatureReproductionHandler(nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/feature-reproduction/script?table=ms_t_stk_sis&columns=ms_t_stk_sis.avg_vol_30d,ms_t_stk_sis.ma_20&format=json", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
+		t.Fatalf("unexpected content type: %s", got)
+	}
+	var got featureScriptResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("parse response: %v", err)
+	}
+	if got.Table != "ms_t_stk_sis" || got.Filename != "ms_t_stk_sis.txt" {
+		t.Fatalf("unexpected response metadata: %+v", got)
+	}
+	if len(got.Sections) != 2 {
+		t.Fatalf("expected SQL and Python sections, got %+v", got.Sections)
+	}
+	if got.Sections[0].Language != "sql" || !strings.Contains(got.Sections[0].Body, "UPDATE ms_t_stk_sis") {
+		t.Fatalf("first section should be SIS trade_date SQL: %+v", got.Sections[0])
+	}
+	if got.Sections[1].Language != "python" || !strings.Contains(got.Sections[1].Body, "compute_sis_features") {
+		t.Fatalf("second section should be SIS feature Python: %+v", got.Sections[1])
+	}
+}

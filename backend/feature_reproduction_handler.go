@@ -27,6 +27,21 @@ type featureScriptAsset struct {
 	Body        string
 	Filename    string
 	ContentType string
+	Sections    []featureScriptSection
+}
+
+type featureScriptSection struct {
+	ID       string `json:"id"`
+	Title    string `json:"title"`
+	Language string `json:"language"`
+	Body     string `json:"body"`
+}
+
+type featureScriptResponse struct {
+	Table    string                 `json:"table,omitempty"`
+	Column   string                 `json:"column,omitempty"`
+	Filename string                 `json:"filename"`
+	Sections []featureScriptSection `json:"sections"`
 }
 
 type featurePackageRequest struct {
@@ -77,6 +92,24 @@ func (h *FeatureReproductionHandler) serveScript(w http.ResponseWriter, r *http.
 		asset = featureScriptForTable(table, splitColumns(r.URL.Query().Get("columns")))
 	} else if column != "" {
 		asset = featureScriptForColumn(column)
+	}
+	if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("format")), "json") {
+		resp := featureScriptResponse{
+			Table:    table,
+			Column:   column,
+			Filename: asset.Filename,
+			Sections: asset.Sections,
+		}
+		if len(resp.Sections) == 0 {
+			resp.Sections = []featureScriptSection{{
+				ID:       "script",
+				Title:    "脚本",
+				Language: languageFromContentType(asset.ContentType),
+				Body:     strings.TrimSpace(asset.Body),
+			}}
+		}
+		writeJSON(w, http.StatusOK, resp)
+		return
 	}
 	w.Header().Set("Content-Type", asset.ContentType)
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, asset.Filename))
@@ -226,7 +259,7 @@ func featurePackageReadme(manifest featurePackageManifest) string {
 	sb.WriteString("- `result.csv`：当前查询的复现结果。\n")
 	sb.WriteString("- `output/features/verification_summary.tsv`：数据加工重算结果和系统加工列的差异汇总，全部为 0 表示一致。\n\n")
 	if len(manifest.Metrics) > 0 {
-		sb.WriteString("## 本次查询命中的加工项\n\n")
+		sb.WriteString("## 结果查询命中的加工项\n\n")
 		for _, m := range manifest.Metrics {
 			sb.WriteString("- `")
 			sb.WriteString(m.Column)
@@ -311,6 +344,12 @@ func sqlScriptAsset(column string, body string) featureScriptAsset {
 		Body:        strings.TrimSpace(body) + "\n",
 		Filename:    scriptFilename(column, ".sql"),
 		ContentType: "text/plain; charset=utf-8",
+		Sections: []featureScriptSection{{
+			ID:       scriptSectionID(column, "sql"),
+			Title:    scriptSectionTitle(column),
+			Language: "sql",
+			Body:     strings.TrimSpace(body),
+		}},
 	}
 }
 
@@ -319,6 +358,12 @@ func pythonScriptAsset(column string, body string) featureScriptAsset {
 		Body:        strings.TrimSpace(body) + "\n",
 		Filename:    scriptFilename(column, ".py"),
 		ContentType: "text/x-python; charset=utf-8",
+		Sections: []featureScriptSection{{
+			ID:       scriptSectionID(column, "python"),
+			Title:    scriptSectionTitle(column),
+			Language: "python",
+			Body:     strings.TrimSpace(body),
+		}},
 	}
 }
 
@@ -327,7 +372,56 @@ func textScriptAsset(name string, body string) featureScriptAsset {
 		Body:        strings.TrimSpace(body) + "\n",
 		Filename:    scriptFilename(name, ".txt"),
 		ContentType: "text/plain; charset=utf-8",
+		Sections: []featureScriptSection{{
+			ID:       scriptSectionID(name, "text"),
+			Title:    scriptSectionTitle(name),
+			Language: "text",
+			Body:     strings.TrimSpace(body),
+		}},
 	}
+}
+
+func structuredScriptAsset(name string, sections []featureScriptSection) featureScriptAsset {
+	bodyParts := make([]string, 0, len(sections))
+	for _, section := range sections {
+		body := strings.TrimSpace(section.Body)
+		if body != "" {
+			bodyParts = append(bodyParts, body)
+		}
+	}
+	return featureScriptAsset{
+		Body:        strings.Join(bodyParts, "\n\n") + "\n",
+		Filename:    scriptFilename(name, ".txt"),
+		ContentType: "text/plain; charset=utf-8",
+		Sections:    sections,
+	}
+}
+
+func scriptSectionID(name string, suffix string) string {
+	id := strings.NewReplacer(".", "_", "-", "_", " ", "_", ",", "_").Replace(strings.ToLower(strings.TrimSpace(name)))
+	id = strings.Trim(id, "_")
+	if id == "" {
+		id = "script"
+	}
+	if suffix != "" {
+		return id + "_" + suffix
+	}
+	return id
+}
+
+func scriptSectionTitle(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "脚本"
+	}
+	return name
+}
+
+func languageFromContentType(contentType string) string {
+	if strings.Contains(strings.ToLower(contentType), "python") {
+		return "python"
+	}
+	return "text"
 }
 
 func splitColumns(raw string) []string {
@@ -363,7 +457,7 @@ func featureScriptForTable(table string, columns []string) featureScriptAsset {
 		return sqlScriptAsset(normalized, hsiTradeDateScript())
 	case "ms_v_stock_capital":
 		if hasAnyColumn(columns, "industry_name") {
-			return textScriptAsset(normalized, capitalIndustryPreparationScript())
+			return structuredScriptAsset(normalized, capitalIndustryPreparationSections())
 		}
 		return sqlScriptAsset(normalized, capitalRefDateScript())
 	case "sehknews":
@@ -375,7 +469,7 @@ func featureScriptForTable(table string, columns []string) featureScriptAsset {
 			"consecutive_above_ma20", "consecutive_above_ma20_start",
 			"consecutive_above_ma50", "consecutive_above_ma50_start",
 			"avg_vol_30d") {
-			return textScriptAsset(normalized, sisFeaturePreparationScript(strings.Join(columns, ", ")))
+			return structuredScriptAsset(normalized, sisFeaturePreparationSections(strings.Join(columns, ", ")))
 		}
 		return sqlScriptAsset(normalized, sisTradeDateScript())
 	default:
@@ -399,13 +493,13 @@ func featureScriptForColumn(column string) featureScriptAsset {
 	case "sehknews.trade_date":
 		return sqlScriptAsset(column, newsTradeDateScript())
 	case "ms_v_stock_capital.industry_name":
-		return textScriptAsset(column, capitalIndustryPreparationScript())
+		return structuredScriptAsset(column, capitalIndustryPreparationSections())
 	case "ms_t_stk_sis.ma_3", "ms_t_stk_sis.ma_20", "ms_t_stk_sis.ma_50", "ms_t_stk_sis.ma_100",
 		"ms_t_stk_sis.consecutive_above_ma3", "ms_t_stk_sis.consecutive_above_ma3_start",
 		"ms_t_stk_sis.consecutive_above_ma20", "ms_t_stk_sis.consecutive_above_ma20_start",
 		"ms_t_stk_sis.consecutive_above_ma50", "ms_t_stk_sis.consecutive_above_ma50_start",
 		"ms_t_stk_sis.avg_vol_30d":
-		return textScriptAsset(column, sisFeaturePreparationScript(column))
+		return structuredScriptAsset(column, sisFeaturePreparationSections(column))
 	case "ms_v_stk_hsi_daily.trade_date", "ms_v_stk_hsi_daily.hshsi", "ms_v_stk_hsi_daily.hsi_pct_change":
 		return sqlScriptAsset("ms_v_stk_hsi_daily", hsiDailyScript())
 	default:
@@ -526,6 +620,23 @@ func capitalIndustryPreparationScript() string {
 	return strings.TrimSpace(capitalRefDateScript()) + "\n\n" + strings.TrimSpace(industryNameScript())
 }
 
+func capitalIndustryPreparationSections() []featureScriptSection {
+	return []featureScriptSection{
+		{
+			ID:       "ms_v_stock_capital_ref_date_sql",
+			Title:    "ref_date 清洗",
+			Language: "sql",
+			Body:     strings.TrimSpace(capitalRefDateScript()),
+		},
+		{
+			ID:       "ms_v_stock_capital_industry_name_python",
+			Title:    "行业名称映射",
+			Language: "python",
+			Body:     strings.TrimSpace(industryNameScript()),
+		},
+	}
+}
+
 func industryNameScript() string {
 	return `# ms_v_stock_capital.industry_name
 # Inputs:
@@ -563,6 +674,23 @@ def compute_industry_name(classification_rows, capital_rows):
 
 func sisFeaturePreparationScript(column string) string {
 	return strings.TrimSpace(sisTradeDateScript()) + "\n\n" + strings.TrimSpace(sisPrecomputeScript(column))
+}
+
+func sisFeaturePreparationSections(column string) []featureScriptSection {
+	return []featureScriptSection{
+		{
+			ID:       "ms_t_stk_sis_trade_date_sql",
+			Title:    "trade_date 清洗",
+			Language: "sql",
+			Body:     strings.TrimSpace(sisTradeDateScript()),
+		},
+		{
+			ID:       "ms_t_stk_sis_features_python",
+			Title:    "行情衍生指标计算",
+			Language: "python",
+			Body:     strings.TrimSpace(sisPrecomputeScript(column)),
+		},
+	}
 }
 
 func sisPrecomputeScript(column string) string {
