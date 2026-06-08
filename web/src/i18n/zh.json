@@ -67,6 +67,8 @@
   "metricViewItemScript": "查看",
   "metricHideItemScript": "隐藏",
   "metricCopyItemScript": "复制",
+  "metricCopyAllScript": "复制全部",
+  "metricCopiedScript": "已复制",
   "metricDownloadItemScript": "下载",
   "metricUsedColumns": "本次用到",
   "metricViewTechnicalDetails": "详情",

@@ -67,6 +67,8 @@
   "metricViewItemScript": "View",
   "metricHideItemScript": "Hide",
   "metricCopyItemScript": "Copy",
+  "metricCopyAllScript": "Copy all",
+  "metricCopiedScript": "Copied",
   "metricDownloadItemScript": "Download",
   "metricUsedColumns": "Used in this question",
   "metricViewTechnicalDetails": "Details",

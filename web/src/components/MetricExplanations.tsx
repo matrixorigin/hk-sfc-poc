@@ -101,6 +101,19 @@ function languageLabel(language: MetricScriptSection['language']) {
   }
 }
 
+function languageForCode(code: string): MetricScriptSection['language'] {
+  const normalized = code.trim().toLowerCase()
+  if (!normalized) return 'text'
+  if (/^(--|select|with|update|insert|delete|create|alter|drop)\b/.test(normalized)) return 'sql'
+  if (/\b(select|from|where|join|update|set|create\s+table)\b/.test(normalized) && !/\b(def|import|class|lambda)\b/.test(normalized)) {
+    return 'sql'
+  }
+  if (/^(#|def|import|from\s+\w+\s+import|class)\b/.test(normalized) || /\b(if|else|for|while)\b[\s\S]*:/.test(normalized)) {
+    return 'python'
+  }
+  return 'text'
+}
+
 function buildChainText(group: MetricTableGroup, preparationScript: string, querySQL: string, includeQuery: boolean, t: ReturnType<typeof useT>['t']) {
   const lines: string[] = []
   lines.push(`${group.label} (${group.table})`)
@@ -133,6 +146,7 @@ export function MetricExplanations({ items, sqlStatements = [] }: Props) {
   const [scriptTexts, setScriptTexts] = useState<Record<string, MetricScriptResponse>>({})
   const [scriptLoadingTable, setScriptLoadingTable] = useState<string | null>(null)
   const [openSections, setOpenSections] = useState<Record<string, ChainSection[]>>({})
+  const [copiedTarget, setCopiedTarget] = useState<string | null>(null)
 
   if (groups.length === 0) return null
 
@@ -182,6 +196,18 @@ export function MetricExplanations({ items, sqlStatements = [] }: Props) {
     return includeQueryInTable ? t('metricFieldCalculation') : t('metricFieldCalculationNoQuery')
   }
 
+  async function copyText(target: string, text: string) {
+    await navigator.clipboard.writeText(text)
+    setCopiedTarget(target)
+    window.setTimeout(() => {
+      setCopiedTarget((current) => current === target ? null : current)
+    }, 1200)
+  }
+
+  function copiedLabel(target: string) {
+    return copiedTarget === target ? t('metricCopiedScript') : t('metricCopyItemScript')
+  }
+
   async function toggleTableScript(group: MetricTableGroup) {
     if (scriptOpenTable !== group.table) {
       await fetchTableScript(group)
@@ -208,11 +234,15 @@ export function MetricExplanations({ items, sqlStatements = [] }: Props) {
 
   async function copyTableScript(group: MetricTableGroup) {
     const text = await buildTableChain(group)
-    await navigator.clipboard.writeText(text)
+    await copyText(`table:${group.table}`, text)
   }
 
   async function copyQueryScript() {
-    await navigator.clipboard.writeText(buildQueryText())
+    await copyText('query:all', buildQueryText())
+  }
+
+  async function copyCodeSection(target: string, body: string) {
+    await copyText(target, body.trim())
   }
 
   async function downloadTableScript(group: MetricTableGroup) {
@@ -296,7 +326,7 @@ export function MetricExplanations({ items, sqlStatements = [] }: Props) {
                   <div className="metric-section-label">{t('metricItemScript')}</div>
                   <div className="metric-item-script-actions">
                     <button type="button" className="metric-script-btn" onClick={copyQueryScript}>
-                      {t('metricCopyItemScript')}
+                      {copiedTarget === 'query:all' ? t('metricCopiedScript') : t('metricCopyAllScript')}
                     </button>
                     <button type="button" className="metric-script-btn download" onClick={downloadQueryScript}>
                       {t('metricDownloadItemScript')}
@@ -306,7 +336,16 @@ export function MetricExplanations({ items, sqlStatements = [] }: Props) {
                     <div className="metric-code-section">
                       <div className="metric-code-section-header">
                         <span>{t('metricDataQuery')}</span>
-                        <span>SQL</span>
+                        <span className="metric-code-section-actions">
+                          <span className="metric-code-language">SQL</span>
+                          <button
+                            type="button"
+                            className="metric-code-copy-btn"
+                            onClick={() => copyCodeSection('query:code', buildQueryText())}
+                          >
+                            {copiedLabel('query:code')}
+                          </button>
+                        </span>
                       </div>
                       <pre className="metric-code"><code>{buildQueryText()}</code></pre>
                     </div>
@@ -337,7 +376,7 @@ export function MetricExplanations({ items, sqlStatements = [] }: Props) {
                       onClick={() => copyTableScript(selectedGroup)}
                       disabled={scriptLoadingTable === selectedGroup.table}
                     >
-                      {t('metricCopyItemScript')}
+                      {copiedTarget === `table:${selectedGroup.table}` ? t('metricCopiedScript') : t('metricCopyAllScript')}
                     </button>
                     <button
                       type="button"
@@ -367,7 +406,16 @@ export function MetricExplanations({ items, sqlStatements = [] }: Props) {
                                   <div key={section.id} className="metric-code-section">
                                     <div className="metric-code-section-header">
                                       <span>{section.title}</span>
-                                      <span>{languageLabel(section.language)}</span>
+                                      <span className="metric-code-section-actions">
+                                        <span className="metric-code-language">{languageLabel(section.language)}</span>
+                                        <button
+                                          type="button"
+                                          className="metric-code-copy-btn"
+                                          onClick={() => copyCodeSection(`section:${selectedGroup.table}:${section.id}`, section.body)}
+                                        >
+                                          {copiedLabel(`section:${selectedGroup.table}:${section.id}`)}
+                                        </button>
+                                      </span>
                                     </div>
                                     <pre className="metric-code"><code>{section.body}</code></pre>
                                   </div>
@@ -390,7 +438,22 @@ export function MetricExplanations({ items, sqlStatements = [] }: Props) {
                               <span className={`metric-detail-arrow ${isSectionOpen(selectedGroup.table, 'query') ? 'open' : ''}`}>›</span>
                             </button>
                             {isSectionOpen(selectedGroup.table, 'query') && (
-                              <pre className="metric-code"><code>{buildQueryText()}</code></pre>
+                              <div className="metric-code-section">
+                                <div className="metric-code-section-header">
+                                  <span>{t('metricDataQuery')}</span>
+                                  <span className="metric-code-section-actions">
+                                    <span className="metric-code-language">SQL</span>
+                                    <button
+                                      type="button"
+                                      className="metric-code-copy-btn"
+                                      onClick={() => copyCodeSection(`table-query:${selectedGroup.table}`, buildQueryText())}
+                                    >
+                                      {copiedLabel(`table-query:${selectedGroup.table}`)}
+                                    </button>
+                                  </span>
+                                </div>
+                                <pre className="metric-code"><code>{buildQueryText()}</code></pre>
+                              </div>
                             )}
                           </div>
                         )}
@@ -413,7 +476,22 @@ export function MetricExplanations({ items, sqlStatements = [] }: Props) {
                                     <code>{item.column}</code>
                                   </div>
                                   <div className="metric-detail-explain">{item.explain}</div>
-                                  <pre className="metric-code"><code>{item.code}</code></pre>
+                                  <div className="metric-code-section">
+                                    <div className="metric-code-section-header">
+                                      <span>{item.name}</span>
+                                      <span className="metric-code-section-actions">
+                                        <span className="metric-code-language">{languageLabel(languageForCode(item.code))}</span>
+                                        <button
+                                          type="button"
+                                          className="metric-code-copy-btn"
+                                          onClick={() => copyCodeSection(`calculation:${selectedGroup.table}:${item.column}`, item.code)}
+                                        >
+                                          {copiedLabel(`calculation:${selectedGroup.table}:${item.column}`)}
+                                        </button>
+                                      </span>
+                                    </div>
+                                    <pre className="metric-code"><code>{item.code}</code></pre>
+                                  </div>
                                 </div>
                               ))}
                             </>

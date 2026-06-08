@@ -992,10 +992,37 @@ body {
   font-weight: 700;
 }
 
-.metric-code-section-header span:last-child {
+.metric-code-section-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.metric-code-language {
   color: #94a3b8;
   font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
   font-weight: 600;
+}
+
+.metric-code-copy-btn {
+  min-height: 24px;
+  padding: 3px 8px;
+  border: 1px solid #475569;
+  border-radius: 6px;
+  background: #1e293b;
+  color: #e2e8f0;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  transition: all 0.15s;
+}
+
+.metric-code-copy-btn:hover {
+  border-color: #94a3b8;
+  background: #334155;
+  color: #fff;
 }
 
 .metric-code-section .metric-code {
