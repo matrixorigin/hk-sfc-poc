@@ -75,6 +75,7 @@
   "metricHideTechnicalDetails": "Hide details",
   "metricDataPreparation": "1. Data preparation",
   "metricDataQuery": "Result query",
+  "metricDataQueryStep": "2. Result query",
   "metricFieldCalculation": "3. Key calculation notes",
   "metricFieldCalculationNoQuery": "2. Key calculation notes",
   "metricNoPreparationScript": "No displayable data preparation script was matched for this question.",

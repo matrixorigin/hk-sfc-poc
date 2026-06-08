@@ -75,6 +75,7 @@
   "metricHideTechnicalDetails": "收起详情",
   "metricDataPreparation": "1. 数据准备",
   "metricDataQuery": "结果查询",
+  "metricDataQueryStep": "2. 结果查询",
   "metricFieldCalculation": "3. 关键计算说明",
   "metricFieldCalculationNoQuery": "2. 关键计算说明",
   "metricNoPreparationScript": "当前问题未命中可展示的数据准备脚本。",

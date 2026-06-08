@@ -122,7 +122,7 @@ function buildChainText(group: MetricTableGroup, preparationScript: string, quer
   lines.push(preparationScript.trim() || t('metricNoPreparationScript'))
   if (includeQuery) {
     lines.push('')
-    lines.push(t('metricDataQuery'))
+    lines.push(t('metricDataQueryStep'))
     lines.push(querySQL.trim() || t('metricNoQueryScript'))
   }
   lines.push('')
@@ -434,13 +434,13 @@ export function MetricExplanations({ items, sqlStatements = [] }: Props) {
                               className="metric-detail-title metric-detail-title-button"
                               onClick={() => toggleSection(selectedGroup.table, 'query')}
                             >
-                              <span>{t('metricDataQuery')}</span>
+                              <span>{t('metricDataQueryStep')}</span>
                               <span className={`metric-detail-arrow ${isSectionOpen(selectedGroup.table, 'query') ? 'open' : ''}`}>›</span>
                             </button>
                             {isSectionOpen(selectedGroup.table, 'query') && (
                               <div className="metric-code-section">
                                 <div className="metric-code-section-header">
-                                  <span>{t('metricDataQuery')}</span>
+                                  <span>{t('metricDataQueryStep')}</span>
                                   <span className="metric-code-section-actions">
                                     <span className="metric-code-language">SQL</span>
                                     <button
