@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import type { SQLResult } from '../types'
 import { useT } from '../i18n'
 import { tpl } from '../i18n'
+import { apiFetch } from '../api/client'
 
 interface DataTableProps {
   result: SQLResult
@@ -61,7 +62,7 @@ export function DataTable({ result }: DataTableProps) {
 
     setLoading(true)
     try {
-      const resp = await fetch('/api/query/paginate', {
+      const resp = await apiFetch('/api/query/paginate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sql, page: pageNum, page_size: size }),

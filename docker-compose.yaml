@@ -75,9 +75,12 @@ services:
     environment:
       MOI_SYSTEM_API_KEY: ${MOI_SYSTEM_API_KEY:-}
       POC_WORKSPACE_ID: ${POC_WORKSPACE_ID:-}
+      MO_ACCOUNT_NAME: ${MO_ACCOUNT_NAME:-}
       CATALOG_URL: http://catalog:8081
       STATIC_DIR: /app/web/dist
       SERVER_PORT: "3000"
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-User@123}
     volumes:
       - ./logs:/app/logs
     command: sh -c './hk-poc-backend -config config.yaml 2>&1 | tee -a /app/logs/app.log'

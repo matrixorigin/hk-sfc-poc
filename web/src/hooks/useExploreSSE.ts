@@ -1,6 +1,7 @@
 import { useRef, useCallback } from 'react'
 import type { ExploreEvent, SQLResult, Message, Phase, ChartSpec } from '../types'
 import { normalizeChartSpec } from '../types'
+import { apiFetch } from '../api/client'
 
 /**
  * Strip JSON wrapper from synthesis output.
@@ -63,7 +64,7 @@ export function useExploreSSE({ onUpdate, onDone, onError, onMessageCreated, onM
       abortControllerRef.current = controller
 
       try {
-        const response = await fetch(`/api/conversations/${conversationId}/messages`, {
+        const response = await apiFetch(`/api/conversations/${conversationId}/messages`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ question, ...(tables?.length ? { tables } : {}) }),

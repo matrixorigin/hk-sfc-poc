@@ -84,6 +84,13 @@ These are NOT in official docs — discovered through testing:
 - `POC_WORKSPACE_ID` — Workspace UUID
 - `DASHSCOPE_API_KEY` — Alibaba Cloud LLM API key (used by Catalog)
 
+Optional authentication overrides:
+- `ADMIN_USERNAME` — fixed administrator username (default: `admin`)
+- `ADMIN_PASSWORD` — fixed administrator password (default: `User@123`; must contain a letter, number, and special character and be at least 8 characters)
+- `MO_ACCOUNT_NAME` — optional local workspace account override when Catalog cannot resolve workspace metadata
+
+The administrator account is synchronized on every app startup. Public registration is disabled; ordinary users are created from the administrator-only User Management dialog.
+
 ## Docker Services
 
 | Service | Internal Port | External Port |

@@ -2,18 +2,22 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"strings"
 )
 
 type contextKey string
 
-const userIDKey contextKey = "user_id"
+const authUserKey contextKey = "auth_user"
+
+func UserFromContext(ctx context.Context) (*AuthUser, bool) {
+	user, ok := ctx.Value(authUserKey).(*AuthUser)
+	return user, ok
+}
 
 func UserIDFromContext(ctx context.Context) string {
-	if v, ok := ctx.Value(userIDKey).(string); ok {
-		return v
+	if user, ok := UserFromContext(ctx); ok {
+		return user.ID
 	}
 	return ""
 }
@@ -26,33 +30,24 @@ func authMiddleware(auth *AuthService, next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if !strings.HasPrefix(path, "/api/") {
-			next.ServeHTTP(w, r)
-			return
-		}
-		if r.Method == http.MethodOptions {
+		if !strings.HasPrefix(path, "/api/") || r.Method == http.MethodOptions {
 			next.ServeHTTP(w, r)
 			return
 		}
 
 		cookie, err := r.Cookie(cookieName)
 		if err != nil || cookie.Value == "" {
-			writeUnauthorized(w)
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "please log in"})
 			return
 		}
-		userID, ok := auth.ValidateSession(cookie.Value)
-		if !ok {
-			writeUnauthorized(w)
+		user, err := auth.ValidateSession(cookie.Value)
+		if err != nil {
+			clearTokenCookie(w)
+			writeAuthError(w, err, false)
 			return
 		}
 
-		ctx := context.WithValue(r.Context(), userIDKey, userID)
+		ctx := context.WithValue(r.Context(), authUserKey, user)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
-}
-
-func writeUnauthorized(w http.ResponseWriter) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusUnauthorized)
-	_ = json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
 }

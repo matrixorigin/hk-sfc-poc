@@ -1,3 +1,5 @@
+import { apiFetch, handleXHRUnauthorized } from './client'
+
 export interface ColumnInfo {
   name: string
   inferred_type?: string
@@ -55,6 +57,7 @@ export async function uploadPreview(
       if (xhr.status >= 200 && xhr.status < 300) {
         resolve(JSON.parse(xhr.responseText))
       } else {
+        handleXHRUnauthorized(xhr.status, xhr.responseText)
         reject(new Error(`HTTP ${xhr.status}: ${xhr.responseText}`))
       }
     }
@@ -82,7 +85,7 @@ export async function createTable(
   onProgress?: (p: ImportProgress) => void,
   signal?: AbortSignal
 ): Promise<void> {
-  const resp = await fetch(`${BASE}/create`, {
+  const resp = await apiFetch(`${BASE}/create`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req),
@@ -117,12 +120,12 @@ export async function createTable(
 }
 
 export async function listUserTables(): Promise<UserTableMeta[]> {
-  const resp = await fetch(BASE)
+  const resp = await apiFetch(BASE)
   return parseJSON<UserTableMeta[]>(resp)
 }
 
 export async function deleteUserTable(name: string): Promise<void> {
-  const resp = await fetch(`${BASE}/${name}`, { method: 'DELETE' })
+  const resp = await apiFetch(`${BASE}/${name}`, { method: 'DELETE' })
   if (!resp.ok) {
     throw new Error(`delete failed: ${resp.status}`)
   }
@@ -132,7 +135,7 @@ export async function updateMetadata(
   name: string,
   req: { table_comment: string; columns: { name: string; comment: string }[] }
 ): Promise<void> {
-  const resp = await fetch(`${BASE}/${name}/metadata`, {
+  const resp = await apiFetch(`${BASE}/${name}/metadata`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req),
@@ -143,11 +146,11 @@ export async function updateMetadata(
 }
 
 export async function previewTableData(name: string): Promise<DataPreviewResult> {
-  const resp = await fetch(`${BASE}/${name}/preview`)
+  const resp = await apiFetch(`${BASE}/${name}/preview`)
   return parseJSON<DataPreviewResult>(resp)
 }
 
 export async function getTableColumns(name: string): Promise<ColumnInfo[]> {
-  const resp = await fetch(`${BASE}/${name}/columns`)
+  const resp = await apiFetch(`${BASE}/${name}/columns`)
   return parseJSON<ColumnInfo[]>(resp)
 }

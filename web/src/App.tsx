@@ -8,7 +8,10 @@ import { KnowledgePanel } from './components/KnowledgePanel'
 import { AnalysisPanel } from './components/AnalysisPanel'
 import { UserTablePanel } from './components/UserTablePanel'
 import { LoginPage } from './components/LoginPage'
-import { getMe, logout } from './api/auth'
+import { UserManagement } from './components/UserManagement'
+import { GuidePanel } from './components/GuidePanel'
+import { getMe, logout, type AuthUser } from './api/auth'
+import { setUnauthorizedHandler } from './api/client'
 import {
   listConversations,
   createConversation,
@@ -17,11 +20,6 @@ import {
 import './App.css'
 
 const LANG_STORAGE_KEY = 'hk-poc.lang'
-const USER_MANUAL_URLS: Record<Language, string> = {
-  zh: '/docs/hk-market-data-explorer-user-manual-zh.pdf',
-  en: '/docs/hk-market-data-explorer-user-manual-en.pdf',
-}
-
 function initialLang(): Language {
   try {
     const saved = localStorage.getItem(LANG_STORAGE_KEY)
@@ -42,30 +40,49 @@ function App() {
     try { localStorage.setItem(LANG_STORAGE_KEY, lang) } catch { /* ignore */ }
   }, [lang])
 
-  const [user, setUser] = useState<string | null>(null)
+  const [user, setUser] = useState<AuthUser | null>(null)
   const [authChecked, setAuthChecked] = useState(false)
-
-  useEffect(() => {
-    getMe().then(u => {
-      if (u) setUser(u.username)
-      setAuthChecked(true)
-    })
-  }, [])
-
-  const handleLogout = useCallback(async () => {
-    await logout()
-    setUser(null)
-    setConversations([])
-    setActiveId(null)
-  }, [])
-
+  const [authMessage, setAuthMessage] = useState('')
   const [conversations, setConversations] = useState<ConversationMeta[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [knowledgeOpen, setKnowledgeOpen] = useState(false)
   const [analysisOpen, setAnalysisOpen] = useState(false)
   const [tableManageOpen, setTableManageOpen] = useState(false)
+  const [userManagementOpen, setUserManagementOpen] = useState(false)
+  const [guideOpen, setGuideOpen] = useState(false)
   const [tableRefreshKey, setTableRefreshKey] = useState(0)
+
+  const clearUserState = useCallback((message = '') => {
+    setUser(null)
+    setAuthMessage(message)
+    setConversations([])
+    setActiveId(null)
+    setKnowledgeOpen(false)
+    setAnalysisOpen(false)
+    setTableManageOpen(false)
+    setUserManagementOpen(false)
+    setGuideOpen(false)
+  }, [setActiveId, setAnalysisOpen, setAuthMessage, setConversations, setGuideOpen, setKnowledgeOpen, setTableManageOpen, setUser, setUserManagementOpen])
+
+  useEffect(() => {
+    setUnauthorizedHandler((message) => clearUserState(message))
+    return () => setUnauthorizedHandler(null)
+  }, [clearUserState])
+
+  useEffect(() => {
+    getMe()
+      .then((currentUser) => {
+        if (currentUser) setUser(currentUser)
+      })
+      .catch((err) => setAuthMessage(err instanceof Error ? err.message : ''))
+      .finally(() => setAuthChecked(true))
+  }, [])
+
+  const handleLogout = useCallback(async () => {
+    await logout()
+    clearUserState()
+  }, [clearUserState])
 
   useEffect(() => {
     if (user) {
@@ -128,7 +145,13 @@ function App() {
   if (!user) {
     return (
       <LangContext.Provider value={{ lang, setLang, t }}>
-        <LoginPage onLogin={(username) => setUser(username)} />
+        <LoginPage
+          initialError={authMessage}
+          onLogin={(loggedInUser) => {
+            setAuthMessage('')
+            setUser(loggedInUser)
+          }}
+        />
       </LangContext.Provider>
     )
   }
@@ -151,17 +174,22 @@ function App() {
             </div>
           </div>
           <div className="header-actions">
+            {user.is_admin ? (
+              <button className="lang-switch" onClick={() => setUserManagementOpen(true)}>
+                {t('userManagement')}
+              </button>
+            ) : null}
             <button
               className="lang-switch"
               onClick={() => setTableManageOpen(true)}
             >
-              {t('tableManagement' as any)}
+              {t('tableManagement')}
             </button>
             <button
               className="lang-switch"
               onClick={() => setAnalysisOpen(true)}
             >
-              {t('analysisCenter' as any)}
+              {t('analysisCenter')}
             </button>
             <button
               className="lang-switch"
@@ -169,18 +197,18 @@ function App() {
             >
               {t('knowledge')}
             </button>
-            <a
-              className="lang-switch header-download-link"
-              href={USER_MANUAL_URLS[lang]}
-              download={t('userManualFileName')}
-              aria-label={t('downloadUserManual')}
-              title={t('downloadUserManual')}
+            <button
+              className="lang-switch"
+              type="button"
+              onClick={() => setGuideOpen(true)}
+              aria-label={t('openGuide')}
+              title={t('openGuide')}
             >
-              {t('userManual')}
-            </a>
-            <span style={{ fontSize: 13, color: '#d0d5dd' }}>{user}</span>
+              {t('guide')}
+            </button>
+            <span className="header-username">{user.username}</span>
             <button className="lang-switch" onClick={handleLogout}>
-              {t('logout' as any)}
+              {t('logout')}
             </button>
             <LangSwitch />
           </div>
@@ -209,6 +237,10 @@ function App() {
       <KnowledgePanel open={knowledgeOpen} onClose={() => setKnowledgeOpen(false)} />
       <AnalysisPanel open={analysisOpen} onClose={() => setAnalysisOpen(false)} />
       <UserTablePanel open={tableManageOpen} onClose={() => setTableManageOpen(false)} onTablesChanged={() => setTableRefreshKey(k => k + 1)} />
+      <GuidePanel open={guideOpen} onClose={() => setGuideOpen(false)} />
+      {userManagementOpen && user.is_admin ? (
+        <UserManagement onClose={() => setUserManagementOpen(false)} />
+      ) : null}
     </LangContext.Provider>
   )
 }

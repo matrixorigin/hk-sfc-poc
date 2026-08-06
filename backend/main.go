@@ -48,7 +48,7 @@ func main() {
 		log.Fatalf("init conversations db: %v", err)
 	}
 
-	authSvc, err := NewAuthService(feedbackDB.RawDB())
+	authSvc, err := NewAuthService(feedbackDB.RawDB(), cfg.Auth)
 	if err != nil {
 		log.Fatalf("init auth service: %v", err)
 	}
@@ -64,108 +64,13 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/api/auth/register", func(w http.ResponseWriter, r *http.Request) {
-		setCORSHeaders(w)
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		var req struct {
-			Username string `json:"username"`
-			Password string `json:"password"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
-			return
-		}
-		if err := authSvc.Register(req.Username, req.Password); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-			return
-		}
-		token, err := authSvc.Login(req.Username, req.Password)
-		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "registered but login failed"})
-			return
-		}
-		setTokenCookie(w, token)
-		writeJSON(w, http.StatusCreated, map[string]string{"username": req.Username})
-	})
-
-	mux.HandleFunc("/api/auth/login", func(w http.ResponseWriter, r *http.Request) {
-		setCORSHeaders(w)
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		var req struct {
-			Username string `json:"username"`
-			Password string `json:"password"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
-			return
-		}
-		token, err := authSvc.Login(req.Username, req.Password)
-		if err != nil {
-			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
-			return
-		}
-		setTokenCookie(w, token)
-		writeJSON(w, http.StatusOK, map[string]string{"username": req.Username})
-	})
-
-	mux.HandleFunc("/api/auth/logout", func(w http.ResponseWriter, r *http.Request) {
-		setCORSHeaders(w)
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		if cookie, err := r.Cookie(cookieName); err == nil {
-			authSvc.Logout(cookie.Value)
-		}
-		clearTokenCookie(w)
-		w.WriteHeader(http.StatusNoContent)
-	})
-
-	mux.HandleFunc("/api/auth/me", func(w http.ResponseWriter, r *http.Request) {
-		setCORSHeaders(w)
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		cookie, err := r.Cookie(cookieName)
-		if err != nil || cookie.Value == "" {
-			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
-			return
-		}
-		userID, ok := authSvc.ValidateSession(cookie.Value)
-		if !ok {
-			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
-			return
-		}
-		username, err := authSvc.GetUsername(userID)
-		if err != nil {
-			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]string{"username": username})
-	})
+	authHandler := NewAuthHandler(authSvc)
+	mux.HandleFunc("/api/auth/register", authHandler.RegisterDisabled)
+	mux.HandleFunc("/api/auth/login", authHandler.Login)
+	mux.HandleFunc("/api/auth/logout", authHandler.Logout)
+	mux.HandleFunc("/api/auth/me", authHandler.Me)
+	mux.Handle("/api/users", authHandler)
+	mux.Handle("/api/users/", authHandler)
 
 	// Dynamic /api/tables: system tables + user-uploaded tables
 	systemTableList := []map[string]string{
@@ -274,27 +179,29 @@ func buildMOConfig(cfg *Config) *mysql.Config {
 		moPort = "6001"
 	}
 
-	// Get account_name from Catalog workspace API
-	url := fmt.Sprintf("%s/api/v1/workspaces/%s", cfg.Catalog.URL, cfg.Catalog.WorkspaceID)
-	req, _ := http.NewRequest("GET", url, nil)
-	req.Header.Set("X-API-Key", cfg.Catalog.APIKey)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		log.Fatalf("get workspace account: %v", err)
-	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	acct := strings.TrimSpace(os.Getenv("MO_ACCOUNT_NAME"))
+	if acct == "" {
+		// Resolve account_name from Catalog unless local deployment provides it directly.
+		url := fmt.Sprintf("%s/api/v1/workspaces/%s", cfg.Catalog.URL, cfg.Catalog.WorkspaceID)
+		req, _ := http.NewRequest("GET", url, nil)
+		req.Header.Set("X-API-Key", cfg.Catalog.APIKey)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			log.Fatalf("get workspace account: %v", err)
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
 
-	var wsResp struct {
-		Data struct {
-			AccountName string `json:"account_name"`
-		} `json:"data"`
+		var wsResp struct {
+			Data struct {
+				AccountName string `json:"account_name"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(body, &wsResp); err != nil || wsResp.Data.AccountName == "" {
+			log.Fatalf("parse workspace account: %v, body: %s", err, body)
+		}
+		acct = wsResp.Data.AccountName
 	}
-	if err := json.Unmarshal(body, &wsResp); err != nil || wsResp.Data.AccountName == "" {
-		log.Fatalf("parse workspace account: %v, body: %s", err, body)
-	}
-
-	acct := wsResp.Data.AccountName
 	user := acct + ":moi_core_system"
 	pass := cfg.Catalog.APIKey
 	dbName := cfg.Explore.DBName

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useT } from '../i18n'
+import { apiFetch } from '../api/client'
 import './AnalysisPanel.css'
 
 interface FeedbackTask {
@@ -59,7 +60,7 @@ export function AnalysisPanel({ open, onClose }: AnalysisPanelProps) {
 
   const fetchTasks = useCallback(async () => {
     try {
-      const resp = await fetch('/api/feedback')
+      const resp = await apiFetch('/api/feedback')
       const data = await resp.json()
       const items: FeedbackTask[] = data.tasks || []
       setTasks(items)

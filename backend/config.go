@@ -12,6 +12,12 @@ type Config struct {
 	Catalog CatalogConfig `yaml:"catalog"`
 	Explore ExploreConfig `yaml:"explore"`
 	Jobs    JobsConfig    `yaml:"jobs"`
+	Auth    AuthConfig    `yaml:"auth"`
+}
+
+type AuthConfig struct {
+	AdminUsername string `yaml:"admin_username"`
+	AdminPassword string `yaml:"admin_password"`
 }
 
 type JobsConfig struct {
@@ -19,10 +25,10 @@ type JobsConfig struct {
 }
 
 type CCASSSyncConfig struct {
-	Enabled  bool   `yaml:"enabled"`           // 是否启用定时爬取
-	Schedule string `yaml:"schedule"`           // 每天执行时间，如 "20:00"
-	Top      int    `yaml:"top"`                // 爬取前 N 只股票，0 = 全量
-	Script   string `yaml:"script"`             // 脚本路径，默认 scripts/cron_ccass.sh
+	Enabled  bool   `yaml:"enabled"`  // 是否启用定时爬取
+	Schedule string `yaml:"schedule"` // 每天执行时间，如 "20:00"
+	Top      int    `yaml:"top"`      // 爬取前 N 只股票，0 = 全量
+	Script   string `yaml:"script"`   // 脚本路径，默认 scripts/cron_ccass.sh
 }
 
 type ServerConfig struct {
@@ -37,12 +43,12 @@ type CatalogConfig struct {
 }
 
 type ExploreConfig struct {
-	DBName           string  `yaml:"db_name"`
-	Tables           []string `yaml:"tables"`
-	PlanningMode     string  `yaml:"planning_mode"`
-	Verbose          string  `yaml:"verbose"`
-	LLMModel         string  `yaml:"llm_model"`
-	KnowledgeBaseID  int64   `yaml:"knowledge_base_id"`
+	DBName          string   `yaml:"db_name"`
+	Tables          []string `yaml:"tables"`
+	PlanningMode    string   `yaml:"planning_mode"`
+	Verbose         string   `yaml:"verbose"`
+	LLMModel        string   `yaml:"llm_model"`
+	KnowledgeBaseID int64    `yaml:"knowledge_base_id"`
 }
 
 func LoadConfig(path string) (*Config, error) {
@@ -63,6 +69,12 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if cfg.Catalog.URL == "" {
 		cfg.Catalog.URL = "http://localhost:8084"
+	}
+	if cfg.Auth.AdminUsername == "" {
+		cfg.Auth.AdminUsername = "admin"
+	}
+	if cfg.Auth.AdminPassword == "" {
+		cfg.Auth.AdminPassword = "User@123"
 	}
 
 	return &cfg, nil

@@ -68,18 +68,20 @@ type DataPreviewResult struct {
 var validTableName = regexp.MustCompile(`^[a-z0-9_]{1,64}$`)
 
 var systemTables = map[string]bool{
-	"ms_t_stk_hsi":        true,
-	"ms_v_stk_hsi_daily":  true,
-	"ms_t_stk_sis":        true,
-	"ms_v_stock_capital":  true,
-	"ds_t_int_hsicl_dtl":  true,
-	"sehknews":            true,
-	"profit_loss":         true,
-	"ccass_holdings":      true,
-	"poc_user_tables":     true,
-	"feedback_tasks":      true,
-	"conversations":       true,
-	"messages":            true,
+	"ms_t_stk_hsi":       true,
+	"ms_v_stk_hsi_daily": true,
+	"ms_t_stk_sis":       true,
+	"ms_v_stock_capital": true,
+	"ds_t_int_hsicl_dtl": true,
+	"sehknews":           true,
+	"profit_loss":        true,
+	"ccass_holdings":     true,
+	"poc_user_tables":    true,
+	"feedback_tasks":     true,
+	"conversations":      true,
+	"messages":           true,
+	"poc_users":          true,
+	"poc_sessions":       true,
 }
 
 type tempFileEntry struct {

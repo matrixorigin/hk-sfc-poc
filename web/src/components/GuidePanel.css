@@ -1,0 +1,88 @@
+.guide-panel-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 100;
+  animation: kp-fadeIn 0.2s ease-out;
+}
+
+.guide-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 760px;
+  max-width: 90vw;
+  height: 100vh;
+  background: #fff;
+  z-index: 101;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.12);
+  animation: kp-slideIn 0.25s ease-out;
+}
+
+.guide-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e4e7ec;
+  flex-shrink: 0;
+}
+
+.guide-panel-header h2 {
+  margin: 0;
+  color: #1a1a2e;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.guide-panel-header p {
+  margin: 2px 0 0;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.guide-panel-close {
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: #94a3b8;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.guide-panel-close:hover {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.guide-panel-close:focus-visible {
+  outline: 3px solid rgba(22, 93, 255, 0.24);
+  outline-offset: 2px;
+}
+
+.guide-panel-frame {
+  width: 100%;
+  min-height: 0;
+  flex: 1;
+  border: 0;
+  background: #f7f8fa;
+}
+
+@media (max-width: 640px) {
+  .guide-panel {
+    width: 100vw;
+    max-width: 100vw;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .guide-panel-overlay,
+  .guide-panel {
+    animation-duration: 0.01ms;
+  }
+}
