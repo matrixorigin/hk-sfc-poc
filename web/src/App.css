@@ -81,6 +81,15 @@ body {
   white-space: nowrap;
 }
 
+.header-username {
+  max-width: 140px;
+  overflow: hidden;
+  color: #d0d5dd;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* App body (sidebar + main) */
 .app-body {
   display: flex;

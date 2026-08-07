@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useT } from '../i18n'
+import { apiFetch } from '../api/client'
 import './KnowledgePanel.css'
 
 interface KnowledgeEntry {
@@ -59,7 +60,7 @@ export function KnowledgePanel({ open, onClose }: KnowledgePanelProps) {
   const fetchEntries = useCallback(async () => {
     setLoading(true)
     try {
-      const resp = await fetch('/api/knowledge')
+      const resp = await apiFetch('/api/knowledge')
       const data = await resp.json()
       setEntries(data.data?.items || [])
     } catch (err) {
@@ -117,7 +118,7 @@ export function KnowledgePanel({ open, onClose }: KnowledgePanelProps) {
   const handleDelete = async (entry: KnowledgeEntry) => {
     if (!confirm(t('knowledgeConfirmDelete'))) return
     try {
-      await fetch(`/api/knowledge/${entry.id}`, { method: 'DELETE' })
+      await apiFetch(`/api/knowledge/${entry.id}`, { method: 'DELETE' })
       await fetchEntries()
     } catch (err) {
       console.error('[KnowledgePanel] delete error:', err)
@@ -130,7 +131,7 @@ export function KnowledgePanel({ open, onClose }: KnowledgePanelProps) {
     try {
       // If editing, delete old entry first (no PUT/PATCH API)
       if (editingEntry) {
-        await fetch(`/api/knowledge/${editingEntry.id}`, { method: 'DELETE' })
+        await apiFetch(`/api/knowledge/${editingEntry.id}`, { method: 'DELETE' })
       }
       // Create new entry
       const body = {
@@ -146,7 +147,7 @@ export function KnowledgePanel({ open, onClose }: KnowledgePanelProps) {
           .map((v) => v.trim())
           .filter(Boolean),
       }
-      await fetch('/api/knowledge', {
+      await apiFetch('/api/knowledge', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),

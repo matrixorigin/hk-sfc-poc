@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useT } from '../i18n'
+import { apiFetch } from '../api/client'
 
 interface TableInfo {
   name: string
@@ -18,7 +19,7 @@ export function TableSelector({ selected, onChange, refreshKey }: TableSelectorP
   const [tables, setTables] = useState<TableInfo[]>([])
 
   useEffect(() => {
-    fetch('/api/tables')
+    apiFetch('/api/tables')
       .then((r) => r.json())
       .then(setTables)
       .catch(() => {})

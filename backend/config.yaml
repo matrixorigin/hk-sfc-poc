@@ -7,6 +7,10 @@ catalog:
   api_key: "${MOI_SYSTEM_API_KEY}"
   workspace_id: "${POC_WORKSPACE_ID}"
 
+auth:
+  admin_username: "${ADMIN_USERNAME}"
+  admin_password: "${ADMIN_PASSWORD}"
+
 jobs:
   ccass:
     enabled: true         # 设为 true 启用 CCASS 定时爬取

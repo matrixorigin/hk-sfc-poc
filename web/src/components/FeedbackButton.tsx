@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useT } from '../i18n'
+import { apiFetch } from '../api/client'
 
 interface FeedbackButtonProps {
   question: string
@@ -19,7 +20,7 @@ export function FeedbackButton({ question, sql, sqlResult, sessionId }: Feedback
     if (submitting) return
     setSubmitting(true)
     try {
-      await fetch('/api/feedback', {
+      await apiFetch('/api/feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

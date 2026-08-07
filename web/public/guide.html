@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>使用说明 · 香港市场数据探索</title>
+  <link rel="icon" href="/favicon.svg">
+  <script>
+    if (new URLSearchParams(window.location.search).get('embed') === '1') {
+      document.documentElement.classList.add('embedded');
+    }
+  </script>
+  <style>
+    :root {
+      --bg: #f7f8fa;
+      --panel: #ffffff;
+      --text: #1d2129;
+      --text-sub: #4e5969;
+      --border: #e5e6eb;
+      --primary: #165dff;
+      --primary-hover: #0e42d2;
+      --accent-bg: #eef4ff;
+      --code-bg: #f2f3f5;
+      --warning-bg: #fff7e6;
+      --warning-border: #faad14;
+      --warning-text: #874d00;
+      --shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+      -webkit-font-smoothing: antialiased;
+    }
+    button, a { font: inherit; }
+    [hidden] { display: none !important; }
+
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 28px 32px 80px;
+    }
+    .guide-toolbar {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 16px;
+    }
+    .language-switch {
+      display: inline-flex;
+      padding: 3px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+    .language-switch button {
+      border: 0;
+      border-radius: 6px;
+      padding: 5px 11px;
+      background: transparent;
+      color: var(--text-sub);
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .language-switch button.active {
+      background: var(--primary);
+      color: #fff;
+    }
+    .language-switch button:focus-visible,
+    a:focus-visible {
+      outline: 3px solid rgba(22, 93, 255, 0.28);
+      outline-offset: 2px;
+    }
+
+    header.page-header {
+      text-align: center;
+      margin-bottom: 48px;
+      padding-bottom: 32px;
+      border-bottom: 1px solid var(--border);
+    }
+    header.page-header .eyebrow {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 999px;
+      background: var(--accent-bg);
+      color: var(--primary);
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 16px;
+    }
+    header.page-header h1 {
+      margin: 0 0 12px;
+      font-size: 32px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+    header.page-header p {
+      margin: 0;
+      color: var(--text-sub);
+      font-size: 16px;
+    }
+
+    section {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px 32px;
+      margin-bottom: 20px;
+      box-shadow: var(--shadow);
+    }
+    section h2 {
+      margin: 0 0 16px;
+      font-size: 20px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    section h2 .num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: var(--primary);
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+    section h3 {
+      margin: 24px 0 8px;
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    section p, section li {
+      color: var(--text-sub);
+      font-size: 15px;
+    }
+    section p { margin: 8px 0; }
+    section ul, section ol {
+      padding-left: 22px;
+      margin: 8px 0;
+    }
+    section li { margin: 6px 0; }
+    section li strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+    code {
+      background: var(--code-bg);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: "SFMono-Regular", Consolas, Menlo, monospace;
+      font-size: 13px;
+      color: #d4380d;
+      overflow-wrap: anywhere;
+    }
+
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+    .feature-card {
+      background: var(--code-bg);
+      border-radius: 8px;
+      padding: 14px 16px;
+    }
+    .feature-card .title {
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 4px;
+      font-size: 14px;
+    }
+    .feature-card .desc {
+      font-size: 13px;
+      color: var(--text-sub);
+      line-height: 1.5;
+    }
+
+    .steps {
+      counter-reset: step;
+      list-style: none;
+      padding: 0;
+      margin: 12px 0 0;
+    }
+    .steps li {
+      counter-increment: step;
+      position: relative;
+      padding: 10px 0 10px 44px;
+      border-bottom: 1px dashed var(--border);
+    }
+    .steps li:last-child { border-bottom: none; }
+    .steps li::before {
+      content: counter(step);
+      position: absolute;
+      left: 0;
+      top: 10px;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--accent-bg);
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      font-size: 14px;
+    }
+    .inline-link {
+      color: var(--primary);
+      text-decoration: none;
+      border-bottom: 1px dashed var(--primary);
+    }
+    .inline-link:hover { border-bottom-style: solid; }
+
+    .tip {
+      background: var(--warning-bg);
+      border-left: 3px solid var(--warning-border);
+      padding: 12px 16px;
+      border-radius: 4px;
+      margin: 16px 0;
+      font-size: 14px;
+      color: var(--warning-text);
+    }
+    .sample-download {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 16px 18px;
+      margin-top: 16px;
+      background: var(--accent-bg);
+      border: 1px dashed var(--primary);
+      border-radius: 8px;
+      scroll-margin-top: 16px;
+    }
+    .sample-download:target { animation: highlight 1.6s ease-out; }
+    @keyframes highlight {
+      0% { box-shadow: 0 0 0 4px rgba(22, 93, 255, 0.35); }
+      100% { box-shadow: 0 0 0 0 rgba(22, 93, 255, 0); }
+    }
+    .sample-icon {
+      font-size: 28px;
+      line-height: 1;
+      flex-shrink: 0;
+    }
+    .sample-text {
+      flex: 1;
+      min-width: 0;
+      color: var(--text-sub);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    .sample-text strong {
+      color: var(--text);
+      display: block;
+      margin-bottom: 2px;
+      font-size: 15px;
+    }
+    .sample-meta {
+      display: block;
+      margin-top: 5px;
+      color: #667085;
+      font-size: 12px;
+    }
+    .query-example {
+      margin-top: 8px;
+      padding: 8px 10px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.72);
+      color: #344054;
+      font-size: 12px;
+    }
+    a.download-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 16px;
+      background: var(--primary);
+      color: #fff;
+      text-decoration: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      flex-shrink: 0;
+      transition: background 0.2s;
+    }
+    a.download-btn:hover { background: var(--primary-hover); }
+
+    footer.page-footer {
+      text-align: center;
+      margin-top: 48px;
+      padding-top: 32px;
+      border-top: 1px solid var(--border);
+      color: var(--text-sub);
+      font-size: 14px;
+    }
+    footer.page-footer a.home-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 12px;
+      padding: 10px 20px;
+      background: var(--primary);
+      color: #fff;
+      text-decoration: none;
+      border-radius: 8px;
+      font-weight: 500;
+      font-size: 15px;
+      transition: background 0.2s;
+    }
+    footer.page-footer a.home-link:hover { background: var(--primary-hover); }
+
+    html.embedded,
+    html.embedded body {
+      background: var(--bg);
+    }
+    html.embedded .container {
+      max-width: none;
+      padding: 20px 20px 48px;
+    }
+    html.embedded .guide-toolbar,
+    html.embedded header.page-header,
+    html.embedded footer.page-footer {
+      display: none;
+    }
+    html.embedded section {
+      margin-bottom: 16px;
+      box-shadow: none;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after { animation-duration: 0.01ms !important; }
+    }
+    @media (max-width: 640px) {
+      .container { padding: 20px 16px 48px; }
+      .guide-toolbar { justify-content: center; margin-bottom: 22px; }
+      header.page-header { margin-bottom: 28px; padding-bottom: 24px; }
+      header.page-header h1 { font-size: 24px; }
+      header.page-header p { font-size: 14px; }
+      section { padding: 20px; }
+      section h2 { align-items: flex-start; }
+      .feature-grid { grid-template-columns: 1fr; }
+      .sample-download { align-items: flex-start; flex-wrap: wrap; }
+      .sample-text { flex-basis: calc(100% - 48px); }
+      a.download-btn { width: 100%; justify-content: center; }
+      html.embedded .container { padding: 14px 12px 36px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="guide-toolbar">
+      <div class="language-switch" role="group" aria-label="Language / 语言">
+        <button type="button" data-lang-button="zh">中文</button>
+        <button type="button" data-lang-button="en">English</button>
+      </div>
+    </div>
+
+    <main class="guide-content" data-lang-content="zh">
+      <header class="page-header">
+        <span class="eyebrow">使用说明 / User Guide</span>
+        <h1>香港市场数据探索</h1>
+        <p>AI 驱动的金融数据查询、分析与可视化工具</p>
+      </header>
+
+      <section>
+        <h2><span class="num">1</span>功能概览</h2>
+        <p>系统面向香港证券市场数据分析场景，支持用自然语言查询恒生指数、个股行情、市值与行业分类、新闻公告、财务报表和 CCASS 持仓。系统自动生成 SQL、执行查询，并以表格、图表和文字说明呈现结果。</p>
+        <p>管理员和普通用户共用登录入口。普通用户可以使用全部分析功能；用户管理仅管理员可见、可操作。</p>
+      </section>
+
+      <section>
+        <h2><span class="num">2</span>核心功能</h2>
+        <div class="feature-grid">
+          <div class="feature-card"><div class="title">💬 自然语言查询</div><div class="desc">直接描述分析目标，支持流式回答、追问和上下文会话。</div></div>
+          <div class="feature-card"><div class="title">🗂️ 数据源选择</div><div class="desc">按问题选择系统数据表或个人上传的数据表，缩小分析范围。</div></div>
+          <div class="feature-card"><div class="title">📊 表格与图表</div><div class="desc">查看查询结果、分页数据，并切换折线、柱状、饼图等展示方式。</div></div>
+          <div class="feature-card"><div class="title">🧮 计算链路</div><div class="desc">查看关键字段口径、SQL 与 Python 脚本，并下载一键复现包。</div></div>
+          <div class="feature-card"><div class="title">📁 自定义数据表</div><div class="desc">上传 CSV 或 Excel，预览字段、确认类型和备注后创建个人数据表。</div></div>
+          <div class="feature-card"><div class="title">🧠 知识库</div><div class="desc">维护业务逻辑、术语表、案例库和展示规则，辅助 SQL 生成。</div></div>
+          <div class="feature-card"><div class="title">🔎 反馈与分析中心</div><div class="desc">对不准确结果提交反馈，集中查看问题、建议和修正 SQL。</div></div>
+          <div class="feature-card"><div class="title">👤 用户与会话</div><div class="desc">保存并切换历史会话；管理员可创建、启停和维护普通用户。</div></div>
+        </div>
+      </section>
+
+      <section>
+        <h2><span class="num">3</span>快速上手</h2>
+        <ol class="steps">
+          <li><strong>登录系统</strong><br>使用管理员提供的用户名和密码登录。账户被禁用或超过有效期后将无法继续使用。</li>
+          <li><strong>新建对话</strong><br>点击左侧 <code>+ 新对话</code> 返回欢迎页。发送第一条问题后系统会自动保存会话，可在左侧列表切换或删除。</li>
+          <li><strong>选择数据表</strong><br>在输入框上方选择与问题相关的数据表；不确定时可以不选，由系统结合已有数据判断。</li>
+          <li><strong>输入分析问题</strong><br>尽量写明时间范围、股票代码、比较对象和期望展示方式，例如“展示 2025 年 1 月恒生指数走势，用折线图表示”。</li>
+          <li><strong>查看并调整结果</strong><br>查看文字结论、SQL、数据表和图表。可修改图表类型、维度、指标、排序和 Top N，再继续追问。</li>
+          <li><strong>复现或反馈</strong><br>展开计算链路查看口径和脚本；结果不符合预期时点击“结果不准确？”，随后在“分析中心”查看处理结果。</li>
+        </ol>
+        <div class="tip">💡 <strong>提示：</strong>问题越具体，生成结果越稳定。涉及个股时建议使用五位股票代码，并明确自然日或报告期。</div>
+      </section>
+
+      <section>
+        <h2><span class="num">4</span>导入自定义数据与样例文件</h2>
+        <ol class="steps">
+          <li><strong>下载<a class="inline-link" href="#stock-sample-zh">样例文件</a></strong><br>选择下方 CSV 日行情样例或 XLSX 季度财务样例。两份文件均为模拟数据，仅用于功能演示。</li>
+          <li><strong>上传并预览</strong><br>进入 <code>数据表管理</code>，点击 <code>上传 Excel</code>，拖入文件或点击选择。支持 <code>.csv</code>、<code>.xls</code>、<code>.xlsx</code>，最大 300 MB；Excel 仅读取第一个工作表。</li>
+          <li><strong>确认表与字段</strong><br>表名只能包含小写字母、数字和下划线。建议在默认名称后追加用户名或用途以保持唯一，并检查系统推断的 <code>VARCHAR</code>、<code>BIGINT</code>、<code>DECIMAL</code>、<code>DATE</code> 等类型。</li>
+          <li><strong>建表并查询</strong><br>补充表注释和字段注释后确认建表。回到对话区选择新表，再输入下载卡片中的示例问题。</li>
+        </ol>
+
+        <div class="sample-download" id="stock-sample-zh">
+          <div class="sample-icon" aria-hidden="true">📄</div>
+          <div class="sample-text">
+            <strong>香港股票日行情样例（CSV）</strong>
+            3 家模拟公司、5 个交易日，共 15 行；包含日期、代码、名称、收盘价、涨跌幅和成交量。
+            <span class="sample-meta">建议表名：<code>hk_stock_daily_sample_用户名</code></span>
+            <div class="query-example">示例问题：比较三家公司 5 个交易日的平均涨跌幅，并用柱状图展示。</div>
+          </div>
+          <a class="download-btn" href="/samples/hk-stock-daily-sample.csv" download="香港股票日行情样例.csv">⬇ 下载 CSV</a>
+        </div>
+
+        <div class="sample-download" id="financial-sample-zh">
+          <div class="sample-icon" aria-hidden="true">📊</div>
+          <div class="sample-text">
+            <strong>香港公司季度财务样例（XLSX）</strong>
+            3 家模拟公司、4 个季度，共 12 行；包含报告日期、行业、营收、毛利、净利润和每股收益。
+            <span class="sample-meta">建议表名：<code>hk_company_financials_sample_用户名</code></span>
+            <div class="query-example">示例问题：计算各公司全年净利率并按从高到低排序。</div>
+          </div>
+          <a class="download-btn" href="/samples/hk-company-financials-sample.xlsx" download="香港公司季度财务样例.xlsx">⬇ 下载 XLSX</a>
+        </div>
+
+        <div class="tip">⚠️ <strong>数据声明：</strong>样例中的公司、代码和数值均为虚构，不代表真实证券行情、公司披露或投资建议。</div>
+      </section>
+
+      <section>
+        <h2><span class="num">5</span>管理员操作</h2>
+        <ol class="steps">
+          <li><strong>打开用户管理</strong><br>管理员登录后点击顶部 <code>用户管理</code>；普通用户不会看到该入口，也无法调用相关接口。</li>
+          <li><strong>创建普通用户</strong><br>填写用户名、初始密码、有效期和备注。密码至少 8 位，且同时包含字母、数字和特殊字符。</li>
+          <li><strong>维护账户</strong><br>可启用或禁用账户、调整有效期并更新备注。有效期留空表示长期有效，选定日期当天结束前可用。</li>
+          <li><strong>重置密码</strong><br>为普通用户设置符合策略的新密码。禁用、过期或重置密码后，该用户的已有会话会立即失效。</li>
+        </ol>
+        <div class="tip">管理员账户由系统配置固定维护，不能在用户管理界面修改或删除。</div>
+      </section>
+
+      <section>
+        <h2><span class="num">6</span>常见问题</h2>
+        <h3>Q1：查询结果不准确或没有数据怎么办？</h3>
+        <p>检查时间范围、股票代码和所选数据表是否正确；尝试把复杂问题拆成两步。仍有问题时提交反馈，并在分析中心查看建议和修正 SQL。</p>
+        <h3>Q2：为什么上传后的列类型不合适？</h3>
+        <p>系统根据文件内容自动推断类型。请在确认建表前检查每一列，标识符应使用 <code>VARCHAR</code>，金额和比例可使用 <code>DECIMAL</code>，日期使用 <code>DATE</code> 或 <code>DATETIME</code>。</p>
+        <h3>Q3：谁能看到我上传的数据表？</h3>
+        <p>数据表列表按当前账户隔离。为避免物理表名冲突，请使用带用户名或用途后缀的唯一表名，不要直接复用他人的表名。</p>
+        <h3>Q4：普通用户和管理员有什么区别？</h3>
+        <p>普通用户可以使用对话、数据表、图表、知识库、分析中心和复现功能，唯独不能创建或维护其他用户。</p>
+      </section>
+
+      <footer class="page-footer">
+        <div>本产品由矩阵起源（MatrixOrigin）提供技术支持</div>
+        <a class="home-link" href="/">返回系统 →</a>
+      </footer>
+    </main>
+
+    <main class="guide-content" data-lang-content="en" hidden>
+      <header class="page-header">
+        <span class="eyebrow">User Guide / 使用说明</span>
+        <h1>Hong Kong Market Data Explorer</h1>
+        <p>AI-powered financial data querying, analysis, and visualization</p>
+      </header>
+
+      <section>
+        <h2><span class="num">1</span>Overview</h2>
+        <p>The system is designed for Hong Kong securities market analysis. Ask natural-language questions about the Hang Seng Index, stock trading, market capitalization, industry classifications, announcements, financial statements, and CCASS holdings. The system generates SQL, runs the query, and presents the result as text, tables, and charts.</p>
+        <p>Administrators and regular users share one sign-in page. Regular users can use every analysis feature; user management is available only to administrators.</p>
+      </section>
+
+      <section>
+        <h2><span class="num">2</span>Core features</h2>
+        <div class="feature-grid">
+          <div class="feature-card"><div class="title">💬 Natural-language queries</div><div class="desc">Describe an analysis directly, receive streaming answers, and ask follow-up questions.</div></div>
+          <div class="feature-card"><div class="title">🗂️ Data source selection</div><div class="desc">Select system tables or your uploaded tables to focus the analysis.</div></div>
+          <div class="feature-card"><div class="title">📊 Tables and charts</div><div class="desc">Inspect paginated results and switch between line, bar, pie, and other charts.</div></div>
+          <div class="feature-card"><div class="title">🧮 Calculation lineage</div><div class="desc">Review metric definitions, SQL, and Python scripts, or download a reproduction package.</div></div>
+          <div class="feature-card"><div class="title">📁 Custom data tables</div><div class="desc">Upload CSV or Excel, preview columns, confirm types and descriptions, then create a table.</div></div>
+          <div class="feature-card"><div class="title">🧠 Knowledge base</div><div class="desc">Maintain business logic, glossaries, examples, and presentation rules for SQL generation.</div></div>
+          <div class="feature-card"><div class="title">🔎 Feedback and analysis</div><div class="desc">Report inaccurate results and review detected issues, suggestions, and corrected SQL.</div></div>
+          <div class="feature-card"><div class="title">👤 Users and conversations</div><div class="desc">Resume saved conversations; administrators can create and maintain regular users.</div></div>
+        </div>
+      </section>
+
+      <section>
+        <h2><span class="num">3</span>Quick start</h2>
+        <ol class="steps">
+          <li><strong>Sign in</strong><br>Use the username and password supplied by your administrator. Disabled or expired accounts cannot continue using the system.</li>
+          <li><strong>Start a conversation</strong><br>Select <code>+ New Chat</code> in the sidebar. A conversation is saved after you send its first question and can later be selected or deleted.</li>
+          <li><strong>Select data tables</strong><br>Choose relevant tables above the prompt. If you are unsure, leave the selection empty and let the system consider the available data.</li>
+          <li><strong>Ask a specific question</strong><br>Include the date range, stock code, comparison group, and desired presentation, such as “Show the Hang Seng Index trend for January 2025 as a line chart.”</li>
+          <li><strong>Review and refine</strong><br>Inspect the narrative, SQL, data table, and chart. Adjust the chart type, dimensions, metrics, sorting, or Top N, then ask a follow-up.</li>
+          <li><strong>Reproduce or report</strong><br>Expand the calculation lineage to inspect methodology and scripts. For an unexpected result, select “Inaccurate result?” and review the task in Analysis Center.</li>
+        </ol>
+        <div class="tip">💡 <strong>Tip:</strong> Specific questions produce more stable results. For stocks, use five-digit codes and state whether dates refer to trading days or reporting periods.</div>
+      </section>
+
+      <section>
+        <h2><span class="num">4</span>Import custom data and samples</h2>
+        <ol class="steps">
+          <li><strong>Download a <a class="inline-link" href="#stock-sample-en">sample file</a></strong><br>Choose the daily stock CSV or quarterly financial XLSX below. Both contain synthetic data for feature demonstrations only.</li>
+          <li><strong>Upload and preview</strong><br>Open <code>Table Management</code>, select <code>Upload Excel</code>, then drop or choose a file. The system accepts <code>.csv</code>, <code>.xls</code>, and <code>.xlsx</code> up to 300 MB; only the first Excel worksheet is read.</li>
+          <li><strong>Confirm the table and columns</strong><br>Table names may contain only lowercase letters, numbers, and underscores. Add your username or purpose to the default name to keep it unique, and verify inferred types such as <code>VARCHAR</code>, <code>BIGINT</code>, <code>DECIMAL</code>, and <code>DATE</code>.</li>
+          <li><strong>Create and query</strong><br>Add table and column descriptions, then create the table. Return to the conversation, select the new table, and try the prompt shown on its download card.</li>
+        </ol>
+
+        <div class="sample-download" id="stock-sample-en">
+          <div class="sample-icon" aria-hidden="true">📄</div>
+          <div class="sample-text">
+            <strong>Hong Kong daily stock sample (CSV)</strong>
+            15 rows covering three fictional companies and five trading days, with dates, codes, names, closing prices, daily changes, and volume.
+            <span class="sample-meta">Suggested table name: <code>hk_stock_daily_sample_username</code></span>
+            <div class="query-example">Try: Compare the average daily change of the three companies and display it as a bar chart.</div>
+          </div>
+          <a class="download-btn" href="/samples/hk-stock-daily-sample.csv" download="hk-stock-daily-sample.csv">⬇ Download CSV</a>
+        </div>
+
+        <div class="sample-download" id="financial-sample-en">
+          <div class="sample-icon" aria-hidden="true">📊</div>
+          <div class="sample-text">
+            <strong>Hong Kong quarterly financial sample (XLSX)</strong>
+            12 rows covering three fictional companies and four quarters, with report dates, industries, revenue, gross profit, net profit, and EPS.
+            <span class="sample-meta">Suggested table name: <code>hk_company_financials_sample_username</code></span>
+            <div class="query-example">Try: Calculate each company’s full-year net margin and rank the companies from highest to lowest.</div>
+          </div>
+          <a class="download-btn" href="/samples/hk-company-financials-sample.xlsx" download="hk-company-financials-sample.xlsx">⬇ Download XLSX</a>
+        </div>
+
+        <div class="tip">⚠️ <strong>Data notice:</strong> All companies, codes, and values in the samples are fictional. They do not represent real market data, company disclosures, or investment advice.</div>
+      </section>
+
+      <section>
+        <h2><span class="num">5</span>Administrator tasks</h2>
+        <ol class="steps">
+          <li><strong>Open User Management</strong><br>After signing in as an administrator, select <code>User Management</code> in the header. Regular users neither see the entry nor have API access.</li>
+          <li><strong>Create a regular user</strong><br>Enter a username, initial password, expiry date, and optional note. Passwords require at least eight characters with a letter, number, and special character.</li>
+          <li><strong>Maintain an account</strong><br>Enable or disable the account, change its expiry, and update its note. A blank expiry means no expiry; a selected date remains valid through the end of that day.</li>
+          <li><strong>Reset a password</strong><br>Set a new policy-compliant password. Disabling, expiry, or password reset immediately invalidates the user’s existing sessions.</li>
+        </ol>
+        <div class="tip">The administrator account is fixed by system configuration and cannot be edited or deleted in User Management.</div>
+      </section>
+
+      <section>
+        <h2><span class="num">6</span>Frequently asked questions</h2>
+        <h3>Q1: What should I do when a query is inaccurate or returns no data?</h3>
+        <p>Check the date range, stock code, and selected tables, then try splitting a complex request into smaller questions. If the issue persists, submit feedback and review the suggestion and corrected SQL in Analysis Center.</p>
+        <h3>Q2: Why is an uploaded column assigned the wrong type?</h3>
+        <p>The system infers types from file contents. Before creating the table, use <code>VARCHAR</code> for identifiers, <code>DECIMAL</code> for amounts or rates, and <code>DATE</code> or <code>DATETIME</code> for dates.</p>
+        <h3>Q3: Who can see my uploaded tables?</h3>
+        <p>The table list is scoped to the current account. To avoid physical table-name conflicts, use a unique name with your username or purpose and do not reuse another user’s table name.</p>
+        <h3>Q4: What is the difference between a regular user and an administrator?</h3>
+        <p>Regular users can use conversations, custom tables, charts, the knowledge base, Analysis Center, and reproduction features. Only user creation and maintenance are unavailable.</p>
+      </section>
+
+      <footer class="page-footer">
+        <div>Powered by MatrixOrigin</div>
+        <a class="home-link" href="/">Return to the system →</a>
+      </footer>
+    </main>
+  </div>
+
+  <script>
+    (function () {
+      const params = new URLSearchParams(window.location.search);
+      let saved = '';
+      try { saved = localStorage.getItem('hk-poc.lang') || ''; } catch (_) { /* ignore */ }
+      const requested = params.get('lang');
+      const browserLanguage = navigator.language && navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en';
+      const initialLanguage = requested === 'zh' || requested === 'en'
+        ? requested
+        : (saved === 'zh' || saved === 'en' ? saved : browserLanguage);
+
+      function setLanguage(language) {
+        const lang = language === 'en' ? 'en' : 'zh';
+        document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+        document.title = lang === 'zh'
+          ? '使用说明 · 香港市场数据探索'
+          : 'User Guide · Hong Kong Market Data Explorer';
+
+        document.querySelectorAll('[data-lang-content]').forEach(function (content) {
+          content.hidden = content.getAttribute('data-lang-content') !== lang;
+        });
+        document.querySelectorAll('[data-lang-button]').forEach(function (button) {
+          const active = button.getAttribute('data-lang-button') === lang;
+          button.classList.toggle('active', active);
+          button.setAttribute('aria-pressed', String(active));
+        });
+
+        try { localStorage.setItem('hk-poc.lang', lang); } catch (_) { /* ignore */ }
+        const url = new URL(window.location.href);
+        url.searchParams.set('lang', lang);
+        window.history.replaceState(null, '', url);
+      }
+
+      document.querySelectorAll('[data-lang-button]').forEach(function (button) {
+        button.addEventListener('click', function () {
+          setLanguage(button.getAttribute('data-lang-button'));
+        });
+      });
+      setLanguage(initialLanguage);
+    }());
+  </script>
+</body>
+</html>

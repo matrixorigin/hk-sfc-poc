@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { tpl, useT } from '../i18n'
 import type { Language, MetricExplainItem } from '../types'
 import { localizeMetric } from '../utils/metricLocalization'
+import { apiFetch } from '../api/client'
 
 interface Props {
   items: MetricExplainItem[]
@@ -171,7 +172,7 @@ export function MetricExplanations({ items, sqlStatements = [] }: Props) {
     setScriptLoadingTable(group.table)
     try {
       const columns = group.items.map((item) => item.column).join(',')
-      const response = await fetch(
+      const response = await apiFetch(
         `/api/feature-reproduction/script?table=${encodeURIComponent(group.table)}&columns=${encodeURIComponent(columns)}&format=json`,
       )
       if (!response.ok) throw new Error(`HTTP ${response.status}`)

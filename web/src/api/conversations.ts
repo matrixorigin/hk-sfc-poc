@@ -1,4 +1,5 @@
 import type { ChartSpec, ConversationMeta, StoredMessage } from '../types'
+import { apiFetch } from './client'
 
 const BASE = '/api/conversations'
 
@@ -11,19 +12,19 @@ async function parseJSON<T>(resp: Response): Promise<T> {
 }
 
 export async function listConversations(): Promise<ConversationMeta[]> {
-  const resp = await fetch(BASE)
+  const resp = await apiFetch(BASE)
   const data = await parseJSON<{ conversations: ConversationMeta[] }>(resp)
   return data.conversations ?? []
 }
 
 export async function createConversation(): Promise<string> {
-  const resp = await fetch(BASE, { method: 'POST' })
+  const resp = await apiFetch(BASE, { method: 'POST' })
   const data = await parseJSON<{ id: string }>(resp)
   return data.id
 }
 
 export async function updateConversationTitle(id: string, title: string): Promise<void> {
-  const resp = await fetch(`${BASE}/${id}`, {
+  const resp = await apiFetch(`${BASE}/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ title }),
@@ -34,14 +35,14 @@ export async function updateConversationTitle(id: string, title: string): Promis
 }
 
 export async function deleteConversation(id: string): Promise<void> {
-  const resp = await fetch(`${BASE}/${id}`, { method: 'DELETE' })
+  const resp = await apiFetch(`${BASE}/${id}`, { method: 'DELETE' })
   if (!resp.ok) {
     throw new Error(`delete failed: ${resp.status}`)
   }
 }
 
 export async function listMessages(id: string): Promise<StoredMessage[]> {
-  const resp = await fetch(`${BASE}/${id}/messages`)
+  const resp = await apiFetch(`${BASE}/${id}/messages`)
   const data = await parseJSON<{ messages: StoredMessage[] }>(resp)
   return data.messages ?? []
 }
@@ -51,7 +52,7 @@ export async function updateMessageChartSpec(
   messageId: string,
   spec: ChartSpec
 ): Promise<void> {
-  const resp = await fetch(
+  const resp = await apiFetch(
     `${BASE}/${conversationId}/messages/${messageId}/chart-spec`,
     {
       method: 'PATCH',
